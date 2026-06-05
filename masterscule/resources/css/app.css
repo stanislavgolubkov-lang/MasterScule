@@ -69,6 +69,13 @@ input, select, textarea, button { font: inherit; }
 .hero-dots { position: absolute; z-index: 4; left: 50%; bottom: 16px; translate: -50% 0; display: flex; gap: 8px; }
 .hero-dots button { width: 28px; height: 6px; border: 0; border-radius: 999px; background: rgb(255 255 255 / 48%); cursor: pointer; }
 .hero-dots button.is-active { width: 42px; background: var(--blue); }
+@media (min-width: 921px) {
+    .hero-premium, .hero-grid { min-height: 468px; }
+    .hero-grid { padding-inline: clamp(50px, 6vw, 86px); }
+    .hero h1 { font-size: 54px; max-width: 720px; }
+    .hero p { font-size: 19px; max-width: 600px; }
+    .hero-panel { width: min(100%, 360px); padding: 26px; }
+}
 .actions { display: flex; gap: 14px; flex-wrap: wrap; }
 .orange-btn { background: var(--orange); }
 .outline { background: #fff; color: var(--blue); border: 1px solid var(--blue); }
