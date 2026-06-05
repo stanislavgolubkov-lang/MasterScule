@@ -15,7 +15,7 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Artisan::command('masterscule:import-tristool-products {--king=100} {--m7=50}', function () {
+Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}', function () {
     $targets = [
         [
             'brand_name' => 'King Tony',
