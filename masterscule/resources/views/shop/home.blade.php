@@ -90,8 +90,8 @@
             'scule-pneumatice' => '/images/products/m7-nc-4255q.jpg',
             'chei-dinamometrice' => '/images/products/king-tony-34262-1dg.jpg',
             'cricuri-si-ridicare' => '/images/products/tristool/king-tony/king-tony-9hbe4-30.jpg',
-            'dulapuri-si-organizare' => '/images/products/product-placeholder-toolbox.svg',
-            'compresoare' => '/images/products/product-placeholder-compressor.svg',
+            'dulapuri-si-organizare' => '/images/categories/dulapuri-organizare.svg',
+            'compresoare' => '/images/categories/compresor-atelier.svg',
             'echipamente-service' => '/images/products/king-tony-77142-061-1.jpg',
         ];
     @endphp
