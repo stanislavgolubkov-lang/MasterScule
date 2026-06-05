@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420" viewBox="0 0 640 420" role="img" aria-label="Chei si surubelnite">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.54" stop-color="#eef6ff"/>
+      <stop offset="1" stop-color="#e1ebf8"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1680ff"/>
+      <stop offset="1" stop-color="#0057d9"/>
+    </linearGradient>
+    <linearGradient id="steel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#9eb0c5"/>
+    </linearGradient>
+    <filter id="shadow" x="-22%" y="-24%" width="144%" height="158%">
+      <feDropShadow dx="0" dy="22" stdDeviation="17" flood-color="#071421" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+  <rect width="640" height="420" fill="url(#bg)"/>
+  <ellipse cx="320" cy="350" rx="210" ry="31" fill="#071421" opacity="0.12"/>
+  <g filter="url(#shadow)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M158 292 376 74" stroke="url(#blue)" stroke-width="32"/>
+    <path d="m354 96 52-52 40 40-52 52" fill="none" stroke="#071421" stroke-width="24"/>
+    <path d="M236 86 474 324" stroke="#ff6a00" stroke-width="20"/>
+    <path d="M206 56c34 2 58 27 59 60l-45 45-74-74 36-36c7 2 15 4 24 5Z" fill="url(#steel)" stroke="#071421" stroke-width="12"/>
+    <path d="M430 284h74c12 0 22 10 22 22v22c0 12-10 22-22 22h-74c-12 0-22-10-22-22v-22c0-12 10-22 22-22Z" fill="url(#blue)" stroke="#071421" stroke-width="10"/>
+    <path d="M434 318h66" stroke="#ffffff" stroke-width="8" opacity="0.88"/>
+    <path d="M196 254l44 44" stroke="#ffffff" stroke-width="8" opacity="0.7"/>
+  </g>
+</svg>

@@ -84,15 +84,15 @@
     <div class="quick-categories">
     @php
         $categoryImages = [
-            'seturi-de-scule' => '/images/products/king-tony-7596mr.jpg',
-            'tubulare-si-clichete' => '/images/products/tristool/king-tony/king-tony-4780-12g.jpg',
-            'chei-si-surubelnite' => '/images/products/tristool/king-tony/king-tony-14272004.jpg',
-            'scule-pneumatice' => '/images/products/m7-nc-4255q.jpg',
-            'chei-dinamometrice' => '/images/products/king-tony-34262-1dg.jpg',
-            'cricuri-si-ridicare' => '/images/products/tristool/king-tony/king-tony-9hbe4-30.jpg',
+            'seturi-de-scule' => '/images/categories/seturi-scule.svg',
+            'tubulare-si-clichete' => '/images/categories/tubulare-clichete.svg',
+            'chei-si-surubelnite' => '/images/categories/chei-surubelnite.svg',
+            'scule-pneumatice' => '/images/categories/scule-pneumatice.svg',
+            'chei-dinamometrice' => '/images/categories/cheie-dinamometrica.svg',
+            'cricuri-si-ridicare' => '/images/categories/cric-ridicare.svg',
             'dulapuri-si-organizare' => '/images/categories/dulapuri-organizare.svg',
             'compresoare' => '/images/categories/compresor-atelier.svg',
-            'echipamente-service' => '/images/products/king-tony-77142-061-1.jpg',
+            'echipamente-service' => '/images/categories/echipamente-service.svg',
         ];
     @endphp
     @foreach($categories as $category)
