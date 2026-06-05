@@ -76,7 +76,12 @@
     </div>
 </section>
 
-<section class="shell quick-categories">
+<section class="quick-categories-shell">
+    <div class="quick-categories-head">
+        <span>Categorii principale</span>
+        <h2>Alege rapid zona de lucru</h2>
+    </div>
+    <div class="quick-categories">
     @foreach($categories as $category)
         <a href="{{ route('catalog', $category->slug) }}">
             <span class="category-visual category-{{ $category->slug }}" aria-hidden="true">
@@ -112,6 +117,7 @@
             <span class="category-title">{{ $category->name_ro }}</span>
         </a>
     @endforeach
+    </div>
 </section>
 
 <section class="shell ai-strip">
