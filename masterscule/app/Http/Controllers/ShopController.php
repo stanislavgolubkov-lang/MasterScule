@@ -14,7 +14,14 @@ class ShopController extends Controller
     {
         return view('shop.home', [
             'categories' => Category::where('is_active', true)->orderBy('sort_order')->limit(9)->get(),
-            'featuredProducts' => Product::with(['brand', 'category'])->where('is_active', true)->where('is_featured', true)->limit(12)->get(),
+            'featuredProducts' => Product::with(['brand', 'category'])
+                ->where('is_active', true)
+                ->where('is_featured', true)
+                ->where('main_image', 'not like', '%product-placeholder%')
+                ->orderByDesc('is_bestseller')
+                ->orderByDesc('id')
+                ->limit(12)
+                ->get(),
             'productsCount' => Product::where('is_active', true)->count(),
             'brands' => Brand::where('is_active', true)->orderByDesc('is_featured')->get(),
         ]);
