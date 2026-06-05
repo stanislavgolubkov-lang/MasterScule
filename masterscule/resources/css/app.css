@@ -44,7 +44,7 @@ input, select, textarea, button { font: inherit; }
 .mobile-logo img { width: 60px; height: 60px; object-fit: contain; }
 .icon-btn { position: relative; width: 42px; height: 42px; border: 1px solid var(--line); background: #fff; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; }
 .icon-btn span { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; background: var(--orange); color: #fff; border-radius: 999px; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
-.hero { width: min(80vw, 1180px); margin: 20px auto 0; background: #05080d; color: #fff; overflow: hidden; position: relative; border-radius: 8px; box-shadow: 0 18px 50px rgb(7 20 33 / 18%); }
+.hero { width: min(96vw, 1416px); margin: 20px auto 0; background: #05080d; color: #fff; overflow: hidden; position: relative; border-radius: 8px; box-shadow: 0 18px 50px rgb(7 20 33 / 18%); }
 .hero-premium { min-height: 390px; display: block; }
 .hero-slide { position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity .45s ease; }
 .hero-slide.is-active { opacity: 1; pointer-events: auto; position: relative; }
@@ -70,7 +70,7 @@ input, select, textarea, button { font: inherit; }
 .hero-dots button { width: 28px; height: 6px; border: 0; border-radius: 999px; background: rgb(255 255 255 / 48%); cursor: pointer; }
 .hero-dots button.is-active { width: 42px; background: var(--blue); }
 @media (min-width: 921px) {
-    .hero-premium, .hero-grid { min-height: 468px; }
+    .hero-premium, .hero-grid { min-height: 421px; }
     .hero-grid { padding-inline: clamp(50px, 6vw, 86px); }
     .hero h1 { font-size: 54px; max-width: 720px; }
     .hero p { font-size: 19px; max-width: 600px; }
