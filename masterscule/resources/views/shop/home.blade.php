@@ -82,37 +82,24 @@
         <h2>Alege rapid zona de lucru</h2>
     </div>
     <div class="quick-categories">
+    @php
+        $categoryImages = [
+            'seturi-de-scule' => '/images/products/king-tony-7596mr.jpg',
+            'tubulare-si-clichete' => '/images/products/tristool/king-tony/king-tony-4780-12g.jpg',
+            'chei-si-surubelnite' => '/images/products/tristool/king-tony/king-tony-14272004.jpg',
+            'scule-pneumatice' => '/images/products/m7-nc-4255q.jpg',
+            'chei-dinamometrice' => '/images/products/king-tony-34262-1dg.jpg',
+            'cricuri-si-ridicare' => '/images/products/tristool/king-tony/king-tony-9hbe4-30.jpg',
+            'dulapuri-si-organizare' => '/images/products/product-placeholder-toolbox.svg',
+            'compresoare' => '/images/products/product-placeholder-compressor.svg',
+            'echipamente-service' => '/images/products/king-tony-77142-061-1.jpg',
+        ];
+    @endphp
     @foreach($categories as $category)
         <a href="{{ route('catalog', $category->slug) }}">
-            <span class="category-visual category-{{ $category->slug }}" aria-hidden="true">
-                @switch($category->slug)
-                    @case('seturi-de-scule')
-                        <svg viewBox="0 0 96 64"><path class="icon-fill" d="M19 22h58a5 5 0 0 1 5 5v25a5 5 0 0 1-5 5H19a5 5 0 0 1-5-5V27a5 5 0 0 1 5-5Z"/><path d="M37 22v-7h22v7M14 35h68M28 46h8m8 0h8m8 0h8"/></svg>
-                        @break
-                    @case('tubulare-si-clichete')
-                        <svg viewBox="0 0 96 64"><path class="icon-fill" d="M18 44h38l23-23 9 9-23 23H18Z"/><circle cx="76" cy="20" r="8"/><path d="M25 49h31M59 40l-9-9"/></svg>
-                        @break
-                    @case('chei-si-surubelnite')
-                        <svg viewBox="0 0 96 64"><path d="M18 51l30-30 8 8-30 30Z"/><path class="icon-accent" d="M62 14l20 20M55 21l20 20M27 16l52 36"/><path d="M46 23l7 7"/></svg>
-                        @break
-                    @case('scule-pneumatice')
-                        <svg viewBox="0 0 96 64"><path class="icon-fill" d="M14 24h45l15 10v10H47l-7 13H28l5-13H14Z"/><path d="M59 24v-8h14M73 34h10M31 44l-5 13M48 24v20"/></svg>
-                        @break
-                    @case('chei-dinamometrice')
-                        <svg viewBox="0 0 96 64"><path class="icon-fill" d="M14 38h57l11-11 6 6-11 11H14Z"/><circle cx="25" cy="38" r="7"/><path d="M42 32v12M52 32v12M62 32v12M72 27l6 6"/></svg>
-                        @break
-                    @case('cricuri-si-ridicare')
-                        <svg viewBox="0 0 96 64"><path class="icon-fill" d="M22 50h52l-9-24H39Z"/><path d="M15 50h66M31 50l13-33h17l13 33M38 38h28"/><circle cx="31" cy="53" r="4"/><circle cx="70" cy="53" r="4"/></svg>
-                        @break
-                    @case('dulapuri-si-organizare')
-                        <svg viewBox="0 0 96 64"><rect class="icon-fill" x="25" y="10" width="46" height="45" rx="5"/><path d="M25 23h46M25 36h46M37 17h22M37 30h22M37 43h22"/><circle cx="33" cy="58" r="3"/><circle cx="63" cy="58" r="3"/></svg>
-                        @break
-                    @case('compresoare')
-                        <svg viewBox="0 0 96 64"><rect class="icon-fill" x="15" y="35" width="58" height="16" rx="8"/><path d="M33 35V19h25v16M38 19h15M68 29h13M73 29v6"/><circle cx="28" cy="54" r="5"/><circle cx="63" cy="54" r="5"/></svg>
-                        @break
-                    @default
-                        <svg viewBox="0 0 96 64"><rect class="icon-fill" x="23" y="18" width="50" height="35" rx="5"/><path d="M36 18v-7h24v7M34 33h28M38 44h20"/></svg>
-                @endswitch
+            <span class="category-visual category-photo category-{{ $category->slug }}" aria-hidden="true">
+                <img src="{{ $categoryImages[$category->slug] ?? '/images/products/product-placeholder-toolbox.svg' }}" alt="">
+                <span class="category-photo-glow"></span>
             </span>
             <span class="category-title">{{ $category->name_ro }}</span>
         </a>
