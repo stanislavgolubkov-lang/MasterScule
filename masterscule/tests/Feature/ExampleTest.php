@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Models\Brand;
+use App\Models\Category;
 use App\Models\Product;
 use App\Models\User;
 use Tests\TestCase;
@@ -37,6 +39,77 @@ class ExampleTest extends TestCase
         $admin = User::where('email', 'admin@masterscule.ro')->firstOrFail();
 
         $this->actingAs($admin)->get('/admin/users')->assertStatus(200)->assertSee('admin@masterscule.ro');
+    }
+
+    public function test_admin_can_manage_product_cards(): void
+    {
+        $admin = User::where('email', 'admin@masterscule.ro')->firstOrFail();
+        $brand = Brand::firstOrFail();
+        $category = Category::firstOrFail();
+
+        $this
+            ->actingAs($admin)
+            ->get('/admin/products')
+            ->assertOk()
+            ->assertSee('Administrare produse')
+            ->assertSee('Incarca imagine principala')
+            ->assertSee('Sterge produsul');
+
+        $this
+            ->actingAs($admin)
+            ->post('/admin/products', [
+                'brand_id' => $brand->id,
+                'category_id' => $category->id,
+                'name' => 'Produs test admin',
+                'name_ro' => 'Produs test admin',
+                'sku' => 'ADMIN-TEST-1',
+                'price' => 123.45,
+                'old_price' => 150,
+                'stock_quantity' => 5,
+                'main_image' => '/images/products/product-placeholder-toolbox.svg',
+                'short_description' => 'Card produs editabil din admin.',
+                'description_ro' => 'Descriere completa editata din panoul admin.',
+                'attributes_text' => "Material: Otel\nUtilizare: Service",
+                'package_contents_text' => "Produs test\nManual",
+                'gallery_text' => '/images/products/product-placeholder-toolbox.svg',
+                'is_active' => '1',
+                'is_featured' => '1',
+            ])
+            ->assertRedirect();
+
+        $product = Product::where('sku', 'ADMIN-TEST-1')->firstOrFail();
+        $this->assertSame('Otel', $product->attributes['Material']);
+        $this->assertDatabaseHas('product_images', ['product_id' => $product->id]);
+
+        $this
+            ->actingAs($admin)
+            ->patch('/admin/products/'.$product->id, [
+                'brand_id' => $brand->id,
+                'category_id' => $category->id,
+                'name' => 'Produs test admin actualizat',
+                'name_ro' => 'Produs test admin actualizat',
+                'sku' => 'ADMIN-TEST-1',
+                'price' => 99,
+                'stock_quantity' => 0,
+                'main_image' => $product->main_image,
+                'description_ro' => 'Descriere actualizata.',
+                'attributes_text' => 'Status: Actualizat',
+                'is_active' => '1',
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('products', [
+            'sku' => 'ADMIN-TEST-1',
+            'price' => 99,
+            'stock_status' => 'out_of_stock',
+        ]);
+
+        $this
+            ->actingAs($admin)
+            ->delete('/admin/products/'.$product->id)
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('products', ['sku' => 'ADMIN-TEST-1']);
     }
 
     public function test_checkout_creates_order_and_decrements_stock(): void
