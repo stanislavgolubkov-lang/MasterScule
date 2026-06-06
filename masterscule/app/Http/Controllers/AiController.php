@@ -15,8 +15,17 @@ class AiController extends Controller
         $responseProductIds = session('ai_product_ids', []);
 
         return view('ai.advisor', [
-            'recommendations' => Product::with('brand')->where('is_featured', true)->limit(4)->get(),
-            'responseProducts' => Product::with('brand')->whereIn('id', $responseProductIds)->get(),
+            'recommendations' => Product::with('brand')
+                ->where('is_active', true)
+                ->where('is_featured', true)
+                ->where('main_image', 'not like', '%product-placeholder%')
+                ->orderByDesc('is_bestseller')
+                ->limit(4)
+                ->get(),
+            'responseProducts' => Product::with('brand')
+                ->whereIn('id', $responseProductIds)
+                ->where('main_image', 'not like', '%product-placeholder%')
+                ->get(),
             'quickPrompts' => [
                 'Ajuta-ma sa aleg un set de scule pentru garaj pana la 2500 RON',
                 'Cum adaug un produs in cos si finalizez comanda?',
@@ -70,7 +79,7 @@ class AiController extends Controller
             ->filter(fn ($term) => mb_strlen($term) >= 3)
             ->reject(fn ($term) => in_array($term, [
                 'pentru', 'produs', 'produse', 'scule', 'service', 'garaj', 'atelier', 'cum', 'care',
-                'vreau', 'caut', 'am', 'nevoie', 'site', 'instrument', 'instrumente',
+                'vreau', 'caut', 'am', 'nevoie', 'site', 'instrument', 'instrumente', 'master', 'masterscule',
             ], true))
             ->take(8)
             ->values();
@@ -78,6 +87,7 @@ class AiController extends Controller
         return Product::query()
             ->with(['brand', 'category'])
             ->where('is_active', true)
+            ->where('main_image', 'not like', '%product-placeholder%')
             ->when(str_contains($prompt, 'king') || str_contains($prompt, 'tony'), fn ($query) => $query->whereHas('brand', fn ($brand) => $brand->where('slug', 'king-tony')))
             ->when(str_contains($prompt, 'm7') || str_contains($prompt, 'mighty') || str_contains($prompt, 'seven'), fn ($query) => $query->whereHas('brand', fn ($brand) => $brand->where('slug', 'm7-mighty-seven')))
             ->when($budget, fn ($query) => $query->where('price', '<=', $budget))
@@ -113,7 +123,7 @@ class AiController extends Controller
         $actions = $this->matchedActions($prompt);
         $lines = [];
 
-        $lines[] = 'Cunosc actiunile principale MasterScule.ro si recomand doar produse reale din baza site-ului.';
+        $lines[] = 'Cunosc actiunile principale MasterScule.ro si recomand doar produse reale din catalog.';
 
         if ($actions !== []) {
             $lines[] = "\nPasi recomandati:";
@@ -131,7 +141,7 @@ class AiController extends Controller
             $lines[] = "\nNu am gasit un produs exact pentru cerere. Spune-mi brandul, bugetul, lucrarea sau codul produsului.";
         }
 
-        $lines[] = "\nPot ajuta cu: cautare, filtrare, alegere produs, cos, checkout, inregistrare, cont, livrare, retur, garantie si administrare.";
+        $lines[] = "\nPot ajuta cu: cautare, filtrare, alegere produs, cos, checkout, inregistrare, cont, favorite, comparare, livrare, retur, garantie si administrare.";
 
         return implode("\n", $lines);
     }
@@ -145,6 +155,11 @@ class AiController extends Controller
             'checkout' => 'Checkout: '.route('checkout.show').'. Pentru finalizarea comenzii este necesar cont sau autentificare.',
             'account' => 'Cont client: '.(auth()->check() ? route('account.dashboard') : route('login')).'. Clientul vede comenzile, datele personale, adresele si favoritele.',
             'admin' => 'Panou admin: '.route('admin.dashboard').'. Administratorul gestioneaza produse, comenzi si utilizatori.',
+            'wishlist' => 'Favorite: '.route('wishlist').'. Clientul poate salva produsele urmarite si reveni la ele mai tarziu.',
+            'compare' => 'Comparare: '.route('compare').'. Clientul poate compara produse apropiate inainte de cumparare.',
+            'promotions' => 'Promotii: '.route('promotions').'. Aici apar produsele cu reducere si oferte active.',
+            'new' => 'Noutati: '.route('new').'. Aici apar produsele marcate ca noi in catalog.',
+            'bestsellers' => 'TOP vanzari: '.route('bestsellers').'. Aici sunt produsele marcate ca populare.',
             'delivery' => 'Livrare si plata: '.route('page', 'delivery-payment').'. Livrarea se face in Romania, cu plata ramburs sau metoda agreata.',
             'warranty' => 'Garantie: '.route('page', 'warranty').'. Produsele au garantie afisata, de regula 24 luni.',
             'return' => 'Retur: '.route('page', 'returns').'. Clientul poate verifica termenii pentru retur si rambursare.',
@@ -158,6 +173,11 @@ class AiController extends Controller
             'checkout' => ['checkout', 'comanda', 'finaliz'],
             'account' => ['cont', 'login', 'register', 'account'],
             'admin' => ['admin', 'administrator'],
+            'wishlist' => ['favorite', 'wishlist', 'salvez'],
+            'compare' => ['compar', 'compare'],
+            'promotions' => ['promot', 'reducer', 'oferta'],
+            'new' => ['noutati', 'nou', 'noi'],
+            'bestsellers' => ['top', 'vanzari', 'popular'],
             'delivery' => ['livrare', 'plata', 'delivery'],
             'warranty' => ['garantie', 'warranty'],
             'return' => ['retur', 'ramburs', 'return'],

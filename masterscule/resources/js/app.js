@@ -112,7 +112,7 @@ document.addEventListener('submit', async (event) => {
         productsBox.innerHTML = (payload.products || []).map((product) => `
             <a class="ai-mini-product" href="${escapeAttr(product.url)}">
                 <img src="${escapeAttr(product.image)}" alt="">
-                <span><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(product.brand || '')} · ${escapeHtml(product.sku)} · ${escapeHtml(product.price)}</small></span>
+                <span><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(product.brand || '')} - ${escapeHtml(product.sku)} - ${escapeHtml(product.price)}</small></span>
             </a>
         `).join('');
     } catch (error) {

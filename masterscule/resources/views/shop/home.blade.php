@@ -34,7 +34,7 @@
                 <p>Truse, chei, tubulare si accesorii King Tony pentru service-uri care lucreaza zilnic cu piese auto.</p>
                 <div class="actions"><a class="btn" href="{{ route('brand.show', 'king-tony') }}">Vezi King Tony</a><a class="btn outline" href="{{ route('catalog', 'seturi-de-scule') }}">Seturi de scule</a></div>
                 <div class="hero-stats">
-                    <span><strong>100</strong> articole King Tony</span>
+                    <span><strong>200</strong> articole King Tony</span>
                     <span><strong>24 luni</strong> garantie</span>
                     <span><strong>RON</strong> preturi clare</span>
                 </div>
@@ -55,7 +55,7 @@
                 <p>Alege M7 pentru vulcanizare, service auto si lucrari rapide unde conteaza cuplul si fiabilitatea.</p>
                 <div class="actions"><a class="btn" href="{{ route('brand.show', 'm7-mighty-seven') }}">Vezi M7</a><a class="btn outline" href="{{ route('catalog', 'scule-pneumatice') }}">Scule pneumatice</a></div>
                 <div class="hero-stats">
-                    <span><strong>50</strong> articole M7</span>
+                    <span><strong>100</strong> articole M7</span>
                     <span><strong>Service</strong> utilizare intensa</span>
                     <span><strong>Stoc</strong> produse demo</span>
                 </div>
@@ -105,11 +105,6 @@
         </a>
     @endforeach
     </div>
-</section>
-
-<section class="shell ai-strip">
-    <div><h2>Consultant AI pentru scule</h2><p>Spune ce lucrare ai, bugetul și nivelul de utilizare. Recomandările sunt făcute doar din produse existente în catalog.</p></div>
-    <a class="btn" href="{{ route('ai.advisor') }}" data-ai-open>Alege scula potrivită</a>
 </section>
 
 <section class="shell section-head">
