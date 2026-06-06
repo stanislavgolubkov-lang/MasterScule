@@ -11,7 +11,6 @@
 
 <section class="shell catalog-layout">
     <aside class="filters">
-        <h3>Categorii</h3>
         @foreach($categories as $category)
             <a class="{{ optional($activeCategory)->id === $category->id ? 'active' : '' }}" href="{{ route('catalog', $category->slug) }}">{{ $category->name_ro }}</a>
         @endforeach

@@ -6,8 +6,6 @@ document.addEventListener('click', (event) => {
     const aiClose = event.target.closest('[data-ai-close]');
     const catalogOpen = event.target.closest('[data-catalog-open]');
     const catalogClose = event.target.closest('[data-catalog-close]');
-    const heroPrev = event.target.closest('[data-hero-prev]');
-    const heroNext = event.target.closest('[data-hero-next]');
     const heroDot = event.target.closest('[data-hero-dot]');
 
     if (openTarget) {
@@ -44,14 +42,6 @@ document.addEventListener('click', (event) => {
 
     if (catalogClose) {
         closeCatalogModal();
-    }
-
-    if (heroPrev) {
-        changeHeroSlide(heroPrev.closest('[data-hero-slider]'), -1);
-    }
-
-    if (heroNext) {
-        changeHeroSlide(heroNext.closest('[data-hero-slider]'), 1);
     }
 
     if (heroDot) {

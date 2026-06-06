@@ -5,8 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', $title ?? 'MasterScule.ro - Scule si echipamente profesionale')</title>
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" href="/favicon.ico?v=20260606" sizes="any">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png?v=20260606">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260606">
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png?v=20260606">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=20260606">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body>
@@ -21,7 +24,6 @@
             <button class="icon-btn" data-open="mobile-menu" aria-label="Meniu">&#9776;</button>
             <a href="{{ route('home') }}" class="mobile-logo"><img src="/images/brand/master-scule-logo.png" alt="MasterScule.ro"></a>
             <button class="icon-btn" data-open="search-overlay" aria-label="Cauta">&#128269;</button>
-            <a class="icon-btn" href="{{ route('cart.index') }}" aria-label="Cos">&#128722;<span>{{ $cartCount }}</span></a>
         </div>
 
         <div class="desktop-header shell">
