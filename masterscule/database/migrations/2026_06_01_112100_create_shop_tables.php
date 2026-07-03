@@ -17,7 +17,7 @@ return new class extends Migration
 
         Schema::create('role_user', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('role_id')->constrained()->cascadeOnDelete();
             $table->unique(['user_id', 'role_id']);
         });
@@ -63,7 +63,7 @@ return new class extends Migration
             $table->longText('description_ro')->nullable();
             $table->decimal('price', 12, 2);
             $table->decimal('old_price', 12, 2)->nullable();
-            $table->string('currency', 3)->default('RON');
+            $table->string('currency', 3)->default('MDL');
             $table->unsignedInteger('stock_quantity')->default(0);
             $table->string('stock_status')->default('in_stock');
             $table->string('main_image')->nullable();
@@ -98,7 +98,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->string('label')->default('Livrare');
-            $table->string('country')->default('Romania');
+            $table->string('country')->default('Moldova');
             $table->string('city');
             $table->string('address');
             $table->string('postcode')->nullable();
@@ -115,16 +115,19 @@ return new class extends Migration
             $table->decimal('discount_total', 12, 2)->default(0);
             $table->decimal('shipping_total', 12, 2)->default(0);
             $table->decimal('total', 12, 2)->default(0);
-            $table->string('currency', 3)->default('RON');
+            $table->string('currency', 3)->default('MDL');
             $table->string('payment_method')->default('cash_on_delivery');
             $table->string('payment_status')->default('pending');
+            $table->string('payment_reference')->nullable();
+            $table->string('payment_url')->nullable();
+            $table->timestamp('paid_at')->nullable();
             $table->string('shipping_method')->default('courier');
             $table->string('customer_name');
             $table->string('customer_email');
             $table->string('customer_phone')->nullable();
             $table->string('company_name')->nullable();
             $table->string('vat_number')->nullable();
-            $table->string('shipping_country')->default('Romania');
+            $table->string('shipping_country')->default('Moldova');
             $table->string('shipping_city');
             $table->string('shipping_address');
             $table->string('shipping_postcode')->nullable();

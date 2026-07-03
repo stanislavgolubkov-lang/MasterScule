@@ -50,7 +50,7 @@ Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}',
         while ($current < $target['limit'] && $page <= 160) {
             $url = 'https://tristool.md/ru/search?searchword='.rawurlencode($target['query']).'&p='.$page;
             $response = Http::withHeaders([
-                'User-Agent' => 'MasterScule.ro product import/1.0',
+                'User-Agent' => 'MasterScule.md product import/1.0',
                 'Accept' => 'text/html,application/xhtml+xml',
             ])->timeout(30)->retry(2, 500)->get($url);
 
@@ -103,7 +103,7 @@ Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}',
                     'description_ro' => ProductLocalizer::fullDescription($displayName, $target['brand_name'], $sku),
                     'price' => $price,
                     'old_price' => $oldPrice,
-                    'currency' => 'RON',
+                    'currency' => 'MDL',
                     'stock_quantity' => 4 + ((crc32($sku) % 18)),
                     'stock_status' => 'in_stock',
                     'main_image' => $image,
@@ -118,7 +118,7 @@ Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}',
                     'is_new' => $current % 5 === 0,
                     'is_discounted' => $oldPrice !== null,
                     'warranty' => '24 luni',
-                    'meta_title' => $displayName.' | MasterScule.ro',
+                    'meta_title' => $displayName.' | MasterScule.md',
                     'meta_description' => Str::limit(ProductLocalizer::shortDescription($displayName, $target['brand_name']), 150),
                 ]);
 
@@ -156,7 +156,7 @@ Artisan::command('masterscule:localize-products', function () {
                 'short_description' => ProductLocalizer::shortDescription($displayName, $product->brand?->name ?? ''),
                 'description_ro' => $description,
                 'description' => $description,
-                'meta_title' => $displayName.' | MasterScule.ro',
+                'meta_title' => $displayName.' | MasterScule.md',
                 'meta_description' => Str::limit(ProductLocalizer::shortDescription($displayName, $product->brand?->name ?? ''), 150),
             ])->save();
 
@@ -307,7 +307,7 @@ function fullProductDescription(string $title, string $brandName, string $sku): 
 {
     $brand = str_contains($brandName, 'M7') ? 'M7 / Mighty Seven' : 'King Tony';
 
-    return "Produs {$brand}, cod {$sku}, adaugat in catalogul MasterScule.ro pentru service-uri auto, ateliere si clienti care cauta scule fiabile. Cardul include denumire, cod produs, pret in RON, imagine, stoc disponibil, garantie si caracteristici tehnice de baza. Potrivit pentru utilizare profesionala si pentru garaje bine echipate.";
+    return "Produs {$brand}, cod {$sku}, adaugat in catalogul MasterScule.md pentru service-uri auto, ateliere si clienti care cauta scule fiabile. Cardul include denumire, cod produs, pret in MDL, imagine, stoc disponibil, garantie si caracteristici tehnice de baza. Potrivit pentru utilizare profesionala si pentru garaje bine echipate.";
 }
 
 function attributesForTrisToolTitle(string $title, string $sku, string $brandName): array

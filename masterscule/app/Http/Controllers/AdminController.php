@@ -67,7 +67,7 @@ class AdminController extends Controller
         $product = Product::create($data);
         $this->syncProductImages($product);
 
-        return back()->with('success', 'Produsul a fost creat.');
+        return back()->with('success', app()->isLocale('ru') ? 'Товар создан.' : 'Produsul a fost creat.');
     }
 
     public function updateProduct(Request $request, Product $product)
@@ -77,7 +77,7 @@ class AdminController extends Controller
         $product->forceFill($this->productData($request, $product))->save();
         $this->syncProductImages($product);
 
-        return back()->with('success', 'Produsul a fost actualizat.');
+        return back()->with('success', app()->isLocale('ru') ? 'Товар обновлен.' : 'Produsul a fost actualizat.');
     }
 
     public function destroyProduct(Product $product)
@@ -86,14 +86,35 @@ class AdminController extends Controller
         $this->deleteUploadedImage($product->main_image);
         $product->delete();
 
-        return back()->with('success', 'Produsul a fost sters.');
+        return back()->with('success', app()->isLocale('ru') ? 'Товар удален.' : 'Produsul a fost sters.');
     }
 
     public function orders()
     {
         $this->guard();
 
-        return view('admin.orders', ['orders' => Order::with('user')->latest()->paginate(20)]);
+        return view('admin.orders', [
+            'orders' => Order::with(['user', 'items'])->latest()->paginate(20),
+            'orderStatuses' => ['new', 'processing', 'paid', 'shipped', 'completed', 'canceled'],
+            'paymentStatuses' => ['pending', 'paid', 'failed', 'refunded'],
+        ]);
+    }
+
+    public function updateOrder(Request $request, Order $order)
+    {
+        $this->guard();
+
+        $data = $request->validate([
+            'status' => ['required', Rule::in(['new', 'processing', 'paid', 'shipped', 'completed', 'canceled'])],
+            'payment_status' => ['required', Rule::in(['pending', 'paid', 'failed', 'refunded'])],
+            'admin_note' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $order->forceFill($data + [
+            'paid_at' => $data['payment_status'] === 'paid' ? ($order->paid_at ?: now()) : $order->paid_at,
+        ])->save();
+
+        return back()->with('success', app()->isLocale('ru') ? 'Заказ обновлен.' : 'Comanda a fost actualizata.');
     }
 
     public function users()
@@ -161,7 +182,7 @@ class AdminController extends Controller
             'description_ro' => ($data['description_ro'] ?? null) ?: (($data['description'] ?? null) ?: null),
             'price' => $data['price'],
             'old_price' => ($data['old_price'] ?? null) ?: null,
-            'currency' => 'RON',
+            'currency' => config('store.currency', 'MDL'),
             'stock_quantity' => $data['stock_quantity'],
             'stock_status' => ((int) $data['stock_quantity']) > 0 ? 'in_stock' : 'out_of_stock',
             'main_image' => $mainImage,
@@ -178,7 +199,7 @@ class AdminController extends Controller
             'warranty' => ($data['warranty'] ?? null) ?: '24 luni',
             'weight' => ($data['weight'] ?? null) ?: null,
             'dimensions' => ($data['dimensions'] ?? null) ?: null,
-            'meta_title' => ($data['meta_title'] ?? null) ?: $nameRo.' | MasterScule.ro',
+            'meta_title' => ($data['meta_title'] ?? null) ?: $nameRo.' | '.config('store.domain_label'),
             'meta_description' => ($data['meta_description'] ?? null) ?: Str::limit(($data['short_description'] ?? null) ?: ($data['description_ro'] ?? null) ?: ($data['description'] ?? null) ?: $nameRo, 150),
         ];
     }

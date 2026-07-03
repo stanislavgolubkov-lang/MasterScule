@@ -47,6 +47,26 @@ class User extends Authenticatable
         return $this->role === 'admin';
     }
 
+    public function canUseParser(string $permission = 'parser.view'): bool
+    {
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        $roleNames = collect([$this->role])
+            ->merge($this->relationLoaded('roles') ? $this->roles->pluck('name') : $this->roles()->pluck('name'))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $permissions = [
+            'manager' => ['parser.view', 'parser.run', 'parser.approve'],
+            'content_manager' => ['parser.view', 'parser.run', 'parser.approve'],
+        ];
+
+        return $roleNames->contains(fn ($role) => in_array($permission, $permissions[$role] ?? [], true));
+    }
+
     public function orders()
     {
         return $this->hasMany(Order::class);

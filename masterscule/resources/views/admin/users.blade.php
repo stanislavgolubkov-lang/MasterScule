@@ -1,10 +1,10 @@
 @extends('layouts.app')
 
 @section('content')
-<section class="shell page-title"><p>Admin / Utilizatori</p><h1>Admin si utilizator</h1></section>
+<section class="shell page-title"><p>{{ __('ui.admin') }} / {{ __('ui.users') }}</p><h1>{{ app()->isLocale('ru') ? 'Администраторы и пользователи' : 'Admin si utilizator' }}</h1></section>
 <section class="shell panel">
     <table>
-        <tr><th>Nume</th><th>Email</th><th>Rol</th><th>Telefon</th><th>Companie</th><th>Status</th></tr>
+        <tr><th>{{ __('ui.name') }}</th><th>Email</th><th>{{ app()->isLocale('ru') ? 'Роль' : 'Rol' }}</th><th>{{ __('ui.phone') }}</th><th>{{ __('ui.company_name') }}</th><th>{{ __('ui.status') }}</th></tr>
         @foreach($users as $user)
             <tr>
                 <td>{{ $user->name }}</td>

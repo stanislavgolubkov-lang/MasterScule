@@ -17,7 +17,7 @@ class CartController extends Controller
         $quantity = max(1, (int) $request->input('quantity', 1));
 
         if (! $product->is_active || $product->stock_status !== 'in_stock' || $product->stock_quantity < 1) {
-            return back()->withErrors(['cart' => 'Produsul nu este disponibil in stoc.']);
+            return back()->withErrors(['cart' => app()->isLocale('ru') ? 'Товар недоступен на складе.' : 'Produsul nu este disponibil in stoc.']);
         }
 
         $cart = session('cart', []);
@@ -25,7 +25,7 @@ class CartController extends Controller
         $cart[$product->id] = $nextQuantity;
         session(['cart' => $cart]);
 
-        return back()->with('success', 'Produsul a fost adaugat in cos.');
+        return back()->with('success', app()->isLocale('ru') ? 'Товар добавлен в корзину.' : 'Produsul a fost adaugat in cos.');
     }
 
     public function update(Request $request, Product $product)

@@ -3,9 +3,9 @@
 @section('content')
 <section class="shell auth-card">
     <div>
-        <h1>Finalizează comanda</h1>
-        <p>Pentru finalizarea comenzii și urmărirea livrării este necesar să te autentifici sau să creezi un cont.</p>
-        <div class="actions"><a class="btn" href="{{ route('login') }}">Autentificare</a><a class="btn outline" href="{{ route('register') }}">Înregistrare</a></div>
+        <h1>{{ __('ui.checkout_title') }}</h1>
+        <p>{{ __('ui.login_text') }}</p>
+        <div class="actions"><a class="btn" href="{{ route('login') }}">{{ __('ui.login_title') }}</a><a class="btn outline" href="{{ route('register') }}">{{ __('ui.register_title') }}</a></div>
     </div>
 </section>
 @endsection

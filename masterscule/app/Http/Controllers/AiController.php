@@ -26,8 +26,14 @@ class AiController extends Controller
                 ->whereIn('id', $responseProductIds)
                 ->where('main_image', 'not like', '%product-placeholder%')
                 ->get(),
-            'quickPrompts' => [
-                'Ajuta-ma sa aleg un set de scule pentru garaj pana la 2500 RON',
+            'quickPrompts' => app()->isLocale('ru') ? [
+                'Помоги выбрать набор инструментов для гаража до 2500 MDL',
+                'Как добавить товар в корзину и оформить заказ?',
+                'Что может делать администратор в панели MasterScule?',
+                'Нужен пневмоинструмент M7 для автосервиса',
+                'Объясни доставку, гарантию и возврат',
+            ] : [
+                'Ajuta-ma sa aleg un set de scule pentru garaj pana la 2500 MDL',
                 'Cum adaug un produs in cos si finalizez comanda?',
                 'Ce poate face un administrator in panoul MasterScule?',
                 'Am nevoie de un pistol pneumatic M7 pentru service auto',
@@ -58,7 +64,7 @@ class AiController extends Controller
                 'products' => $products->map(fn ($product) => [
                     'name' => $product->display_name,
                     'sku' => $product->sku,
-                    'price' => number_format((float) $product->price, 2, ',', '.').' RON',
+                    'price' => money($product->price),
                     'image' => $product->main_image,
                     'url' => route('product.show', $product->slug),
                     'brand' => $product->brand?->name,
@@ -80,6 +86,8 @@ class AiController extends Controller
             ->reject(fn ($term) => in_array($term, [
                 'pentru', 'produs', 'produse', 'scule', 'service', 'garaj', 'atelier', 'cum', 'care',
                 'vreau', 'caut', 'am', 'nevoie', 'site', 'instrument', 'instrumente', 'master', 'masterscule',
+                'для', 'товар', 'товары', 'инструмент', 'инструменты', 'сервис', 'гараж', 'как', 'что',
+                'нужно', 'нужен', 'нужна', 'ищу', 'сайт', 'мастер', 'masterscule',
             ], true))
             ->take(8)
             ->values();
@@ -92,15 +100,15 @@ class AiController extends Controller
             ->when(str_contains($prompt, 'm7') || str_contains($prompt, 'mighty') || str_contains($prompt, 'seven'), fn ($query) => $query->whereHas('brand', fn ($brand) => $brand->where('slug', 'm7-mighty-seven')))
             ->when($budget, fn ($query) => $query->where('price', '<=', $budget))
             ->where(function ($query) use ($prompt, $terms) {
-                if (str_contains($prompt, 'pneumatic') || str_contains($prompt, 'aer')) {
+                if (str_contains($prompt, 'pneumatic') || str_contains($prompt, 'aer') || str_contains($prompt, 'пневм')) {
                     $query->orWhereHas('category', fn ($category) => $category->where('slug', 'scule-pneumatice'));
                 }
 
-                if (str_contains($prompt, 'set') || str_contains($prompt, 'trusa')) {
+                if (str_contains($prompt, 'set') || str_contains($prompt, 'trusa') || str_contains($prompt, 'набор')) {
                     $query->orWhereHas('category', fn ($category) => $category->where('slug', 'seturi-de-scule'));
                 }
 
-                if (str_contains($prompt, 'dinamometric')) {
+                if (str_contains($prompt, 'dinamometric') || str_contains($prompt, 'динамометр')) {
                     $query->orWhereHas('category', fn ($category) => $category->where('slug', 'chei-dinamometrice'));
                 }
 
@@ -123,32 +131,56 @@ class AiController extends Controller
         $actions = $this->matchedActions($prompt);
         $lines = [];
 
-        $lines[] = 'Cunosc actiunile principale MasterScule.ro si recomand doar produse reale din catalog.';
+        $isRu = app()->isLocale('ru');
+
+        $lines[] = $isRu
+            ? 'Я знаю основные действия на '.config('store.domain_label').' и рекомендую только реальные товары из каталога.'
+            : 'Cunosc actiunile principale '.config('store.domain_label').' si recomand doar produse reale din catalog.';
 
         if ($actions !== []) {
-            $lines[] = "\nPasi recomandati:";
+            $lines[] = $isRu ? "\nРекомендуемые шаги:" : "\nPasi recomandati:";
             foreach ($actions as $action) {
                 $lines[] = '- '.$action;
             }
         }
 
         if ($products->isNotEmpty()) {
-            $lines[] = "\nProduse potrivite din catalog:";
+            $lines[] = $isRu ? "\nПодходящие товары из каталога:" : "\nProduse potrivite din catalog:";
             foreach ($products as $product) {
-                $lines[] = '- '.$product->display_name.' | SKU '.$product->sku.' | '.number_format((float) $product->price, 2, ',', '.').' RON | '.route('product.show', $product->slug);
+                $lines[] = '- '.$product->display_name.' | SKU '.$product->sku.' | '.money($product->price).' | '.route('product.show', $product->slug);
             }
         } else {
-            $lines[] = "\nNu am gasit un produs exact pentru cerere. Spune-mi brandul, bugetul, lucrarea sau codul produsului.";
+            $lines[] = $isRu
+                ? "\nЯ не нашел точный товар по запросу. Уточните бренд, бюджет, задачу или код товара."
+                : "\nNu am gasit un produs exact pentru cerere. Spune-mi brandul, bugetul, lucrarea sau codul produsului.";
         }
 
-        $lines[] = "\nPot ajuta cu: cautare, filtrare, alegere produs, cos, checkout, inregistrare, cont, favorite, comparare, livrare, retur, garantie si administrare.";
+        $lines[] = $isRu
+            ? "\nМогу помочь с поиском, фильтрами, выбором товара, корзиной, checkout, регистрацией, аккаунтом, избранным, сравнением, доставкой, возвратом, гарантией и администрированием."
+            : "\nPot ajuta cu: cautare, filtrare, alegere produs, cos, checkout, inregistrare, cont, favorite, comparare, livrare, retur, garantie si administrare.";
 
         return implode("\n", $lines);
     }
 
     private function matchedActions(string $prompt): array
     {
-        $dictionary = [
+        $dictionary = app()->isLocale('ru') ? [
+            'catalog' => 'Откройте каталог: '.route('catalog').'. Используйте поиск, категории, бренд и фильтры.',
+            'product' => 'На странице товара проверьте фото, код, цену, наличие, описание и характеристики. Затем нажмите "'.__('ui.add_to_cart').'" или "'.__('ui.buy_now').'".',
+            'cart' => 'Корзина здесь: '.route('cart.index').'. Можно менять количество, удалять товары, применять промокод и переходить к оформлению.',
+            'checkout' => 'Оформление заказа: '.route('checkout.show').'. Для завершения заказа нужен аккаунт или вход.',
+            'account' => 'Аккаунт клиента: '.(auth()->check() ? route('account.dashboard') : route('login')).'. Здесь видны заказы, личные данные, адреса и избранное.',
+            'admin' => 'Админ-панель: '.route('admin.dashboard').'. Администратор управляет товарами, заказами и пользователями.',
+            'wishlist' => 'Избранное: '.route('wishlist').'. Клиент может сохранить товары и вернуться к ним позже.',
+            'compare' => 'Сравнение: '.route('compare').'. Помогает сравнить близкие товары перед покупкой.',
+            'promotions' => 'Акции: '.route('promotions').'. Здесь товары со скидками и активные предложения.',
+            'new' => 'Новинки: '.route('new').'. Здесь товары, отмеченные как новые.',
+            'bestsellers' => 'Топ продаж: '.route('bestsellers').'. Здесь популярные товары.',
+            'delivery' => 'Доставка и оплата: '.route('page', 'delivery-payment').'. Условия доставки и доступные способы оплаты.',
+            'warranty' => 'Гарантия: '.route('page', 'warranty').'. Обычно товары имеют гарантию 24 месяца.',
+            'return' => 'Возврат: '.route('page', 'returns').'. Здесь условия возврата и компенсации.',
+            'contact' => 'Контакты: '.route('page', 'contacts').'. Для сложного выбора можно обратиться к консультанту.',
+        ] : [
             'catalog' => 'Deschide catalogul: '.route('catalog').'. Foloseste cautarea, categoriile, brandul si pretul pentru filtrare.',
             'product' => 'Pe pagina produsului verifica poza, codul, pretul, stocul, descrierea si specificatiile. Apoi apasa "Adauga in cos" sau "Cumpara acum".',
             'cart' => 'Cosul este aici: '.route('cart.index').'. Poti modifica cantitatea, sterge produse, aplica un cod promotional si continua spre checkout.',
@@ -160,28 +192,28 @@ class AiController extends Controller
             'promotions' => 'Promotii: '.route('promotions').'. Aici apar produsele cu reducere si oferte active.',
             'new' => 'Noutati: '.route('new').'. Aici apar produsele marcate ca noi in catalog.',
             'bestsellers' => 'TOP vanzari: '.route('bestsellers').'. Aici sunt produsele marcate ca populare.',
-            'delivery' => 'Livrare si plata: '.route('page', 'delivery-payment').'. Livrarea se face in Romania, cu plata ramburs sau metoda agreata.',
+            'delivery' => 'Livrare si plata: '.route('page', 'delivery-payment').'. Livrarea se face in Moldova, cu plata ramburs sau metoda agreata.',
             'warranty' => 'Garantie: '.route('page', 'warranty').'. Produsele au garantie afisata, de regula 24 luni.',
             'return' => 'Retur: '.route('page', 'returns').'. Clientul poate verifica termenii pentru retur si rambursare.',
             'contact' => 'Contact: '.route('page', 'contacts').'. Pentru alegere complexa, clientul poate cere ajutorul consultantului.',
         ];
 
         $rules = [
-            'catalog' => ['catalog', 'categorie', 'filtru', 'search', 'caut'],
-            'product' => ['produs', 'card', 'carte', 'add', 'adaug', 'cumpar'],
-            'cart' => ['cos', 'cart'],
-            'checkout' => ['checkout', 'comanda', 'finaliz'],
-            'account' => ['cont', 'login', 'register', 'account'],
-            'admin' => ['admin', 'administrator'],
-            'wishlist' => ['favorite', 'wishlist', 'salvez'],
-            'compare' => ['compar', 'compare'],
-            'promotions' => ['promot', 'reducer', 'oferta'],
-            'new' => ['noutati', 'nou', 'noi'],
-            'bestsellers' => ['top', 'vanzari', 'popular'],
-            'delivery' => ['livrare', 'plata', 'delivery'],
-            'warranty' => ['garantie', 'warranty'],
-            'return' => ['retur', 'ramburs', 'return'],
-            'contact' => ['contact', 'telefon', 'email'],
+            'catalog' => ['catalog', 'categorie', 'filtru', 'search', 'caut', 'каталог', 'категор', 'фильтр', 'поиск'],
+            'product' => ['produs', 'card', 'carte', 'add', 'adaug', 'cumpar', 'товар', 'карточ', 'добав', 'куп'],
+            'cart' => ['cos', 'cart', 'корз'],
+            'checkout' => ['checkout', 'comanda', 'finaliz', 'заказ', 'оформ'],
+            'account' => ['cont', 'login', 'register', 'account', 'аккаунт', 'вход', 'регистрац'],
+            'admin' => ['admin', 'administrator', 'админ', 'администратор'],
+            'wishlist' => ['favorite', 'wishlist', 'salvez', 'избран'],
+            'compare' => ['compar', 'compare', 'сравн'],
+            'promotions' => ['promot', 'reducer', 'oferta', 'акци', 'скид'],
+            'new' => ['noutati', 'nou', 'noi', 'новин', 'новые'],
+            'bestsellers' => ['top', 'vanzari', 'popular', 'топ', 'популяр'],
+            'delivery' => ['livrare', 'plata', 'delivery', 'достав', 'оплат'],
+            'warranty' => ['garantie', 'warranty', 'гарант'],
+            'return' => ['retur', 'ramburs', 'return', 'возврат'],
+            'contact' => ['contact', 'telefon', 'email', 'контакт', 'телефон'],
         ];
 
         $matched = [];

@@ -21,7 +21,7 @@ return new class extends Migration
             $table->string('company_name')->nullable();
             $table->string('vat_number')->nullable();
             $table->string('city')->nullable();
-            $table->string('country')->default('Romania');
+            $table->string('country')->default('Moldova');
             $table->string('status')->default('active');
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');

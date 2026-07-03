@@ -23,7 +23,11 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         View::composer('*', function ($view): void {
-            $view->with('navCategories', Category::where('is_active', true)->orderBy('sort_order')->get());
+            $view->with('navCategories', Category::with('childrenRecursive')
+                ->whereNull('parent_id')
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->get());
             $view->with('navBrands', Brand::where('is_active', true)->orderBy('name')->get());
             $view->with('cartCount', array_sum(session('cart', [])));
         });

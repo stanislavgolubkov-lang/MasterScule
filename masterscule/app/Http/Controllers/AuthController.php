@@ -22,7 +22,7 @@ class AuthController extends Controller
         ]);
 
         if (! Auth::attempt($credentials, $request->boolean('remember'))) {
-            return back()->withErrors(['email' => 'Datele de autentificare nu sunt corecte.'])->onlyInput('email');
+            return back()->withErrors(['email' => app()->isLocale('ru') ? 'Данные для входа неверные.' : 'Datele de autentificare nu sunt corecte.'])->onlyInput('email');
         }
 
         $request->session()->regenerate();
@@ -44,7 +44,7 @@ class AuthController extends Controller
             'password' => ['required', 'confirmed', Password::min(8)],
         ]);
 
-        $user = User::create($data + ['role' => 'user', 'country' => 'Romania']);
+        $user = User::create($data + ['role' => 'user', 'country' => 'Moldova']);
         Auth::login($user);
 
         return redirect()->route('account.dashboard');

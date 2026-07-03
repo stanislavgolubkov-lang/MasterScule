@@ -22,13 +22,13 @@ class DatabaseSeeder extends Seeder
 
         $admin = User::create([
             'name' => 'MasterScule Admin',
-            'email' => 'admin@masterscule.ro',
-            'phone' => '0724 123 456',
+            'email' => 'admin@masterscule.md',
+            'phone' => config('store.phone'),
             'role' => 'admin',
             'customer_type' => 'company',
-            'company_name' => 'MasterScule.ro',
-            'country' => 'Romania',
-            'city' => 'Voluntari',
+            'company_name' => config('store.legal_name'),
+            'country' => config('store.country'),
+            'city' => 'Chișinău',
             'password' => Hash::make('password'),
         ]);
         $admin->roles()->attach($adminRole);
@@ -36,12 +36,12 @@ class DatabaseSeeder extends Seeder
         $customer = User::create([
             'name' => 'Andrei Popescu',
             'email' => 'andrei.popescu@example.com',
-            'phone' => '0724 123 456',
+            'phone' => config('store.phone'),
             'role' => 'user',
             'customer_type' => 'service',
             'company_name' => 'Popescu Service SRL',
-            'country' => 'Romania',
-            'city' => 'Voluntari',
+            'country' => config('store.country'),
+            'city' => 'Chișinău',
             'password' => Hash::make('password'),
         ]);
         $customer->roles()->attach($userRole);
@@ -90,6 +90,8 @@ class DatabaseSeeder extends Seeder
             Product::create($data);
         }
 
+        $this->call(CatalogStructureSeeder::class);
+
         Banner::create([
             'title' => 'Scule profesionale pentru service si garaj',
             'subtitle' => 'Alege scule, seturi, echipamente si accesorii pentru atelier, service auto si pasionati.',
@@ -100,13 +102,13 @@ class DatabaseSeeder extends Seeder
         ]);
 
         foreach ([
-            ['about', 'Despre noi', 'MasterScule.ro este creat pentru mecanici, service-uri auto si profesionisti care au nevoie de scule fiabile si usor de ales.'],
-            ['delivery-payment', 'Livrare si plata', 'Livram produse in toata Romania. Plata se poate face la livrare, prin transfer bancar sau online cand integrarea va fi activata.'],
+            ['about', 'Despre noi', config('store.domain_label').' este creat pentru mecanici, service-uri auto si profesionisti care au nevoie de scule fiabile si usor de ales.'],
+            ['delivery-payment', 'Livrare si plata', 'Livram produse in toata Moldova. Plata se poate face la livrare, prin transfer bancar sau online cand integrarea va fi activata.'],
             ['warranty', 'Garantie', 'Produsele beneficiaza de garantie conform conditiilor producatorului si legislatiei in vigoare.'],
             ['returns', 'Retur si rambursare', 'Ai 14 zile pentru retur conform politicii comerciale si legislatiei aplicabile.'],
-            ['contacts', 'Contact', 'Telefon: 0724 123 456. Email: contact@masterscule.ro. Program: luni-vineri 08:00 - 17:00.'],
+            ['contacts', 'Contact', 'Telefon: '.config('store.phone').'. Email: '.config('store.email').'. Program: luni-vineri 08:00 - 17:00.'],
             ['privacy-policy', 'Politica de confidentialitate', 'Datele clientilor sunt folosite pentru procesarea comenzilor, livrare si comunicari comerciale acceptate.'],
-            ['terms', 'Termeni si conditii', 'Utilizarea site-ului si plasarea comenzilor presupun acceptarea termenilor comerciali MasterScule.ro.'],
+            ['terms', 'Termeni si conditii', 'Utilizarea site-ului si plasarea comenzilor presupun acceptarea termenilor comerciali '.config('store.domain_label').'.'],
             ['cookie-policy', 'Cookie Policy', 'Site-ul poate folosi cookie-uri pentru functionalitate, analiza si imbunatatirea experientei de cumparare.'],
         ] as [$slug, $title, $content]) {
             Page::create(compact('slug', 'title', 'content'));
@@ -154,7 +156,7 @@ class DatabaseSeeder extends Seeder
                 'description_ro' => $description,
                 'price' => $price,
                 'old_price' => $oldPrice,
-                'currency' => 'RON',
+                'currency' => config('store.currency', 'MDL'),
                 'stock_quantity' => 12,
                 'stock_status' => 'in_stock',
                 'main_image' => $image,
@@ -169,7 +171,7 @@ class DatabaseSeeder extends Seeder
                 'is_new' => $new,
                 'is_discounted' => $oldPrice !== null,
                 'warranty' => '24 luni',
-                'meta_title' => $name.' | MasterScule.ro',
+                'meta_title' => $name.' | '.config('store.domain_label'),
                 'meta_description' => Str::limit($short, 150),
             ];
         }, $items);

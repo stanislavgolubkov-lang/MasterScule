@@ -18,6 +18,40 @@ class Category extends Model
 
     public function children()
     {
-        return $this->hasMany(Category::class, 'parent_id');
+        return $this->hasMany(Category::class, 'parent_id')->orderBy('sort_order')->orderBy('name_ro');
+    }
+
+    public function parent()
+    {
+        return $this->belongsTo(Category::class, 'parent_id');
+    }
+
+    public function childrenRecursive()
+    {
+        return $this->children()->with('childrenRecursive');
+    }
+
+    public function getDisplayNameAttribute(): string
+    {
+        $translated = __('catalog.categories.'.$this->slug);
+
+        if ($translated !== 'catalog.categories.'.$this->slug) {
+            return $translated;
+        }
+
+        return $this->name_ro ?: $this->name;
+    }
+
+    public function descendantsAndSelfIds(): array
+    {
+        $ids = [$this->id];
+
+        $this->loadMissing('childrenRecursive');
+
+        foreach ($this->childrenRecursive as $child) {
+            $ids = array_merge($ids, $child->descendantsAndSelfIds());
+        }
+
+        return array_values(array_unique($ids));
     }
 }

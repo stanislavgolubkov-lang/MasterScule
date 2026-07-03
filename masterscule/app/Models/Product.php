@@ -9,14 +9,15 @@ class Product extends Model
 {
     protected $fillable = [
         'brand_id', 'category_id', 'name', 'name_ro', 'slug', 'sku', 'short_description', 'description',
-        'description_ro', 'price', 'old_price', 'currency', 'stock_quantity', 'stock_status', 'main_image',
-        'gallery', 'attributes', 'package_contents', 'rating', 'reviews_count', 'is_active', 'is_featured',
-        'is_bestseller', 'is_new', 'is_discounted', 'warranty', 'weight', 'dimensions', 'meta_title',
-        'meta_description',
+        'description_ro', 'price', 'old_price', 'currency', 'stock_quantity', 'stock_status', 'status',
+        'parser_confidence', 'parser_source_urls', 'main_image', 'gallery', 'attributes', 'package_contents',
+        'rating', 'reviews_count', 'is_active', 'is_featured', 'is_bestseller', 'is_new', 'is_discounted',
+        'warranty', 'weight', 'dimensions', 'meta_title', 'meta_description',
     ];
 
     protected $casts = [
         'gallery' => 'array',
+        'parser_source_urls' => 'array',
         'attributes' => 'array',
         'package_contents' => 'array',
         'price' => 'decimal:2',
@@ -46,16 +47,57 @@ class Product extends Model
 
     public function getBadgeAttribute(): ?string
     {
-        return $this->is_discounted ? '-10%' : ($this->is_new ? 'NOU' : ($this->is_bestseller ? 'TOP' : null));
+        return $this->is_discounted
+            ? discountPercent($this->old_price, $this->price)
+            : ($this->is_new ? mb_strtoupper(__('ui.new')) : ($this->is_bestseller ? mb_strtoupper(__('ui.top')) : null));
     }
 
     public function getDisplayNameAttribute(): string
     {
+        if (app()->isLocale('ru')) {
+            return ProductLocalizer::russianName($this->name ?: $this->name_ro, $this->brand?->name ?? '', $this->sku);
+        }
+
         return $this->name_ro ?: ProductLocalizer::name($this->name, $this->brand?->name ?? '', $this->sku);
     }
 
     public function getDisplayDescriptionAttribute(): ?string
     {
+        if (app()->isLocale('ru')) {
+            return ProductLocalizer::russianDescription($this->description ?: $this->description_ro, $this->display_name, $this->brand?->name ?? '', $this->sku);
+        }
+
         return $this->description_ro ?: $this->description;
+    }
+
+    public function getDisplayAttributesAttribute(): array
+    {
+        if (! app()->isLocale('ru')) {
+            return $this->getAttributeValue('attributes') ?? [];
+        }
+
+        $keys = [
+            'Numar piese' => 'Количество предметов',
+            'Număr piese' => 'Количество предметов',
+            'Material' => 'Материал',
+            'Utilizare' => 'Применение',
+            'Greutate' => 'Вес',
+            'Dimensiuni' => 'Размеры',
+            'Garantie' => 'Гарантия',
+        ];
+
+        $values = [
+            'Otel crom-vanadiu' => 'Хром-ванадиевая сталь',
+            'Oțel crom-vanadiu' => 'Хром-ванадиевая сталь',
+            'Profesional' => 'Профессиональное',
+            'Service' => 'Сервис',
+            '24 luni' => '24 месяца',
+        ];
+
+        return collect($this->getAttributeValue('attributes') ?? [])
+            ->mapWithKeys(fn ($value, $key) => [
+                $keys[$key] ?? $key => $values[$value] ?? $value,
+            ])
+            ->all();
     }
 }

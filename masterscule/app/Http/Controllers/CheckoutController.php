@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Models\Product;
+use App\Services\MaibHostedCheckout;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -13,24 +14,29 @@ class CheckoutController extends Controller
 {
     public function show()
     {
-        if (! Auth::check()) {
-            return view('shop.checkout-auth');
+        $cart = $this->cart();
+
+        if ($cart['items']->isEmpty()) {
+            return redirect()->route('cart.index')->withErrors(['cart' => app()->isLocale('ru') ? 'Корзина пуста.' : 'Cosul este gol.']);
         }
 
-        return view('shop.checkout', ['cart' => $this->cart()]);
+        return view('shop.checkout', ['cart' => $cart]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request, MaibHostedCheckout $maib)
     {
-        abort_unless(Auth::check(), 403);
-
         $cart = $this->cart();
         if ($cart['items']->isEmpty()) {
-            return redirect()->route('cart.index')->withErrors(['cart' => 'Coșul este gol.']);
+            return redirect()->route('cart.index')->withErrors(['cart' => app()->isLocale('ru') ? 'Корзина пуста.' : 'Cosul este gol.']);
+        }
+
+        if (Auth::check() && ! $request->filled('customer_email')) {
+            $request->merge(['customer_email' => Auth::user()->email]);
         }
 
         $data = $request->validate([
             'customer_name' => ['required', 'string', 'max:255'],
+            'customer_email' => ['required', 'email', 'max:255'],
             'customer_phone' => ['required', 'string', 'max:40'],
             'shipping_city' => ['required', 'string', 'max:120'],
             'shipping_address' => ['required', 'string', 'max:255'],
@@ -51,8 +57,8 @@ class CheckoutController extends Controller
                 'discount_total' => $cart['discount'],
                 'shipping_total' => $cart['shipping'],
                 'total' => $cart['total'],
-                'customer_email' => Auth::user()->email,
-                'shipping_country' => 'Romania',
+                'currency' => config('store.currency', 'MDL'),
+                'shipping_country' => config('store.country', 'Moldova'),
             ]);
 
             foreach ($cart['items'] as $item) {
@@ -60,7 +66,7 @@ class CheckoutController extends Controller
 
                 if (! $product->is_active || $product->stock_status !== 'in_stock' || $product->stock_quantity < $item['quantity']) {
                     throw \Illuminate\Validation\ValidationException::withMessages([
-                        'cart' => 'Stoc insuficient pentru '.$item['product']->display_name.'.',
+                        'cart' => (app()->isLocale('ru') ? 'Недостаточно товара на складе: ' : 'Stoc insuficient pentru ').$item['product']->display_name.'.',
                     ]);
                 }
 
@@ -82,9 +88,68 @@ class CheckoutController extends Controller
             return $order;
         });
 
+        if ($order->payment_method === 'online_card') {
+            $payment = $maib->create($order);
+
+            if (($payment['url'] ?? null)) {
+                $order->forceFill([
+                    'payment_reference' => $payment['reference'] ?? null,
+                    'payment_url' => $payment['url'],
+                    'payment_status' => 'pending',
+                ])->save();
+
+                session()->forget('cart');
+
+                return redirect()->away($payment['url']);
+            }
+
+            $order->forceFill(['payment_status' => 'pending'])->save();
+        }
+
         session()->forget('cart');
 
-        return redirect()->route('account.dashboard')->with('success', 'Comanda a fost creata: '.$order->order_number);
+        return redirect()
+            ->route('checkout.thank-you', $order->order_number)
+            ->with('success', (app()->isLocale('ru') ? 'Заказ создан: ' : 'Comanda a fost creata: ').$order->order_number);
+    }
+
+    public function thankYou(Order $order)
+    {
+        return view('shop.order-confirmation', ['order' => $order->load('items')]);
+    }
+
+    public function maibCallback(Request $request, MaibHostedCheckout $maib)
+    {
+        abort_unless($maib->verifyCallback($request), 403);
+
+        $reference = $request->input('orderId')
+            ?: $request->input('order_number')
+            ?: $request->input('paymentReference')
+            ?: $request->input('payment_reference')
+            ?: $request->input('id');
+
+        $order = Order::query()
+            ->where('order_number', $reference)
+            ->orWhere('payment_reference', $reference)
+            ->first();
+
+        if (! $order) {
+            return response()->json(['ok' => false], 404);
+        }
+
+        $status = strtolower((string) ($request->input('status') ?: $request->input('paymentStatus')));
+
+        if (in_array($status, ['paid', 'success', 'approved', 'completed'], true)) {
+            $order->forceFill([
+                'payment_status' => 'paid',
+                'status' => 'paid',
+                'paid_at' => now(),
+            ])->save();
+        } elseif (in_array($status, ['failed', 'declined', 'canceled', 'cancelled'], true)) {
+            $order->forceFill(['payment_status' => 'failed'])->save();
+        }
+
+        return response()->json(['ok' => true]);
     }
 
     private function cart(): array

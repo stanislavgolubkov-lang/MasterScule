@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AccountController;
+use App\Http\Controllers\Admin\ProductParserController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AiController;
 use App\Http\Controllers\AuthController;
@@ -8,6 +9,14 @@ use App\Http\Controllers\CartController;
 use App\Http\Controllers\CheckoutController;
 use App\Http\Controllers\ShopController;
 use Illuminate\Support\Facades\Route;
+
+Route::get('/language/{locale}', function (string $locale) {
+    abort_unless(in_array($locale, ['ru', 'ro'], true), 404);
+
+    session(['locale' => $locale]);
+
+    return back();
+})->name('language.switch');
 
 Route::get('/', [ShopController::class, 'home'])->name('home');
 Route::get('/catalog/{category?}', [ShopController::class, 'catalog'])->name('catalog');
@@ -27,7 +36,9 @@ Route::patch('/cart/update/{product}', [CartController::class, 'update'])->name(
 Route::delete('/cart/remove/{product}', [CartController::class, 'remove'])->name('cart.remove');
 
 Route::get('/checkout', [CheckoutController::class, 'show'])->name('checkout.show');
-Route::post('/checkout', [CheckoutController::class, 'store'])->middleware('auth')->name('checkout.store');
+Route::post('/checkout', [CheckoutController::class, 'store'])->name('checkout.store');
+Route::get('/order/{order:order_number}', [CheckoutController::class, 'thankYou'])->name('checkout.thank-you');
+Route::post('/payment/maib/callback', [CheckoutController::class, 'maibCallback'])->name('payment.maib.callback');
 
 Route::middleware('auth')->group(function () {
     Route::get('/account', [AccountController::class, 'dashboard'])->name('account.dashboard');
@@ -37,11 +48,31 @@ Route::middleware('auth')->group(function () {
     Route::patch('/admin/products/{product}', [AdminController::class, 'updateProduct'])->name('admin.products.update');
     Route::delete('/admin/products/{product}', [AdminController::class, 'destroyProduct'])->name('admin.products.destroy');
     Route::get('/admin/orders', [AdminController::class, 'orders'])->name('admin.orders');
+    Route::patch('/admin/orders/{order}', [AdminController::class, 'updateOrder'])->name('admin.orders.update');
     Route::get('/admin/users', [AdminController::class, 'users'])->name('admin.users');
+    Route::get('/admin/parser', [ProductParserController::class, 'index'])->name('admin.parser.index');
+    Route::post('/admin/parser/single', [ProductParserController::class, 'storeSingle'])->name('admin.parser.single');
+    Route::post('/admin/parser/batch', [ProductParserController::class, 'storeBatch'])->name('admin.parser.batch');
+    Route::post('/admin/parser/settings', [ProductParserController::class, 'updateSettings'])->name('admin.parser.settings.update');
+    Route::get('/admin/parser/batches/{batch}', [ProductParserController::class, 'showBatch'])->name('admin.parser.batches.show');
+    Route::post('/admin/parser/batches/{batch}/cancel', [ProductParserController::class, 'cancelBatch'])->name('admin.parser.batches.cancel');
+    Route::delete('/admin/parser/batches/{batch}', [ProductParserController::class, 'destroyBatch'])->name('admin.parser.batches.destroy');
+    Route::get('/admin/parser/items/{item}', [ProductParserController::class, 'showItem'])->name('admin.parser.items.show');
+    Route::post('/admin/parser/items/{item}/select-images', [ProductParserController::class, 'selectImages'])->name('admin.parser.items.select-images');
+    Route::post('/admin/parser/items/{item}/process-images', [ProductParserController::class, 'processImages'])->name('admin.parser.items.process-images');
+    Route::post('/admin/parser/items/{item}/draft', [ProductParserController::class, 'createDraft'])->name('admin.parser.items.draft');
+    Route::post('/admin/parser/items/{item}/update-existing', [ProductParserController::class, 'updateExisting'])->name('admin.parser.items.update-existing');
+    Route::post('/admin/parser/items/{item}/reject', [ProductParserController::class, 'reject'])->name('admin.parser.items.reject');
+    Route::post('/admin/parser/items/{item}/retry', [ProductParserController::class, 'retry'])->name('admin.parser.items.retry');
 });
 
-Route::get('/ai/tool-advisor', [AiController::class, 'advisor'])->name('ai.advisor');
-Route::post('/ai/tool-advisor', [AiController::class, 'ask'])->name('ai.ask');
+if (config('features.ai_assistant')) {
+    Route::get('/ai/tool-advisor', [AiController::class, 'advisor'])->name('ai.advisor');
+    Route::post('/ai/tool-advisor', [AiController::class, 'ask'])->name('ai.ask');
+} else {
+    Route::get('/ai/tool-advisor', fn () => abort(404))->name('ai.advisor');
+    Route::post('/ai/tool-advisor', fn () => abort(404))->name('ai.ask');
+}
 
 Route::get('/wishlist', [ShopController::class, 'wishlist'])->name('wishlist');
 Route::get('/compare', [ShopController::class, 'compare'])->name('compare');
