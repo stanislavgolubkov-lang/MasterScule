@@ -1,0 +1,128 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Order;
+use App\Models\PaymentTransaction;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Throwable;
+
+class MaibHostedCheckout
+{
+    public function isConfigured(): bool
+    {
+        return filled(config('services.maib.base_url'))
+            && filled(config('services.maib.project_id'))
+            && filled(config('services.maib.secret'));
+    }
+
+    public function create(Order $order): ?array
+    {
+        if (! $this->isConfigured()) {
+            return null;
+        }
+
+        $payload = [
+            'projectId' => config('services.maib.project_id'),
+            'orderId' => $order->order_number,
+            'amount' => (int) round((float) $order->total * 100),
+            'currency' => $order->currency,
+            'description' => config('store.domain_label').' '.$order->order_number,
+            'customer' => [
+                'name' => $order->customer_name,
+                'email' => $order->customer_email,
+                'phone' => $order->customer_phone,
+            ],
+            'successUrl' => route('checkout.thank-you', $order->order_number),
+            'failUrl' => route('checkout.thank-you', $order->order_number),
+            'callbackUrl' => route('payment.maib.callback'),
+        ];
+
+        $transaction = PaymentTransaction::create([
+            'order_id' => $order->id,
+            'provider' => 'maib',
+            'status' => 'initiated',
+            'amount' => $order->total,
+            'currency' => $order->currency,
+            'request_payload_json' => $payload,
+        ]);
+
+        try {
+            $response = Http::acceptJson()
+                ->withToken(config('services.maib.secret'))
+                ->post($this->endpoint(), $payload);
+        } catch (Throwable $exception) {
+            $transaction->forceFill([
+                'status' => 'request_failed',
+                'response_payload_json' => ['message' => $exception->getMessage()],
+                'processed_at' => now(),
+            ])->save();
+
+            Log::warning('MAIB checkout request failed', [
+                'order_id' => $order->id,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        if (! $response->successful()) {
+            $transaction->forceFill([
+                'status' => 'request_rejected',
+                'response_payload_json' => $response->json() ?: ['body' => $response->body()],
+                'processed_at' => now(),
+            ])->save();
+
+            Log::warning('MAIB checkout rejected request', [
+                'order_id' => $order->id,
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            return null;
+        }
+
+        $data = $response->json() ?: [];
+        $reference = $data['id'] ?? $data['payId'] ?? $data['paymentId'] ?? $data['transactionId'] ?? null;
+
+        $transaction->forceFill([
+            'provider_transaction_id' => $reference,
+            'status' => 'pending',
+            'response_payload_json' => $data,
+        ])->save();
+
+        return [
+            'reference' => $reference,
+            'url' => $data['checkoutUrl'] ?? $data['redirectUrl'] ?? $data['payUrl'] ?? $data['url'] ?? null,
+            'raw' => $data,
+            'transaction' => $transaction,
+        ];
+    }
+
+    public function verifyCallback(Request $request): bool
+    {
+        $secret = config('services.maib.signature_secret');
+
+        if (! filled($secret)) {
+            return ! (app()->environment('production') && $this->isConfigured());
+        }
+
+        $signature = $request->header('X-Signature') ?: $request->input('signature');
+
+        if (! $signature) {
+            return false;
+        }
+
+        $payload = $request->getContent() ?: json_encode($request->all(), JSON_UNESCAPED_SLASHES);
+        $expected = hash_hmac('sha256', (string) $payload, (string) $secret);
+
+        return hash_equals($expected, (string) $signature);
+    }
+
+    private function endpoint(): string
+    {
+        return rtrim((string) config('services.maib.base_url'), '/').'/'.ltrim((string) config('services.maib.create_payment_path'), '/');
+    }
+}
