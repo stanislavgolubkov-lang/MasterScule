@@ -22,7 +22,15 @@ class AuthController extends Controller
         ]);
 
         if (! Auth::attempt($credentials, $request->boolean('remember'))) {
-            return back()->withErrors(['email' => app()->isLocale('ru') ? 'Данные для входа неверные.' : 'Datele de autentificare nu sunt corecte.'])->onlyInput('email');
+            return back()->withErrors(['email' => __('ui.invalid_login')])->onlyInput('email');
+        }
+
+        if (Auth::user()->isAdmin()) {
+            $this->logoutSession($request);
+
+            return redirect()
+                ->route('admin.dashboard')
+                ->withErrors(['email' => __('ui.admin_login_only')]);
         }
 
         $request->session()->regenerate();
@@ -33,6 +41,43 @@ class AuthController extends Controller
     public function registerForm()
     {
         return view('auth.register');
+    }
+
+    public function adminLoginForm(Request $request, AdminController $adminController)
+    {
+        if (Auth::check() && Auth::user()->isAdmin()) {
+            return $adminController->dashboard();
+        }
+
+        if (Auth::check()) {
+            $this->logoutSession($request);
+        }
+
+        return view('auth.admin-login');
+    }
+
+    public function adminLogin(Request $request)
+    {
+        $credentials = $request->validate([
+            'email' => ['required', 'email'],
+            'password' => ['required'],
+        ]);
+
+        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
+            return back()->withErrors(['email' => __('ui.invalid_login')])->onlyInput('email');
+        }
+
+        if (! Auth::user()->isAdmin()) {
+            $this->logoutSession($request);
+
+            return back()
+                ->withErrors(['email' => __('ui.admin_login_required')])
+                ->onlyInput('email');
+        }
+
+        $request->session()->regenerate();
+
+        return redirect()->intended(route('admin.dashboard'));
     }
 
     public function register(Request $request)
@@ -52,10 +97,15 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
+        $this->logoutSession($request);
+
+        return redirect()->route('home');
+    }
+
+    private function logoutSession(Request $request): void
+    {
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
-
-        return redirect()->route('home');
     }
 }

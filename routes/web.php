@@ -26,6 +26,8 @@ Route::get('/brand/{slug}', [ShopController::class, 'brand'])->name('brand.show'
 
 Route::get('/login', [AuthController::class, 'loginForm'])->name('login');
 Route::post('/login', [AuthController::class, 'login'])->name('login.store');
+Route::get('/admin', [AuthController::class, 'adminLoginForm'])->name('admin.dashboard');
+Route::post('/admin', [AuthController::class, 'adminLogin'])->name('admin.login.store');
 Route::get('/register', [AuthController::class, 'registerForm'])->name('register');
 Route::post('/register', [AuthController::class, 'register'])->name('register.store');
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
@@ -42,7 +44,9 @@ Route::post('/payment/maib/callback', [CheckoutController::class, 'maibCallback'
 
 Route::middleware('auth')->group(function () {
     Route::get('/account', [AccountController::class, 'dashboard'])->name('account.dashboard');
-    Route::get('/admin', [AdminController::class, 'dashboard'])->name('admin.dashboard');
+});
+
+Route::middleware('admin.only')->group(function () {
     Route::get('/admin/products', [AdminController::class, 'products'])->name('admin.products');
     Route::post('/admin/products', [AdminController::class, 'storeProduct'])->name('admin.products.store');
     Route::patch('/admin/products/{product}', [AdminController::class, 'updateProduct'])->name('admin.products.update');
@@ -51,6 +55,10 @@ Route::middleware('auth')->group(function () {
     Route::patch('/admin/orders/{order}', [AdminController::class, 'updateOrder'])->name('admin.orders.update');
     Route::get('/admin/users', [AdminController::class, 'users'])->name('admin.users');
     Route::get('/admin/parser', [ProductParserController::class, 'index'])->name('admin.parser.index');
+    Route::post('/admin/parser/price-list', [ProductParserController::class, 'storePriceList'])->name('admin.parser.price-list');
+    Route::get('/admin/parser/drafts', [ProductParserController::class, 'drafts'])->name('admin.parser.drafts');
+    Route::get('/admin/parser/category-rules', [ProductParserController::class, 'rules'])->name('admin.parser.rules');
+    Route::post('/admin/parser/category-rules', [ProductParserController::class, 'updateRules'])->name('admin.parser.rules.update');
     Route::post('/admin/parser/single', [ProductParserController::class, 'storeSingle'])->name('admin.parser.single');
     Route::post('/admin/parser/batch', [ProductParserController::class, 'storeBatch'])->name('admin.parser.batch');
     Route::post('/admin/parser/settings', [ProductParserController::class, 'updateSettings'])->name('admin.parser.settings.update');
@@ -61,6 +69,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/parser/items/{item}/select-images', [ProductParserController::class, 'selectImages'])->name('admin.parser.items.select-images');
     Route::post('/admin/parser/items/{item}/process-images', [ProductParserController::class, 'processImages'])->name('admin.parser.items.process-images');
     Route::post('/admin/parser/items/{item}/draft', [ProductParserController::class, 'createDraft'])->name('admin.parser.items.draft');
+    Route::post('/admin/parser/items/{item}/category', [ProductParserController::class, 'updateItemCategory'])->name('admin.parser.items.category');
+    Route::post('/admin/parser/items/{item}/publish', [ProductParserController::class, 'publishDraft'])->name('admin.parser.items.publish');
     Route::post('/admin/parser/items/{item}/update-existing', [ProductParserController::class, 'updateExisting'])->name('admin.parser.items.update-existing');
     Route::post('/admin/parser/items/{item}/reject', [ProductParserController::class, 'reject'])->name('admin.parser.items.reject');
     Route::post('/admin/parser/items/{item}/retry', [ProductParserController::class, 'retry'])->name('admin.parser.items.retry');

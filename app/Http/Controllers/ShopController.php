@@ -10,9 +10,23 @@ use Illuminate\Http\Request;
 
 class ShopController extends Controller
 {
+    private const CATALOG_ROOT_SLUG = 'instrumente-si-mobilier';
+
+    private const MAIN_CATALOG_SLUGS = [
+        'mobilier-pentru-service',
+        'scule-speciale-auto',
+        'instrument-manual',
+        'scule-pneumatice',
+        'electroinstrumente',
+        'instrumente-cu-acumulator',
+        'instrumente-electromontaj',
+        'instrumente-de-masurare',
+        'accesorii-si-consumabile',
+    ];
+
     public function home()
     {
-        $instrumentRoot = Category::where('slug', 'instrumente-si-mobilier')->first();
+        $instrumentRoot = Category::where('slug', self::CATALOG_ROOT_SLUG)->first();
 
         return view('shop.home', [
             'categories' => Category::with('children')
@@ -102,8 +116,11 @@ class ShopController extends Controller
             'activeCategory' => $activeCategory,
             'activePathIds' => $this->categoryPathIds($activeCategory),
             'breadcrumbs' => $this->categoryBreadcrumbs($activeCategory),
-            'categoryTiles' => $this->categoryTiles($activeCategory),
-            'sideNavigation' => $this->sideNavigation($activeCategory),
+            'rootCatalogSections' => $this->catalogMainSections(),
+            'subcategories' => $this->subcategories($activeCategory),
+            'catalogTree' => $this->catalogMainSections(),
+            'categoryTiles' => $activeCategory ? collect() : $this->catalogMainSections(),
+            'sideNavigation' => ['title' => '', 'items' => collect(), 'back' => null],
             'showProducts' => $showProducts,
             'brands' => Brand::where('is_active', true)->get(),
             'selectedBrands' => collect((array) $request->input('brand'))->filter()->values()->all(),
@@ -160,6 +177,9 @@ class ShopController extends Controller
             'activePathIds' => [],
             'breadcrumbs' => [],
             'activeBrand' => $brand,
+            'rootCatalogSections' => $this->catalogMainSections(),
+            'subcategories' => collect(),
+            'catalogTree' => $this->catalogMainSections(),
             'categoryTiles' => collect(),
             'sideNavigation' => ['title' => 'Brand', 'items' => collect(), 'back' => null],
             'showProducts' => true,
@@ -265,11 +285,33 @@ class ShopController extends Controller
 
     private function catalogTree()
     {
+        return $this->catalogMainSections();
+    }
+
+    private function catalogMainSections()
+    {
+        $catalogRoot = Category::where('slug', self::CATALOG_ROOT_SLUG)->first();
+
         return Category::with('childrenRecursive')
-            ->whereNull('parent_id')
             ->where('is_active', true)
-            ->orderBy('sort_order')
-            ->get();
+            ->when($catalogRoot, fn ($query) => $query->where('parent_id', $catalogRoot->id))
+            ->when(! $catalogRoot, fn ($query) => $query->whereNull('parent_id'))
+            ->whereIn('slug', self::MAIN_CATALOG_SLUGS)
+            ->get()
+            ->sortBy(fn ($category) => array_search($category->slug, self::MAIN_CATALOG_SLUGS, true))
+            ->values();
+    }
+
+    private function subcategories(?Category $category)
+    {
+        if (! $category) {
+            return collect();
+        }
+
+        return collect($category->childrenRecursive ?? [])
+            ->where('is_active', true)
+            ->sortBy('sort_order')
+            ->values();
     }
 
     private function categoryPathIds(?Category $category): array
@@ -277,7 +319,9 @@ class ShopController extends Controller
         $ids = [];
 
         while ($category) {
-            $ids[] = $category->id;
+            if ($category->slug !== self::CATALOG_ROOT_SLUG) {
+                $ids[] = $category->id;
+            }
             $category = $category->parent;
         }
 
@@ -286,11 +330,7 @@ class ShopController extends Controller
 
     private function categoryTiles(?Category $category)
     {
-        if ($category) {
-            return $category->childrenRecursive;
-        }
-
-        return $this->catalogTree();
+        return $category ? collect() : $this->catalogMainSections();
     }
 
     private function shouldShowProducts(Request $request, ?Category $category): bool
@@ -306,7 +346,7 @@ class ShopController extends Controller
         }
 
         if (! $category) {
-        return true;
+            return true;
         }
 
         return true;
@@ -317,7 +357,9 @@ class ShopController extends Controller
         $items = [];
 
         while ($category) {
-            array_unshift($items, $category);
+            if ($category->slug !== self::CATALOG_ROOT_SLUG) {
+                array_unshift($items, $category);
+            }
             $category = $category->parent;
         }
 

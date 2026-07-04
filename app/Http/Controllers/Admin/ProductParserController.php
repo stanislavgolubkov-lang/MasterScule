@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ParsePriceListJob;
 use App\Jobs\ParseSingleSkuJob;
 use App\Jobs\ParseSkuBatchJob;
 use App\Jobs\ProcessProductImagesJob;
@@ -14,6 +15,7 @@ use App\Models\ProductParserItem;
 use App\Services\ProductDraftService;
 use App\Services\ProductParserSettings;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use RuntimeException;
 use ZipArchive;
@@ -30,10 +32,78 @@ class ProductParserController extends Controller
 
         return view('admin.parser.index', [
             'batches' => ProductParserBatch::with('user')->withCount('items')->latest()->paginate(10),
+            'priceBatches' => ProductParserBatch::with('user')->withCount('items')->where('source_type', 'price_list')->latest()->limit(8)->get(),
+            'draftItems' => ProductParserItem::with(['createdProduct', 'category', 'batch'])
+                ->whereNotNull('created_product_id')
+                ->latest()
+                ->limit(8)
+                ->get(),
             'brands' => Brand::orderBy('name')->get(),
             'categories' => Category::orderBy('sort_order')->orderBy('name_ro')->get(),
             'settings' => $this->settings->all(),
         ]);
+    }
+
+    public function storePriceList(Request $request)
+    {
+        $this->guard('parser.import');
+        $this->ensureEnabled();
+
+        $maxFileSize = (int) $this->settings->get('max_file_size_kb', 20480);
+        $data = $request->validate([
+            'supplier_name' => ['nullable', 'string', 'max:160'],
+            'brand_default' => ['nullable', 'string', 'max:120'],
+            'category_default_id' => ['nullable', 'exists:categories,id'],
+            'price_file' => ['required', 'file', 'max:'.$maxFileSize],
+            'price_type' => ['required', Rule::in(['retail_price'])],
+            'import_mode' => ['required', Rule::in(['create_drafts', 'review_only'])],
+            'update_existing_products' => ['nullable', 'boolean'],
+            'add_photos_to_existing' => ['nullable', 'boolean'],
+            'replace_existing_photos' => ['nullable', 'boolean'],
+            'search_images' => ['nullable', 'boolean'],
+            'translate_descriptions' => ['nullable', 'boolean'],
+            'create_drafts_automatically' => ['nullable', 'boolean'],
+        ]);
+
+        $file = $request->file('price_file');
+        $extension = strtolower($file->getClientOriginalExtension());
+        abort_unless(in_array($extension, $this->settings->get('allowed_formats', ['xls', 'xlsx', 'csv']), true), 422);
+
+        $storedPath = $file->storeAs(
+            'parser/imports/'.now()->format('YmdHis'),
+            uniqid('price_', true).'.'.$extension,
+            'local'
+        );
+
+        $batch = ProductParserBatch::create([
+            'user_id' => $request->user()->id,
+            'title' => ($data['supplier_name'] ?: __('ui.parser_price_import')).' - '.$file->getClientOriginalName(),
+            'source_type' => 'price_list',
+            'supplier_name' => $data['supplier_name'] ?? null,
+            'file_name' => $file->getClientOriginalName(),
+            'file_path' => $storedPath,
+            'file_type' => $extension,
+            'brand_default' => $this->brandValue($data['brand_default'] ?? null),
+            'category_default_id' => $data['category_default_id'] ?? null,
+            'price_type' => 'retail_price',
+            'import_mode' => $data['import_mode'],
+            'status' => 'pending',
+            'options_json' => [
+                'update_existing_products' => $request->boolean('update_existing_products'),
+                'add_photos_to_existing' => $request->boolean('add_photos_to_existing', true),
+                'replace_existing_photos' => $request->boolean('replace_existing_photos'),
+                'search_images' => $request->boolean('search_images', true),
+                'process_images' => $request->boolean('search_images', true),
+                'translate_descriptions' => $request->boolean('translate_descriptions', true),
+                'create_drafts_automatically' => $data['import_mode'] === 'create_drafts' && $request->boolean('create_drafts_automatically', true),
+                'image_limit' => (int) $this->settings->get('max_images_per_product', 4),
+            ],
+        ]);
+        $batch->addLog('Price list uploaded by admin', ['file' => $file->getClientOriginalName()]);
+
+        ParsePriceListJob::dispatch($batch->id);
+
+        return redirect()->route('admin.parser.batches.show', $batch)->with('success', __('ui.parser_price_import_started'));
     }
 
     public function storeSingle(Request $request)
@@ -70,7 +140,7 @@ class ProductParserController extends Controller
             'status' => 'queued',
         ]);
 
-        dispatch_sync(new ParseSingleSkuJob($item->id));
+        ParseSingleSkuJob::dispatch($item->id);
 
         return redirect()->route('admin.parser.items.show', $item)->with('success', __('ui.parser_single_started'));
     }
@@ -141,6 +211,8 @@ class ProductParserController extends Controller
         $items = $batch->items()
             ->with(['category', 'existingProduct', 'createdProduct', 'imageAssets'])
             ->when(request('status'), fn ($query, $status) => $query->where('status', $status))
+            ->when(request('needs_category'), fn ($query) => $query->where('needs_category_review', true))
+            ->when(request('no_images'), fn ($query) => $query->where('needs_image_review', true))
             ->latest()
             ->paginate(30)
             ->withQueryString();
@@ -153,8 +225,55 @@ class ProductParserController extends Controller
         $this->guard('parser.view');
 
         return view('admin.parser.item', [
-            'item' => $item->load(['batch', 'category', 'sources', 'imageAssets', 'existingProduct.brand', 'createdProduct']),
+            'item' => $item->load(['batch', 'category', 'detectedCategory', 'sources', 'imageAssets', 'existingProduct.brand', 'createdProduct']),
+            'categories' => Category::orderBy('sort_order')->orderBy('name_ro')->get(),
         ]);
+    }
+
+    public function drafts()
+    {
+        $this->guard('parser.view');
+
+        $items = ProductParserItem::with(['batch', 'category', 'createdProduct.brand'])
+            ->whereNotNull('created_product_id')
+            ->latest()
+            ->paginate(30);
+
+        return view('admin.parser.drafts', compact('items'));
+    }
+
+    public function rules()
+    {
+        $this->guard('parser.category_rules');
+
+        return view('admin.parser.rules', [
+            'settings' => $this->settings->all(),
+            'categories' => Category::orderBy('sort_order')->orderBy('name_ro')->get(),
+        ]);
+    }
+
+    public function updateRules(Request $request)
+    {
+        $this->guard('parser.category_rules');
+
+        $data = $request->validate([
+            'min_confidence' => ['required', 'integer', 'min:0', 'max:100'],
+            'keywords' => ['nullable', 'string'],
+            'sku_prefixes' => ['nullable', 'string'],
+            'group_mapping' => ['nullable', 'string'],
+        ]);
+
+        $settings = $this->settings->all();
+        $settings['category_rules'] = [
+            'min_confidence' => (int) $data['min_confidence'],
+            'keywords' => $this->parseRuleLines($data['keywords'] ?? '', true),
+            'sku_prefixes' => $this->parseRuleLines($data['sku_prefixes'] ?? ''),
+            'group_mapping' => $this->parseRuleLines($data['group_mapping'] ?? ''),
+        ];
+
+        $this->settings->update($settings);
+
+        return back()->with('success', __('ui.parser_rules_saved'));
     }
 
     public function selectImages(Request $request, ProductParserItem $item)
@@ -188,7 +307,7 @@ class ProductParserController extends Controller
     {
         $this->guard('parser.approve');
 
-        dispatch_sync(new ProcessProductImagesJob($item->id));
+        ProcessProductImagesJob::dispatch($item->id);
 
         return redirect()->route('admin.parser.items.show', $item)->with('success', __('ui.parser_images_processed'));
     }
@@ -211,9 +330,17 @@ class ProductParserController extends Controller
         $this->guard('parser.approve');
 
         $data = $request->validate([
-            'action' => ['required', Rule::in(['add_photos', 'replace_photos', 'update_description'])],
+            'action' => ['required', Rule::in(['add_photos', 'replace_photos', 'update_description', 'update_price', 'update_stock', 'update_price_stock'])],
             'replace_confirmed' => ['nullable', 'boolean'],
         ]);
+
+        if (in_array($data['action'], ['update_price', 'update_price_stock'], true) && ! $this->settings->get('update_existing_prices', false)) {
+            return back()->withErrors(['update' => 'Updating existing prices is disabled in parser settings.']);
+        }
+
+        if (in_array($data['action'], ['update_stock', 'update_price_stock'], true) && ! $this->settings->get('update_existing_stock', false)) {
+            return back()->withErrors(['update' => 'Updating existing stock is disabled in parser settings.']);
+        }
 
         try {
             $product = $drafts->updateExisting($item->load(['imageAssets', 'existingProduct', 'batch']), $data['action'], $request->boolean('replace_confirmed'));
@@ -222,6 +349,53 @@ class ProductParserController extends Controller
         }
 
         return redirect()->route('admin.products', ['q' => $product->sku])->with('success', __('ui.parser_existing_updated'));
+    }
+
+    public function updateItemCategory(Request $request, ProductParserItem $item)
+    {
+        $this->guard('parser.approve');
+
+        $data = $request->validate([
+            'category_id' => ['required', 'exists:categories,id'],
+        ]);
+
+        $category = Category::findOrFail($data['category_id']);
+        $item->forceFill([
+            'category_id' => $category->id,
+            'detected_category_id' => $item->detected_category_id ?: $category->id,
+            'detected_category_path' => $item->detected_category_path ?: $category->display_name,
+            'needs_category_review' => false,
+            'status' => $item->existing_product_id ? 'existing_product_found' : 'ready_for_review',
+            'category_confidence_score' => max((int) $item->category_confidence_score, 100),
+            'category_detection_method' => 'admin',
+            'category_detection_notes_json' => array_merge($item->category_detection_notes_json ?: [], ['admin selected '.$category->slug]),
+        ])->save();
+        $item->batch?->addLog('Admin changed parser category', ['sku' => $item->sku, 'category_id' => $category->id]);
+
+        return back()->with('success', __('ui.parser_category_updated'));
+    }
+
+    public function publishDraft(ProductParserItem $item)
+    {
+        $this->guard('parser.approve');
+
+        $product = $item->createdProduct;
+        abort_unless($product, 404);
+
+        $product->forceFill([
+            'status' => 'published',
+            'approval_status' => 'approved',
+            'needs_review' => false,
+            'is_active' => true,
+        ])->save();
+
+        $item->forceFill([
+            'status' => 'approved',
+            'approval_status' => 'approved',
+        ])->save();
+        $item->batch?->addLog('Admin approved and published draft product', ['sku' => $item->sku, 'product_id' => $product->id]);
+
+        return redirect()->route('admin.products', ['q' => $product->sku])->with('success', __('ui.parser_draft_published'));
     }
 
     public function reject(ProductParserItem $item)
@@ -239,7 +413,7 @@ class ProductParserController extends Controller
         $this->guard('parser.run');
 
         $item->forceFill(['status' => 'queued', 'error_message' => null])->save();
-        dispatch_sync(new ParseSingleSkuJob($item->id));
+        ParseSingleSkuJob::dispatch($item->id);
 
         return redirect()->route('admin.parser.items.show', $item)->with('success', __('ui.parser_retry_started'));
     }
@@ -270,12 +444,19 @@ class ProductParserController extends Controller
 
         $data = $request->validate([
             'enabled' => ['nullable', 'boolean'],
-            'max_sku_per_batch' => ['required', 'integer', 'min:1', 'max:500'],
+            'max_sku_per_batch' => ['required', 'integer', 'min:1', 'max:3000'],
+            'max_file_size_kb' => ['required', 'integer', 'min:512', 'max:51200'],
             'max_images_per_product' => ['required', 'integer', 'min:1', 'max:4'],
             'min_confidence_score' => ['required', 'integer', 'min:0', 'max:100'],
             'image_size' => ['required', 'integer', 'min:600', 'max:2000'],
+            'preview_size' => ['required', 'integer', 'min:300', 'max:1200'],
             'thumb_size' => ['required', 'integer', 'min:150', 'max:800'],
             'webp_quality' => ['required', 'integer', 'min:70', 'max:95'],
+            'search_images' => ['nullable', 'boolean'],
+            'translate_descriptions' => ['nullable', 'boolean'],
+            'create_drafts_automatically' => ['nullable', 'boolean'],
+            'update_existing_prices' => ['nullable', 'boolean'],
+            'update_existing_stock' => ['nullable', 'boolean'],
             'allowed_domains' => ['nullable', 'string'],
             'blocked_domains' => ['nullable', 'string'],
             'watermark_enabled' => ['nullable', 'boolean'],
@@ -288,11 +469,18 @@ class ProductParserController extends Controller
         $this->settings->update([
             'enabled' => $request->boolean('enabled'),
             'max_sku_per_batch' => (int) $data['max_sku_per_batch'],
+            'max_file_size_kb' => (int) $data['max_file_size_kb'],
             'max_images_per_product' => (int) $data['max_images_per_product'],
             'min_confidence_score' => (int) $data['min_confidence_score'],
             'image_size' => (int) $data['image_size'],
+            'preview_size' => (int) $data['preview_size'],
             'thumb_size' => (int) $data['thumb_size'],
             'webp_quality' => (int) $data['webp_quality'],
+            'search_images' => $request->boolean('search_images'),
+            'translate_descriptions' => $request->boolean('translate_descriptions'),
+            'create_drafts_automatically' => $request->boolean('create_drafts_automatically'),
+            'update_existing_prices' => $request->boolean('update_existing_prices'),
+            'update_existing_stock' => $request->boolean('update_existing_stock'),
             'allowed_domains' => $this->lines($data['allowed_domains'] ?? ''),
             'blocked_domains' => $this->lines($data['blocked_domains'] ?? ''),
             'watermark' => [
@@ -448,6 +636,20 @@ class ProductParserController extends Controller
             ->map(fn ($line) => trim($line))
             ->filter()
             ->values()
+            ->all();
+    }
+
+    private function parseRuleLines(string $value, bool $multiValue = false): array
+    {
+        return collect(preg_split('/\r\n|\r|\n/', $value))
+            ->map(fn ($line) => trim($line))
+            ->filter(fn ($line) => $line !== '' && (str_contains($line, '=>') || str_contains($line, '=')))
+            ->mapWithKeys(function ($line) use ($multiValue) {
+                $separator = str_contains($line, '=>') ? '=>' : '=';
+                [$left, $right] = array_map('trim', explode($separator, $line, 2));
+
+                return [$left => $multiValue ? $this->lines(str_replace(',', "\n", $right)) : $right];
+            })
             ->all();
     }
 }

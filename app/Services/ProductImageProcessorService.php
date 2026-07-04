@@ -25,7 +25,7 @@ class ProductImageProcessorService
 
         foreach ($item->imageAssets()->where('is_selected', true)->orderByDesc('is_main')->orderBy('id')->get() as $index => $asset) {
             try {
-                $processed[] = $this->processAsset($asset, $item->sku, $index);
+                $processed[] = $this->processAsset($asset, $item, $index);
             } catch (Throwable $e) {
                 $asset->forceFill([
                     'status' => 'failed',
@@ -43,7 +43,7 @@ class ProductImageProcessorService
         $item->batch?->addLog('Processed parser images', ['sku' => $item->sku, 'count' => count($processed)]);
     }
 
-    private function processAsset(ProductParserImageAsset $asset, string $sku, int $index): string
+    private function processAsset(ProductParserImageAsset $asset, ProductParserItem $item, int $index): string
     {
         [$bytes, $mime] = $this->readSource($asset->source_url);
         $source = @imagecreatefromstring($bytes);
@@ -60,12 +60,12 @@ class ProductImageProcessorService
         $thumb = $this->squareCanvas($source, $thumbSize);
         imagedestroy($source);
 
-        $safeSku = Str::slug($sku) ?: 'sku';
-        $baseDir = 'parser/drafts/'.$safeSku;
+        $safeSku = Str::slug($item->sku) ?: 'sku';
+        $baseDir = 'parser/imports/'.($item->batch_id ?: 'manual').'/'.$safeSku;
         $suffix = $index === 0 ? 'main' : 'gallery-'.$index;
-        $originalPath = "{$baseDir}/{$safeSku}-original-{$index}.bin";
-        $processedPath = "{$baseDir}/{$safeSku}-{$suffix}.webp";
-        $thumbPath = "{$baseDir}/{$safeSku}-thumb-{$index}.webp";
+        $originalPath = "{$baseDir}/original/{$safeSku}-original-{$index}.bin";
+        $processedPath = "{$baseDir}/processed/{$safeSku}-{$suffix}.webp";
+        $thumbPath = "{$baseDir}/processed/{$safeSku}-thumb".($index === 0 ? '' : '-'.$index).".webp";
 
         Storage::disk('public')->put($originalPath, $bytes);
         Storage::disk('public')->put($processedPath, $this->encodeWebp($main, $quality));
@@ -86,6 +86,8 @@ class ProductImageProcessorService
             'status' => 'processed',
             'has_watermark' => $hasWatermark,
             'background_removed' => false,
+            'background_removal_failed' => false,
+            'needs_review' => false,
             'error_message' => null,
         ])->save();
 

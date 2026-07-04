@@ -14,7 +14,6 @@
         @if(config('features.compare'))
             <a href="{{ route('compare') }}">{{ __('ui.compared') }}</a>
         @endif
-        @if($user->isAdmin())<a href="{{ route('admin.dashboard') }}">{{ __('ui.admin') }}</a>@endif
         <form method="post" action="{{ route('logout') }}">@csrf<button>{{ __('ui.logout') }}</button></form>
     </aside>
     <div class="account-main">

@@ -1,15 +1,101 @@
 @extends('layouts.app')
 
 @section('content')
+@php($ru = app()->isLocale('ru'))
 <section class="shell page-title">
     <p>{{ __('ui.admin') }} / {{ __('ui.parser_products') }}</p>
     <h1>{{ __('ui.parser_products') }}</h1>
     <span>{{ __('ui.parser_intro') }}</span>
 </section>
 
+<section class="shell parser-tabs">
+    <a class="active" href="{{ route('admin.parser.index') }}">{{ $ru ? 'Импорт прайс-листа' : 'Import lista preturi' }}</a>
+    <a href="{{ route('admin.parser.drafts') }}">{{ $ru ? 'Черновики из прайсов' : 'Drafturi din liste' }}</a>
+    <a href="{{ route('admin.parser.rules') }}">{{ $ru ? 'Правила категорий' : 'Reguli categorii' }}</a>
+    <a href="#parser-settings">{{ $ru ? 'Настройки парсера' : 'Setari parser' }}</a>
+</section>
+
 <section class="shell parser-warning">
     <strong>{{ __('ui.parser_safety_title') }}</strong>
-    <span>{{ __('ui.parser_safety_text') }}</span>
+    <span>{{ __('ui.parser_safety_text') }} {{ $ru ? 'Перед публикацией проверьте право использования изображений и описаний.' : 'Inainte de publicare verificati dreptul de utilizare pentru imagini si descrieri.' }}</span>
+</section>
+
+<section class="shell parser-grid parser-grid-wide">
+    <article class="panel parser-card parser-card-primary">
+        <div class="admin-panel-head">
+            <span>{{ $ru ? 'Основной сценарий' : 'Scenariu principal' }}</span>
+            <h2>{{ $ru ? 'Импорт прайс-листа поставщика' : 'Import lista de preturi furnizor' }}</h2>
+        </div>
+        <form method="post" action="{{ route('admin.parser.price-list') }}" enctype="multipart/form-data" class="admin-product-form">
+            @csrf
+            <div class="admin-two-cols">
+                <label>{{ $ru ? 'Поставщик / источник' : 'Furnizor / sursa' }}
+                    <input name="supplier_name" value="{{ old('supplier_name') }}" placeholder="Tristool, King Tony, M7">
+                </label>
+                <label>{{ $ru ? 'Бренд по умолчанию' : 'Brand implicit' }}
+                    <select name="brand_default">
+                        <option value="auto">Auto</option>
+                        @foreach($brands as $brand)
+                            <option value="{{ $brand->name }}" @selected(old('brand_default') === $brand->name)>{{ $brand->name }}</option>
+                        @endforeach
+                    </select>
+                </label>
+            </div>
+            <div class="admin-two-cols">
+                <label>{{ $ru ? 'Категория по умолчанию' : 'Categorie implicita' }}
+                    <select name="category_default_id">
+                        <option value="">{{ __('ui.all_categories') }}</option>
+                        @foreach($categories as $category)
+                            <option value="{{ $category->id }}" @selected((string) old('category_default_id') === (string) $category->id)>{{ $category->display_name }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                <label>{{ $ru ? 'Файл прайса (.xls, .xlsx, .csv)' : 'Fisier lista (.xls, .xlsx, .csv)' }}
+                    <input type="file" name="price_file" required accept=".xls,.xlsx,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                </label>
+            </div>
+            <div class="admin-two-cols">
+                <label>{{ $ru ? 'Тип цены' : 'Tip pret' }}
+                    <select name="price_type">
+                        <option value="retail_price">{{ $ru ? 'ОтпускЦена = retail price' : 'Pret furnizor = retail price' }}</option>
+                    </select>
+                </label>
+                <label>{{ $ru ? 'Режим импорта' : 'Mod import' }}
+                    <select name="import_mode">
+                        <option value="create_drafts">{{ $ru ? 'Создавать черновики автоматически' : 'Creeaza drafturi automat' }}</option>
+                        <option value="review_only">{{ $ru ? 'Только анализ и проверка' : 'Doar analiza si verificare' }}</option>
+                    </select>
+                </label>
+            </div>
+            <div class="parser-check-grid">
+                <label><input type="checkbox" name="search_images" value="1" checked> {{ $ru ? 'Искать изображения' : 'Cauta imagini' }}</label>
+                <label><input type="checkbox" name="translate_descriptions" value="1" checked> {{ $ru ? 'Готовить RU/RO описания' : 'Pregateste descrieri RU/RO' }}</label>
+                <label><input type="checkbox" name="create_drafts_automatically" value="1" checked> {{ $ru ? 'Создавать draft, если категория уверенная' : 'Creeaza draft daca categoria este sigura' }}</label>
+                <label><input type="checkbox" name="add_photos_to_existing" value="1" checked> {{ $ru ? 'Готовить фото для существующих SKU' : 'Pregateste imagini pentru SKU existente' }}</label>
+                <label><input type="checkbox" name="update_existing_products" value="1"> {{ $ru ? 'Не менять существующие товары без ручного действия' : 'Nu modifica produse existente fara actiune manuala' }}</label>
+                <label><input type="checkbox" name="replace_existing_photos" value="1"> {{ $ru ? 'Разрешить замену фото только после подтверждения' : 'Permite inlocuirea fotografiilor doar dupa confirmare' }}</label>
+            </div>
+            <button class="btn" type="submit">{{ $ru ? 'Запустить импорт прайса' : 'Porneste importul listei' }}</button>
+        </form>
+    </article>
+
+    <article class="panel parser-card">
+        <div class="admin-panel-head">
+            <span>{{ $ru ? 'Последние draft' : 'Ultimele drafturi' }}</span>
+            <h2>{{ $ru ? 'Черновики из прайсов' : 'Drafturi din importuri' }}</h2>
+        </div>
+        <div class="parser-mini-list">
+            @forelse($draftItems as $item)
+                <a href="{{ route('admin.parser.items.show', $item) }}">
+                    <strong>{{ $item->sku }} · {{ $item->brand ?: 'Auto' }}</strong>
+                    <span>{{ $item->name_ru ?: $item->found_title }}</span>
+                    <small>{{ $item->createdProduct?->status }} / {{ $item->category?->display_name }}</small>
+                </a>
+            @empty
+                <p>{{ $ru ? 'Черновиков из прайсов пока нет.' : 'Nu exista drafturi din importuri.' }}</p>
+            @endforelse
+        </div>
+    </article>
 </section>
 
 <section class="shell parser-grid">
@@ -137,12 +223,16 @@
             <span>{{ __('ui.parser_settings') }}</span>
             <h2>{{ __('ui.parser_settings_title') }}</h2>
         </div>
-        <form method="post" action="{{ route('admin.parser.settings.update') }}" class="admin-product-form">
+        <form method="post" action="{{ route('admin.parser.settings.update') }}" class="admin-product-form" id="parser-settings">
             @csrf
             <label><input type="checkbox" name="enabled" value="1" @checked($settings['enabled'] ?? true)> {{ __('ui.parser_enabled') }}</label>
             <div class="admin-two-cols">
-                <label>{{ __('ui.parser_max_sku') }}<input type="number" name="max_sku_per_batch" value="{{ $settings['max_sku_per_batch'] ?? 100 }}" min="1" max="500"></label>
+                <label>{{ __('ui.parser_max_sku') }}<input type="number" name="max_sku_per_batch" value="{{ $settings['max_sku_per_batch'] ?? 3000 }}" min="1" max="3000"></label>
+                <label>{{ $ru ? 'Максимальный размер файла, KB' : 'Dimensiune maxima fisier, KB' }}<input type="number" name="max_file_size_kb" value="{{ $settings['max_file_size_kb'] ?? 20480 }}" min="512" max="51200"></label>
+            </div>
+            <div class="admin-two-cols">
                 <label>{{ __('ui.parser_max_images') }}<input type="number" name="max_images_per_product" value="{{ $settings['max_images_per_product'] ?? 4 }}" min="1" max="4"></label>
+                <label>Preview<input type="number" name="preview_size" value="{{ $settings['preview_size'] ?? 600 }}" min="300" max="1200"></label>
             </div>
             <div class="admin-three-cols">
                 <label>{{ __('ui.parser_min_confidence') }}<input type="number" name="min_confidence_score" value="{{ $settings['min_confidence_score'] ?? 70 }}" min="0" max="100"></label>
@@ -150,6 +240,13 @@
                 <label>{{ __('ui.parser_thumb_size') }}<input type="number" name="thumb_size" value="{{ $settings['thumb_size'] ?? 300 }}" min="150" max="800"></label>
             </div>
             <label>{{ __('ui.parser_webp_quality') }}<input type="number" name="webp_quality" value="{{ $settings['webp_quality'] ?? 88 }}" min="70" max="95"></label>
+            <div class="parser-check-grid">
+                <label><input type="checkbox" name="search_images" value="1" @checked($settings['search_images'] ?? true)> {{ $ru ? 'Искать изображения' : 'Cauta imagini' }}</label>
+                <label><input type="checkbox" name="translate_descriptions" value="1" @checked($settings['translate_descriptions'] ?? true)> {{ $ru ? 'Готовить RU/RO описания' : 'Pregateste descrieri RU/RO' }}</label>
+                <label><input type="checkbox" name="create_drafts_automatically" value="1" @checked($settings['create_drafts_automatically'] ?? true)> {{ $ru ? 'Создавать draft автоматически' : 'Creeaza draft automat' }}</label>
+                <label><input type="checkbox" name="update_existing_prices" value="1" @checked($settings['update_existing_prices'] ?? false)> {{ $ru ? 'Разрешить ручное обновление цен' : 'Permite actualizare manuala preturi' }}</label>
+                <label><input type="checkbox" name="update_existing_stock" value="1" @checked($settings['update_existing_stock'] ?? false)> {{ $ru ? 'Разрешить ручное обновление остатков' : 'Permite actualizare manuala stoc' }}</label>
+            </div>
             <label>{{ __('ui.parser_allowed_domains') }}<textarea name="allowed_domains">{{ implode("\n", $settings['allowed_domains'] ?? []) }}</textarea></label>
             <label>{{ __('ui.parser_blocked_domains') }}<textarea name="blocked_domains">{{ implode("\n", $settings['blocked_domains'] ?? []) }}</textarea></label>
             <details class="admin-details" open>

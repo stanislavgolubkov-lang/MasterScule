@@ -78,29 +78,27 @@
                         role="tabpanel"
                         aria-labelledby="mega-section-{{ $section->slug }}"
                     >
-                        <div class="mega-center-head">
-                            <span>{{ __('ui.choose_next_category') }}</span>
+                        <div class="mega-center-head clean">
                             <h3>{{ $section->display_name }}</h3>
+                            <p>{{ __('ui.menu_choose_subcategory') }}</p>
                         </div>
-                        <div class="mega-subcategory-grid">
+                        <div class="mega-text-columns">
                             @foreach($children as $child)
-                                <a class="mega-subcategory-link" href="{{ route('catalog', $child->slug) }}">
-                                    <img src="{{ $child->image ?: $section->image ?: '/images/products/product-placeholder-toolbox.svg' }}" alt="{{ $child->display_name }}">
-                                    <span>
-                                        <strong>{{ $child->display_name }}</strong>
-                                        @if($child->childrenRecursive->isNotEmpty())
-                                            <small>{{ $child->childrenRecursive->take(3)->pluck('display_name')->join(' · ') }}</small>
-                                        @endif
-                                    </span>
-                                </a>
-                                @foreach($child->childrenRecursive as $leaf)
-                                    <a class="mega-subcategory-link mega-subcategory-leaf" href="{{ route('catalog', $leaf->slug) }}">
-                                        <img src="{{ $leaf->image ?: $child->image ?: '/images/products/product-placeholder-toolbox.svg' }}" alt="{{ $leaf->display_name }}">
-                                        <span><strong>{{ $leaf->display_name }}</strong></span>
+                                <div class="mega-text-group">
+                                    <a class="mega-text-parent" href="{{ route('catalog', $child->slug) }}">
+                                        {{ $child->display_name }}
                                     </a>
-                                @endforeach
+                                    @foreach($child->childrenRecursive as $leaf)
+                                        <a class="mega-text-leaf" href="{{ route('catalog', $leaf->slug) }}">
+                                            {{ $leaf->display_name }}
+                                        </a>
+                                    @endforeach
+                                </div>
                             @endforeach
                         </div>
+                        <a class="mega-view-category" href="{{ route('catalog', $section->slug) }}">
+                            {{ __('ui.view_all_in_category') }}
+                        </a>
                     </div>
                 @endforeach
             </div>

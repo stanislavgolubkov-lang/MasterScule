@@ -50,12 +50,9 @@
                         <span aria-hidden="true">›</span>
                     </button>
                     <div id="mobile-catalog-panel-{{ $section->slug }}" class="mobile-catalog-sublist" hidden>
-                        <a class="mobile-catalog-view-all" href="{{ route('catalog', $section->slug) }}">{{ __('ui.view_catalog') }}</a>
+                        <a class="mobile-catalog-view-all" href="{{ route('catalog', $section->slug) }}">{{ __('ui.view_all_in_category') }}</a>
                         @foreach($section->childrenRecursive as $child)
                             <a href="{{ route('catalog', $child->slug) }}">{{ $child->display_name }}</a>
-                            @foreach($child->childrenRecursive as $leaf)
-                                <a class="mobile-catalog-leaf" href="{{ route('catalog', $leaf->slug) }}">{{ $leaf->display_name }}</a>
-                            @endforeach
                         @endforeach
                     </div>
                 </section>

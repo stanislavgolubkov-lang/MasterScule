@@ -13,8 +13,10 @@ use App\Models\Product;
 use App\Models\ProductParserBatch;
 use App\Models\ProductParserItem;
 use App\Models\User;
+use App\Services\ProductPriceListImportService;
 use Database\Seeders\CatalogStructureSeeder;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class ExampleTest extends TestCase
@@ -47,6 +49,46 @@ class ExampleTest extends TestCase
         $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
 
         $this->actingAs($admin)->get('/admin/users')->assertStatus(200)->assertSee('admin@masterscule.md');
+    }
+
+    public function test_admin_entry_shows_admin_login_for_guests(): void
+    {
+        $this
+            ->get('/admin')
+            ->assertOk()
+            ->assertSee('name="email"', false)
+            ->assertSee('/admin', false);
+    }
+
+    public function test_guest_admin_subroute_redirects_to_admin_entry(): void
+    {
+        $this->get('/admin/products')->assertRedirect(route('admin.dashboard'));
+    }
+
+    public function test_seeded_admin_can_login_only_at_admin_entry(): void
+    {
+        $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
+
+        $this
+            ->post('/admin', [
+                'email' => 'admin@masterscule.md',
+                'password' => 'MasterScule2026!',
+            ])
+            ->assertRedirect(route('admin.dashboard'));
+
+        $this->assertAuthenticatedAs($admin);
+    }
+
+    public function test_admin_cannot_login_through_customer_login(): void
+    {
+        $this
+            ->post('/login', [
+                'email' => 'admin@masterscule.md',
+                'password' => 'MasterScule2026!',
+            ])
+            ->assertRedirect(route('admin.dashboard'));
+
+        $this->assertGuest();
     }
 
     public function test_admin_can_manage_product_cards(): void
@@ -381,6 +423,110 @@ class ExampleTest extends TestCase
         $this->assertEquals(0, $product->price);
         $this->assertSame(0, $product->stock_quantity);
         $this->assertSame($product->id, $item->fresh()->created_product_id);
+    }
+
+    public function test_price_list_import_creates_draft_and_keeps_existing_sku_safe(): void
+    {
+        Storage::fake('local');
+
+        $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
+        $existing = Product::where('sku', '7596MR')->firstOrFail();
+        $initialExistingCount = Product::where('sku', '7596MR')->count();
+
+        $csv = implode("\n", [
+            'Артикул;Наименование;ОтпускЦена;Остаток',
+            ';M7 (Mighty Seven);;',
+            ';Авторемонтный Пневмоинструмент;;',
+            'NC-4233-TEST;Пистолет пневматический M7 NC-4233-TEST;799;5',
+            ';KING TONY;;',
+            ';Ручной инструмент;;',
+            '7596MR;Set de scule King Tony 7596MR;1999;12',
+        ]);
+        Storage::disk('local')->put('parser/test/price.csv', $csv);
+
+        $batch = ProductParserBatch::create([
+            'user_id' => $admin->id,
+            'title' => 'Price import test',
+            'source_type' => 'price_list',
+            'supplier_name' => 'Tristool',
+            'file_name' => 'price.csv',
+            'file_path' => 'parser/test/price.csv',
+            'file_type' => 'csv',
+            'price_type' => 'retail_price',
+            'import_mode' => 'create_drafts',
+            'status' => 'pending',
+            'options_json' => [
+                'search_images' => false,
+                'process_images' => false,
+                'create_drafts_automatically' => true,
+                'add_photos_to_existing' => false,
+            ],
+        ]);
+
+        app(ProductPriceListImportService::class)->import($batch);
+
+        $batch->refresh();
+        $this->assertSame('completed', $batch->status);
+        $this->assertSame(2, $batch->product_rows);
+        $this->assertSame(1, $batch->created_drafts);
+        $this->assertSame(1, $batch->updated_existing);
+
+        $item = ProductParserItem::where('sku', 'NC-4233-TEST')->firstOrFail();
+        $this->assertSame('M7 / Mighty Seven', $item->brand);
+        $this->assertEquals(799.00, (float) $item->parsed_price);
+        $this->assertSame(5, $item->parsed_stock);
+        $this->assertFalse((bool) $item->needs_category_review);
+        $this->assertSame('draft_created', $item->status);
+
+        $draft = Product::where('sku', 'NC-4233-TEST')->firstOrFail();
+        $this->assertSame('draft', $draft->status);
+        $this->assertFalse((bool) $draft->is_active);
+        $this->assertSame('pending_review', $draft->approval_status);
+        $this->assertEquals(799.00, (float) $draft->price);
+        $this->assertSame(5, $draft->stock_quantity);
+
+        $existingItem = ProductParserItem::where('sku', '7596MR')->firstOrFail();
+        $this->assertSame('existing_product_found', $existingItem->status);
+        $this->assertSame($existing->id, $existingItem->existing_product_id);
+        $this->assertSame($initialExistingCount, Product::where('sku', '7596MR')->count());
+        $this->assertDatabaseMissing('product_parser_items', ['sku' => 'M7 (Mighty Seven)']);
+    }
+
+    public function test_price_list_import_requires_category_review_for_weak_match(): void
+    {
+        Storage::fake('local');
+
+        $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
+        $csv = implode("\n", [
+            'Артикул;Наименование;ОтпускЦена;Остаток',
+            'ZZ-001;Деталь без понятной категории;100;3',
+        ]);
+        Storage::disk('local')->put('parser/test/weak.csv', $csv);
+
+        $batch = ProductParserBatch::create([
+            'user_id' => $admin->id,
+            'title' => 'Weak category import test',
+            'source_type' => 'price_list',
+            'file_name' => 'weak.csv',
+            'file_path' => 'parser/test/weak.csv',
+            'file_type' => 'csv',
+            'price_type' => 'retail_price',
+            'import_mode' => 'create_drafts',
+            'status' => 'pending',
+            'options_json' => [
+                'search_images' => false,
+                'process_images' => false,
+                'create_drafts_automatically' => true,
+            ],
+        ]);
+
+        app(ProductPriceListImportService::class)->import($batch);
+
+        $item = ProductParserItem::where('sku', 'ZZ-001')->firstOrFail();
+        $this->assertTrue((bool) $item->needs_category_review);
+        $this->assertSame('needs_category_review', $item->status);
+        $this->assertNull($item->created_product_id);
+        $this->assertDatabaseMissing('products', ['sku' => 'ZZ-001']);
     }
 
     public function test_catalog_structure_assigns_tools_by_work_type(): void

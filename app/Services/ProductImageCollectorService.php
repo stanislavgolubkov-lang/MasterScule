@@ -31,6 +31,7 @@ class ProductImageCollectorService
                 'status' => 'found',
                 'is_selected' => $index < $max,
                 'is_main' => $index === 0,
+                'needs_review' => $urls->count() < 3,
             ]);
         }
     }

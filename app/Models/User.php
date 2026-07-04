@@ -60,8 +60,8 @@ class User extends Authenticatable
             ->values();
 
         $permissions = [
-            'manager' => ['parser.view', 'parser.run', 'parser.approve'],
-            'content_manager' => ['parser.view', 'parser.run', 'parser.approve'],
+            'manager' => ['parser.view', 'parser.import', 'parser.run', 'parser.approve'],
+            'content_manager' => ['parser.view', 'parser.import', 'parser.run', 'parser.approve'],
         ];
 
         return $roleNames->contains(fn ($role) => in_array($permission, $permissions[$role] ?? [], true));

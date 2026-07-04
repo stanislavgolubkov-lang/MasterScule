@@ -12,7 +12,8 @@ class Product extends Model
         'description_ro', 'price', 'old_price', 'currency', 'stock_quantity', 'stock_status', 'status',
         'parser_confidence', 'parser_source_urls', 'main_image', 'gallery', 'attributes', 'package_contents',
         'rating', 'reviews_count', 'is_active', 'is_featured', 'is_bestseller', 'is_new', 'is_discounted',
-        'warranty', 'weight', 'dimensions', 'meta_title', 'meta_description',
+        'warranty', 'weight', 'dimensions', 'approval_status', 'needs_review', 'needs_stock_review',
+        'needs_image_review', 'source_import_batch_id', 'source_parser_item_id', 'meta_title', 'meta_description',
     ];
 
     protected $casts = [
@@ -28,6 +29,9 @@ class Product extends Model
         'is_bestseller' => 'boolean',
         'is_new' => 'boolean',
         'is_discounted' => 'boolean',
+        'needs_review' => 'boolean',
+        'needs_stock_review' => 'boolean',
+        'needs_image_review' => 'boolean',
     ];
 
     public function brand()

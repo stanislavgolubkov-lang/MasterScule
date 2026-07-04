@@ -4,11 +4,15 @@
 
 @section('content')
 @php
-    $sideItems = collect($sideNavigation['items'] ?? []);
-    $showSide = $sideItems->isNotEmpty() || ($showProducts ?? true);
+    $catalogTree = collect($catalogTree ?? []);
+    $subcategories = collect($subcategories ?? []);
+    $rootCatalogSections = collect($rootCatalogSections ?? $categoryTiles ?? []);
+    $showRootTiles = ! $activeCategory && ! isset($activeBrand) && $rootCatalogSections->isNotEmpty();
+    $showSide = $catalogTree->isNotEmpty() || ($showProducts ?? true);
     $selectedBrands = $selectedBrands ?? [];
     $viewMode = $viewMode ?? 'grid';
-    $drawerCategories = $sideItems->isNotEmpty() ? $sideItems : collect($categoryTiles ?? []);
+    $drawerCategories = $subcategories->isNotEmpty() ? $subcategories : $catalogTree;
+    $sidebarCurrentLabel = $activeCategory->display_name ?? __('ui.all_categories');
 @endphp
 
 <section class="shell page-title catalog-title">
@@ -23,12 +27,12 @@
     </p>
     <h1>{{ $activeCategory->display_name ?? $activeBrand->name ?? __('ui.catalog_products') }}</h1>
     <span>
-        @if(($categoryTiles ?? collect())->isNotEmpty() && ! ($showProducts ?? true))
-            {{ __('ui.choose_next_category') }}
+        @if(! $activeCategory && ! isset($activeBrand))
+            {{ __('ui.catalog_intro') }}
         @elseif($showProducts ?? true)
             {{ __('ui.products_count', ['count' => $products->total()]) }}
         @else
-            {{ __('ui.choose_category') }}
+            {{ __('ui.catalog_intro') }}
         @endif
     </span>
 </section>
@@ -58,28 +62,98 @@
 
 <section class="shell catalog-layout {{ $showSide ? '' : 'catalog-layout-wide' }}">
     @if($showSide)
-        <aside class="filters catalog-rail">
-            @if($sideItems->isNotEmpty())
-                <div class="catalog-level-nav">
-                    <span class="catalog-level-kicker">{{ __('ui.current_level') }}</span>
-                    <h3>{{ $sideNavigation['title'] ?: __('ui.catalog') }}</h3>
-                    @if(! empty($sideNavigation['back']))
-                        <a class="catalog-back-link" href="{{ route('catalog', $sideNavigation['back']->slug) }}">{{ __('ui.back_to', ['name' => $sideNavigation['back']->display_name]) }}</a>
-                    @elseif($activeCategory)
-                        <a class="catalog-back-link" href="{{ route('catalog') }}">{{ __('ui.back_to', ['name' => __('ui.catalog')]) }}</a>
-                    @endif
-                    <nav class="catalog-level-list" aria-label="{{ __('ui.same_level_categories') }}">
-                        @foreach($sideItems as $item)
-                            <a class="{{ optional($activeCategory)->id === $item->id ? 'active' : '' }}" href="{{ route('catalog', $item->slug) }}">
-                                {{ $item->display_name }}
-                            </a>
-                        @endforeach
+        <aside class="catalog-rail">
+            @if($catalogTree->isNotEmpty())
+                <section class="catalog-sidebar">
+                    <button
+                        type="button"
+                        class="catalog-sidebar__mobile-toggle"
+                        data-catalog-sidebar-mobile-toggle
+                        data-label-open="{{ __('ui.show_sections') }}"
+                        data-label-close="{{ __('ui.hide_sections') }}"
+                        aria-expanded="false"
+                        aria-controls="catalog-sidebar-nav"
+                        aria-label="{{ __('ui.show_sections') }}"
+                    >
+                        <span>{{ __('ui.catalog_sections') }}</span>
+                        <small>{{ $sidebarCurrentLabel }}</small>
+                        <span class="catalog-sidebar__mobile-chevron" aria-hidden="true"></span>
+                    </button>
+
+                    <nav id="catalog-sidebar-nav" class="catalog-sidebar__nav is-collapsed" aria-label="{{ __('ui.catalog_sections') }}">
+                        <h2 class="catalog-sidebar__title">{{ __('ui.catalog_sections') }}</h2>
+                        <ul class="catalog-sidebar__list">
+                            <li class="catalog-sidebar__item {{ ! $activeCategory && ! isset($activeBrand) ? 'is-active' : '' }}">
+                                <div class="catalog-sidebar__linkrow">
+                                    <a
+                                        class="catalog-sidebar__link"
+                                        href="{{ route('catalog') }}"
+                                        @if(! $activeCategory && ! isset($activeBrand)) aria-current="page" @endif
+                                    >
+                                        {{ __('ui.all_categories') }}
+                                    </a>
+                                </div>
+                            </li>
+
+                            @foreach($catalogTree as $section)
+                                @php
+                                    $sectionActive = in_array($section->id, $activePathIds ?? [], true);
+                                    $sectionExact = optional($activeCategory)->id === $section->id;
+                                    $sectionOpen = $sectionActive;
+                                    $sectionChildren = $section->childrenRecursive;
+                                    $sectionPanelId = 'catalog-sidebar-sublist-'.$section->id;
+                                @endphp
+                                <li class="catalog-sidebar__item {{ $sectionActive ? 'is-active' : '' }} {{ $sectionOpen ? 'is-open' : '' }}">
+                                    <div class="catalog-sidebar__linkrow">
+                                        <a
+                                            class="catalog-sidebar__link"
+                                            href="{{ route('catalog', $section->slug) }}"
+                                            @if($sectionExact) aria-current="page" @endif
+                                        >
+                                            {{ $section->display_name }}
+                                        </a>
+                                        @if($sectionChildren->isNotEmpty())
+                                            <button
+                                                type="button"
+                                                class="catalog-sidebar__chevron"
+                                                data-catalog-sidebar-toggle
+                                                aria-expanded="{{ $sectionOpen ? 'true' : 'false' }}"
+                                                aria-controls="{{ $sectionPanelId }}"
+                                                aria-label="{{ $section->display_name }}"
+                                            >
+                                                <span aria-hidden="true"></span>
+                                            </button>
+                                        @endif
+                                    </div>
+
+                                    @if($sectionChildren->isNotEmpty())
+                                        <ul id="{{ $sectionPanelId }}" class="catalog-sidebar__sublist" @if(! $sectionOpen) hidden @endif>
+                                            @foreach($sectionChildren as $child)
+                                                @php
+                                                    $childActive = in_array($child->id, $activePathIds ?? [], true);
+                                                    $childExact = optional($activeCategory)->id === $child->id;
+                                                @endphp
+                                                <li>
+                                                    <a
+                                                        class="catalog-sidebar__sublink {{ $childActive ? 'is-active' : '' }}"
+                                                        href="{{ route('catalog', $child->slug) }}"
+                                                        @if($childExact) aria-current="page" @endif
+                                                    >
+                                                        {{ $child->display_name }}
+                                                    </a>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    @endif
+                                </li>
+                            @endforeach
+                        </ul>
                     </nav>
-                </div>
+                </section>
             @endif
 
             @if($showProducts ?? true)
-                <div class="catalog-filter-box">
+                <div class="filters catalog-filter-box">
                     <h3>{{ __('ui.filters') }}</h3>
                     @include('shop.partials.catalog-filter-form')
                 </div>
@@ -88,13 +162,9 @@
     @endif
 
     <div class="catalog-main">
-        @if(($categoryTiles ?? collect())->isNotEmpty())
-            <div class="catalog-step-head">
-                <span>{{ __('ui.next_step') }}</span>
-                <h2>{{ $activeCategory ? __('ui.choose_next_category') : __('ui.choose_section') }}</h2>
-            </div>
+        @if($showRootTiles)
             <div class="catalog-category-grid">
-                @foreach($categoryTiles as $categoryTile)
+                @foreach($rootCatalogSections as $categoryTile)
                     <a class="catalog-category-card" href="{{ route('catalog', $categoryTile->slug) }}">
                         <span class="catalog-category-image">
                             <img src="{{ $categoryTile->image ?: '/images/products/product-placeholder-toolbox.svg' }}" alt="{{ $categoryTile->display_name }}">
@@ -103,6 +173,20 @@
                     </a>
                 @endforeach
             </div>
+        @endif
+
+        @if($subcategories->isNotEmpty())
+            <section class="subcategory-strip">
+                <div class="subcategory-strip-head">
+                    <h2>{{ __('ui.subcategories') }}</h2>
+                    <p>{{ __('ui.subcategories_help') }}</p>
+                </div>
+                <div class="subcategory-links">
+                    @foreach($subcategories as $subcategory)
+                        <a href="{{ route('catalog', $subcategory->slug) }}">{{ $subcategory->display_name }}</a>
+                    @endforeach
+                </div>
+            </section>
         @endif
 
         @if($showProducts ?? true)
@@ -145,7 +229,7 @@
                 @endforelse
             </div>
             {{ $products->links() }}
-        @elseif(($categoryTiles ?? collect())->isEmpty())
+        @elseif(! $showRootTiles && $subcategories->isEmpty())
             <div class="empty">{{ __('ui.choose_from_list') }}</div>
         @endif
     </div>

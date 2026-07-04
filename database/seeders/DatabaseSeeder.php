@@ -29,7 +29,7 @@ class DatabaseSeeder extends Seeder
             'company_name' => config('store.legal_name'),
             'country' => config('store.country'),
             'city' => 'Chișinău',
-            'password' => Hash::make('password'),
+            'password' => Hash::make('MasterScule2026!'),
         ]);
         $admin->roles()->attach($adminRole);
 
@@ -177,4 +177,3 @@ class DatabaseSeeder extends Seeder
         }, $items);
     }
 }
-

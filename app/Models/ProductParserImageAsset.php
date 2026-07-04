@@ -21,6 +21,8 @@ class ProductParserImageAsset extends Model
         'is_main',
         'has_watermark',
         'background_removed',
+        'needs_review',
+        'background_removal_failed',
         'error_message',
     ];
 
@@ -29,6 +31,8 @@ class ProductParserImageAsset extends Model
         'is_main' => 'boolean',
         'has_watermark' => 'boolean',
         'background_removed' => 'boolean',
+        'needs_review' => 'boolean',
+        'background_removal_failed' => 'boolean',
     ];
 
     public function item()

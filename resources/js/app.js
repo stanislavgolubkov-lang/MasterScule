@@ -7,6 +7,8 @@ document.addEventListener('click', (event) => {
     const catalogOpen = event.target.closest('[data-catalog-open]');
     const catalogClose = event.target.closest('[data-catalog-close]');
     const mobileCatalogToggle = event.target.closest('[data-mobile-catalog-toggle]');
+    const catalogSidebarMobileToggle = event.target.closest('[data-catalog-sidebar-mobile-toggle]');
+    const catalogSidebarToggle = event.target.closest('[data-catalog-sidebar-toggle]');
     const heroDot = event.target.closest('[data-hero-dot]');
 
     if (openTarget) {
@@ -61,6 +63,14 @@ document.addEventListener('click', (event) => {
 
     if (mobileCatalogToggle) {
         toggleMobileCatalogSection(mobileCatalogToggle);
+    }
+
+    if (catalogSidebarMobileToggle) {
+        toggleCatalogSidebarNav(catalogSidebarMobileToggle);
+    }
+
+    if (catalogSidebarToggle) {
+        toggleCatalogSidebarSection(catalogSidebarToggle);
     }
 
     if (heroDot) {
@@ -261,6 +271,38 @@ function toggleMobileCatalogSection(button) {
     button.setAttribute('aria-expanded', expanded ? 'false' : 'true');
     panel.hidden = expanded;
     button.closest('.mobile-catalog-item')?.classList.toggle('open', !expanded);
+}
+
+function toggleCatalogSidebarNav(button) {
+    const expanded = button.getAttribute('aria-expanded') === 'true';
+    const panel = document.getElementById(button.getAttribute('aria-controls'));
+    if (!panel) return;
+
+    const nextExpanded = !expanded;
+    button.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
+    button.setAttribute('aria-label', nextExpanded ? button.dataset.labelClose : button.dataset.labelOpen);
+    panel.classList.toggle('is-collapsed', !nextExpanded);
+}
+
+function toggleCatalogSidebarSection(button) {
+    const expanded = button.getAttribute('aria-expanded') === 'true';
+    const panel = document.getElementById(button.getAttribute('aria-controls'));
+    if (!panel) return;
+
+    if (!expanded) {
+        button.closest('.catalog-sidebar__list')?.querySelectorAll('[data-catalog-sidebar-toggle]').forEach((otherButton) => {
+            if (otherButton === button) return;
+
+            const otherPanel = document.getElementById(otherButton.getAttribute('aria-controls'));
+            otherButton.setAttribute('aria-expanded', 'false');
+            if (otherPanel) otherPanel.hidden = true;
+            otherButton.closest('.catalog-sidebar__item')?.classList.remove('is-open');
+        });
+    }
+
+    button.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+    panel.hidden = expanded;
+    button.closest('.catalog-sidebar__item')?.classList.toggle('is-open', !expanded);
 }
 
 window.addEventListener('resize', () => {
