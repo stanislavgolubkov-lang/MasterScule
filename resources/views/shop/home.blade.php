@@ -19,14 +19,14 @@
         ];
 
     $taskCards = [
-        ['key' => 'garage', 'href' => route('catalog', 'instrument-manual'), 'tone' => 'blue'],
-        ['key' => 'service', 'href' => route('catalog', 'echipamente-pentru-service'), 'tone' => 'dark'],
-        ['key' => 'tires', 'href' => route('catalog', 'vulcanizare'), 'tone' => 'orange'],
-        ['key' => 'pneumatic', 'href' => route('catalog', 'scule-pneumatice'), 'tone' => 'orange'],
-        ['key' => 'brakes', 'href' => route('catalog', 'scule-motor-frane-suspensie'), 'tone' => 'blue'],
-        ['key' => 'engine', 'href' => route('catalog', 'scule-motor-frane-suspensie'), 'tone' => 'dark'],
-        ['key' => 'electric', 'href' => route('catalog', 'instrumente-electromontaj'), 'tone' => 'blue'],
-        ['key' => 'workshop', 'href' => route('catalog', 'dulapuri-si-organizare'), 'tone' => 'dark'],
+        ['key' => 'garage', 'href' => route('catalog', 'instrument-manual'), 'tone' => 'blue', 'image' => '/images/tasks/for-garage.png'],
+        ['key' => 'service', 'href' => route('catalog', 'echipamente-pentru-service'), 'tone' => 'dark', 'image' => '/images/tasks/for-service.png'],
+        ['key' => 'tires', 'href' => route('catalog', 'vulcanizare'), 'tone' => 'orange', 'image' => '/images/tasks/for-tires.png'],
+        ['key' => 'pneumatic', 'href' => route('catalog', 'scule-pneumatice'), 'tone' => 'orange', 'image' => '/images/tasks/for-pneumatic.png'],
+        ['key' => 'brakes', 'href' => route('catalog', 'scule-motor-frane-suspensie'), 'tone' => 'blue', 'image' => '/images/tasks/for-brakes-suspension.png'],
+        ['key' => 'engine', 'href' => route('catalog', 'scule-motor-frane-suspensie'), 'tone' => 'dark', 'image' => '/images/tasks/for-engine.png'],
+        ['key' => 'electric', 'href' => route('catalog', 'instrumente-electromontaj'), 'tone' => 'blue', 'image' => '/images/tasks/for-electric.png'],
+        ['key' => 'workshop', 'href' => route('catalog', 'dulapuri-si-organizare'), 'tone' => 'dark', 'image' => '/images/tasks/for-workshop.png'],
     ];
 @endphp
 
@@ -103,7 +103,9 @@
     <div class="task-grid">
         @foreach($taskCards as $task)
             <a class="task-card task-card-{{ $task['tone'] }}" href="{{ $task['href'] }}">
-                <span class="task-card-icon task-icon-{{ $task['key'] }}" aria-hidden="true"></span>
+                <span class="task-card-icon task-icon-{{ $task['key'] }}" aria-hidden="true">
+                    <img src="{{ $task['image'] }}" alt="">
+                </span>
                 <strong>{{ __('ui.task_'.$task['key']) }}</strong>
                 <small>{{ __('ui.task_'.$task['key'].'_text') }}</small>
             </a>
@@ -123,10 +125,4 @@
     @endforeach
 </section>
 
-<section class="shell brands-row">
-    <h2>{{ __('ui.popular_brands') }}</h2>
-    @foreach($brands as $brand)
-        <a href="{{ route('brand.show', $brand->slug) }}"><img src="{{ $brand->logo }}" alt="{{ $brand->name }}"></a>
-    @endforeach
-</section>
 @endsection

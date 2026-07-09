@@ -47,6 +47,7 @@ class CheckoutController extends Controller
             'payment_method' => ['required', 'in:cash_on_delivery,bank_transfer,online_card'],
             'shipping_method' => ['required', 'in:courier,pickup,individual'],
             'comment' => ['nullable', 'string', 'max:1000'],
+            'terms_accepted' => ['accepted'],
         ]);
 
         $order = DB::transaction(function () use ($cart, $data) {
@@ -140,16 +141,16 @@ class CheckoutController extends Controller
             return response()->json(['ok' => false], 404);
         }
 
-        $status = strtolower((string) ($request->input('status') ?: $request->input('paymentStatus')));
+        $status = $this->callbackStatus($request);
         $providerTransactionId = $this->callbackProviderTransactionId($request, (string) $reference);
 
         $result = DB::transaction(function () use ($order, $request, $status, $providerTransactionId) {
             $lockedOrder = Order::with('items')->whereKey($order->id)->lockForUpdate()->firstOrFail();
             $transaction = $this->recordPaymentCallback($lockedOrder, $request, $providerTransactionId);
-            $transactionStatus = 'callback_received';
+            $transactionStatus = $status;
             $stockCaptured = false;
 
-            if (in_array($status, ['paid', 'success', 'approved', 'completed'], true)) {
+            if ($status === 'completed') {
                 $stockCaptured = $lockedOrder->stock_deducted_at !== null || $this->deductOrderStock($lockedOrder);
 
                 $lockedOrder->forceFill([
@@ -158,8 +159,8 @@ class CheckoutController extends Controller
                     'paid_at' => $lockedOrder->paid_at ?: now(),
                 ])->save();
 
-                $transactionStatus = $stockCaptured ? 'paid' : 'paid_stock_conflict';
-            } elseif (in_array($status, ['failed', 'declined', 'canceled', 'cancelled'], true)) {
+                $transactionStatus = $stockCaptured ? 'completed' : 'failed';
+            } elseif (in_array($status, ['failed', 'cancelled'], true)) {
                 if ($lockedOrder->payment_status !== 'paid') {
                     $lockedOrder->forceFill([
                         'payment_status' => 'failed',
@@ -167,7 +168,11 @@ class CheckoutController extends Controller
                     ])->save();
                 }
 
-                $transactionStatus = 'failed';
+            } elseif ($status === 'refunded') {
+                $lockedOrder->forceFill([
+                    'payment_status' => 'refunded',
+                    'status' => 'canceled',
+                ])->save();
             }
 
             $transaction->forceFill([
@@ -190,16 +195,41 @@ class CheckoutController extends Controller
             ?: $request->input('order_number')
             ?: $request->input('paymentReference')
             ?: $request->input('payment_reference')
+            ?: $request->input('checkoutId')
+            ?: $request->input('checkout_id')
             ?: $request->input('id')
             ?: $request->input('payId')
             ?: $request->input('paymentId')
             ?: $request->input('transactionId');
     }
 
+    private function callbackStatus(Request $request): string
+    {
+        $rawStatus = strtolower(str_replace([' ', '-', '_'], '', (string) (
+            $request->input('status')
+            ?: $request->input('paymentStatus')
+            ?: $request->input('checkoutStatus')
+            ?: $request->input('result.status')
+            ?: 'waiting_for_payment'
+        )));
+
+        return match ($rawStatus) {
+            'completed', 'paid', 'success', 'approved', 'captured' => 'completed',
+            'created', 'new' => 'created',
+            'waitingforpayment', 'pending', 'processing' => 'waiting_for_payment',
+            'cancelled', 'canceled', 'declined' => 'cancelled',
+            'refunded', 'refund' => 'refunded',
+            'failed', 'error', 'expired' => 'failed',
+            default => 'waiting_for_payment',
+        };
+    }
+
     private function callbackProviderTransactionId(Request $request, string $fallback): string
     {
         return (string) (
-            $request->input('transactionId')
+            $request->input('checkoutId')
+            ?: $request->input('checkout_id')
+            ?: $request->input('transactionId')
             ?: $request->input('paymentId')
             ?: $request->input('payId')
             ?: $request->input('id')
@@ -229,7 +259,7 @@ class CheckoutController extends Controller
                 'order_id' => $order->id,
                 'provider' => 'maib',
                 'provider_transaction_id' => $providerTransactionId,
-                'status' => 'callback_received',
+                'status' => 'waiting_for_payment',
                 'amount' => $order->total,
                 'currency' => $order->currency,
             ]);

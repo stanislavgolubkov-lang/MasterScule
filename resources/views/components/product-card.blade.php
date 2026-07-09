@@ -1,11 +1,12 @@
 <article class="product-card">
+    @php($productImage = $product->main_image ?: '/images/products/product-placeholder-toolbox.svg')
     <div class="product-image">
         @if($product->badge)<span class="badge {{ $product->is_discounted ? 'orange-badge' : '' }}">{{ $product->badge }}</span>@endif
         @if(config('features.wishlist'))
             <button type="button" class="favorite-btn" aria-label="{{ __('ui.favorites') }}">&#9825;</button>
         @endif
         <a href="{{ route('product.show', $product->slug) }}" class="product-image-link">
-            <img src="{{ $product->main_image }}" alt="{{ $product->display_name }}">
+            <img src="{{ $productImage }}" alt="{{ $product->display_name }}" onerror="this.onerror=null;this.src='/images/products/product-placeholder-toolbox.svg';">
         </a>
     </div>
     <div class="product-body">

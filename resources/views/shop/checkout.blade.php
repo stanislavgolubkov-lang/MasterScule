@@ -20,6 +20,7 @@
         <label>{{ __('ui.shipping_method') }}<select name="shipping_method"><option value="courier">{{ __('ui.courier') }}</option><option value="pickup">{{ __('ui.pickup') }}</option><option value="individual">{{ __('ui.individual_delivery') }}</option></select></label>
         <label>{{ __('ui.payment_method') }}<select name="payment_method"><option value="cash_on_delivery">{{ __('ui.cash_on_delivery') }}</option><option value="bank_transfer">{{ __('ui.bank_transfer') }}</option><option value="online_card">{{ __('ui.online_card') }}</option></select></label>
         <label>{{ __('ui.comment') }}<textarea name="comment">{{ old('comment') }}</textarea></label>
+        <label class="terms-check"><input type="checkbox" name="terms_accepted" value="1" required @checked(old('terms_accepted'))> <span>{{ __('ui.terms_accept') }}</span></label>
         <button class="btn orange-btn">{{ __('ui.send_order') }}</button>
     </form>
     <aside class="summary">

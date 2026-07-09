@@ -4,11 +4,22 @@ use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductImage;
+use App\Models\ProductParserBatch;
+use App\Models\ProductParserImageAsset;
+use App\Models\ProductParserItem;
+use App\Models\ProductParserSource;
+use App\Services\ProductImageCollectorService;
+use App\Services\ProductImageProcessorService;
+use App\Services\ProductCatalogClassifier;
+use App\Services\ProductFallbackImageService;
+use App\Services\ProductPriceListImportService;
+use App\Services\ProductSearchService;
 use App\Support\ProductLocalizer;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 Artisan::command('inspire', function () {
@@ -49,7 +60,7 @@ Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}',
 
         while ($current < $target['limit'] && $page <= 160) {
             $url = 'https://tristool.md/ru/search?searchword='.rawurlencode($target['query']).'&p='.$page;
-            $response = Http::withHeaders([
+            $response = tristoolHttp()->withHeaders([
                 'User-Agent' => 'MasterScule.md product import/1.0',
                 'Accept' => 'text/html,application/xhtml+xml',
             ])->timeout(30)->retry(2, 500)->get($url);
@@ -86,8 +97,8 @@ Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}',
                 $seen[$sku] = true;
                 $category = categoryForTrisToolTitle($title, $target['brand_slug']);
                 $image = downloadTrisToolImage($card['image'], $sku, $target['brand_slug']);
-                $price = convertMdlToRon($card['price']);
-                $oldPrice = (($current + $page) % 7 === 0) ? round($price * 1.12) : null;
+                $price = parseMdlPrice($card['price']);
+                $oldPrice = (($current + $page) % 7 === 0) ? round($price * 1.12, 2) : null;
 
                 $displayName = ProductLocalizer::name($title, $target['brand_name'], $sku);
 
@@ -126,6 +137,7 @@ Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}',
                     ['product_id' => $product->id, 'path' => $image],
                     ['alt' => $product->name, 'sort_order' => 1]
                 );
+                $product->syncCategoryLinks([$category->id], $category->id, 'tristool_import');
 
                 $current++;
                 $totalImported++;
@@ -142,6 +154,66 @@ Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}',
 
     $this->info("Done. Imported {$totalImported} new products.");
 })->purpose('Import King Tony and M7 products from TrisTool.md');
+
+Artisan::command('masterscule:repair-tristool-mdl-prices {--dry-run} {--limit=0}', function () {
+    $dryRun = (bool) $this->option('dry-run');
+    $limit = max(0, (int) $this->option('limit'));
+    $query = Product::where('main_image', 'like', '%/tristool/%')
+        ->whereNull('source_parser_item_id')
+        ->orderBy('id');
+
+    if ($limit > 0) {
+        $query->limit($limit);
+    }
+
+    $checked = 0;
+    $changed = 0;
+    $notFound = 0;
+
+    foreach ($query->get() as $product) {
+        $checked++;
+        $card = findTrisToolCardBySku($product->sku);
+
+        if (! $card) {
+            $notFound++;
+            $this->warn("{$product->sku}: price not found on TrisTool.");
+            continue;
+        }
+
+        $newPrice = parseMdlPrice($card['price']);
+        $newOldPrice = $product->old_price !== null ? round($newPrice * 1.12, 2) : null;
+        $oldPrice = (float) $product->price;
+
+        if (abs($oldPrice - $newPrice) < 0.01 && $product->currency === 'MDL') {
+            continue;
+        }
+
+        $changed++;
+        $this->line(sprintf(
+            '%s: %s MDL -> %s MDL%s',
+            $product->sku,
+            number_format($oldPrice, 2, '.', ''),
+            number_format($newPrice, 2, '.', ''),
+            $dryRun ? ' [dry-run]' : ''
+        ));
+
+        if (! $dryRun) {
+            $product->forceFill([
+                'price' => $newPrice,
+                'old_price' => $newOldPrice,
+                'currency' => 'MDL',
+                'is_discounted' => $newOldPrice !== null,
+            ])->save();
+        }
+    }
+
+    $this->info(json_encode([
+        'checked' => $checked,
+        'changed' => $changed,
+        'not_found' => $notFound,
+        'dry_run' => $dryRun,
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+})->purpose('Repair legacy TrisTool imports that stored RON-converted values as MDL');
 
 Artisan::command('masterscule:localize-products', function () {
     $updated = 0;
@@ -164,8 +236,736 @@ Artisan::command('masterscule:localize-products', function () {
         }
     });
 
-    $this->info("Updated {$updated} product texts in Romanian.");
-})->purpose('Normalize product display text to Romanian');
+    $this->info("Updated {$updated} product texts in RO.");
+})->purpose('Normalize product display text for RO locale');
+
+Artisan::command('masterscule:audit-product-categories {--apply} {--limit=0}', function (ProductCatalogClassifier $classifier) {
+    $apply = (bool) $this->option('apply');
+    $limit = max(0, (int) $this->option('limit'));
+    $query = Product::with(['brand', 'category', 'categories'])->orderBy('id');
+
+    if ($limit > 0) {
+        $query->limit($limit);
+    }
+
+    $stats = [
+        'checked' => 0,
+        'changed_primary' => 0,
+        'linked_multi_category' => 0,
+        'missing_primary_category' => 0,
+        'by_primary_slug' => [],
+        'apply' => $apply,
+    ];
+    $samples = [];
+
+    foreach ($query->get() as $product) {
+        $stats['checked']++;
+        $result = $classifier->classify($product);
+        $primary = Category::where('slug', $result['primary_slug'])->first();
+
+        if (! $primary) {
+            $stats['missing_primary_category']++;
+            continue;
+        }
+
+        $categoryIds = $classifier->idsForSlugs($result['category_slugs']);
+        $confidenceById = $classifier->confidenceById($result['scores']);
+        $oldSlug = $product->category?->slug;
+
+        $stats['by_primary_slug'][$primary->slug] = ($stats['by_primary_slug'][$primary->slug] ?? 0) + 1;
+
+        if ($oldSlug !== $primary->slug) {
+            $stats['changed_primary']++;
+
+            if (count($samples) < 30) {
+                $samples[] = [
+                    'sku' => $product->sku,
+                    'brand' => $product->brand?->name,
+                    'old' => $oldSlug,
+                    'new' => $primary->slug,
+                    'name' => $product->name,
+                ];
+            }
+        }
+
+        if (count($categoryIds) > 1) {
+            $stats['linked_multi_category']++;
+        }
+
+        if ($apply) {
+            $product->forceFill(['category_id' => $primary->id])->save();
+            $product->syncCategoryLinks($categoryIds, $primary->id, 'catalog_audit', $confidenceById);
+        }
+    }
+
+    arsort($stats['by_primary_slug']);
+
+    $this->info(json_encode([
+        'stats' => $stats,
+        'primary_change_samples' => $samples,
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+})->purpose('Audit and optionally reassign products into primary and additional catalog categories');
+
+Artisan::command('masterscule:audit-product-images {--apply} {--limit=0} {--min=3} {--quiet-output} {--fallback-only}', function (
+    ProductSearchService $search,
+    ProductImageCollectorService $collector,
+    ProductImageProcessorService $processor,
+    ProductFallbackImageService $fallbackImages
+) {
+    $apply = (bool) $this->option('apply');
+    $limit = max(0, (int) $this->option('limit'));
+    $minImages = max(2, min(4, (int) $this->option('min')));
+    $quiet = (bool) $this->option('quiet-output');
+    $fallbackOnly = (bool) $this->option('fallback-only');
+    $isUsableImage = fn (?string $path): bool => filled($path) && ! Str::contains((string) $path, ['placeholder', 'product-placeholder']);
+    $galleryFor = function (Product $product) use ($isUsableImage): array {
+        return collect([$product->main_image])
+            ->merge($product->gallery ?: [])
+            ->merge($product->images->pluck('path'))
+            ->filter(fn ($path) => $isUsableImage($path))
+            ->unique()
+            ->values()
+            ->all();
+    };
+    $syncImages = function (Product $product, array $images): void {
+        ProductImage::where('product_id', $product->id)->delete();
+
+        foreach (array_values(array_filter($images)) as $index => $path) {
+            ProductImage::create([
+                'product_id' => $product->id,
+                'path' => $path,
+                'alt' => $product->display_name,
+                'sort_order' => $index + 1,
+            ]);
+        }
+    };
+
+    $query = Product::with(['brand', 'images'])
+        ->orderBy('id');
+
+    if ($limit > 0) {
+        $query->limit($limit);
+    }
+
+    $batch = $apply
+        ? ProductParserBatch::firstOrCreate(
+            ['title' => 'CLI catalog image audit enrichment'],
+            ['source_type' => 'batch', 'sku_count' => 0, 'status' => 'running', 'options_json' => ['image_limit' => 4]]
+        )
+        : null;
+
+    $stats = [
+        'checked' => 0,
+        'already_ok' => 0,
+        'needs_images' => 0,
+        'searched' => 0,
+        'updated' => 0,
+        'still_below_min' => 0,
+        'not_found' => 0,
+        'fallback_added' => 0,
+        'errors' => 0,
+        'apply' => $apply,
+        'min_images' => $minImages,
+        'fallback_only' => $fallbackOnly,
+    ];
+    $samples = [];
+
+    foreach ($query->get() as $product) {
+        $stats['checked']++;
+        $currentImages = $galleryFor($product);
+
+        if (count($currentImages) >= $minImages) {
+            $stats['already_ok']++;
+
+            if ($apply && $product->images->count() < count($currentImages)) {
+                $syncImages($product, $currentImages);
+            }
+
+            continue;
+        }
+
+        $stats['needs_images']++;
+
+        if (! $apply) {
+            if (count($samples) < 30) {
+                $samples[] = [
+                    'sku' => $product->sku,
+                    'brand' => $product->brand?->name,
+                    'images' => count($currentImages),
+                    'name' => $product->name,
+                ];
+            }
+
+            continue;
+        }
+
+        if ($fallbackOnly) {
+            $nextImages = collect($currentImages)
+                ->merge($fallbackImages->generate($product, $minImages - count($currentImages)))
+                ->filter(fn ($path) => $isUsableImage($path))
+                ->unique()
+                ->take($minImages)
+                ->values()
+                ->all();
+            $stats['fallback_added'] += max(0, count($nextImages) - count($currentImages));
+
+            if ($nextImages !== []) {
+                $product->forceFill([
+                    'main_image' => $nextImages[0],
+                    'gallery' => $nextImages,
+                    'needs_image_review' => true,
+                ])->save();
+                $syncImages($product, $nextImages);
+                $stats['updated']++;
+            }
+
+            if (count($nextImages) < $minImages) {
+                $stats['still_below_min']++;
+            }
+
+            if (! $quiet) {
+                $this->line("Images {$product->sku}: ".count($currentImages).' -> '.count($nextImages).' (fallback-only)');
+            }
+
+            continue;
+        }
+
+        try {
+            $stats['searched']++;
+            $item = ProductParserItem::firstOrCreate(
+                ['batch_id' => $batch->id, 'sku' => $product->sku],
+                [
+                    'brand' => $product->brand?->name,
+                    'category_id' => $product->category_id,
+                    'status' => 'queued',
+                    'name_ru' => $product->name,
+                    'name_ro' => $product->name_ro,
+                    'description_ru' => $product->description,
+                    'description_ro' => $product->description_ro,
+                    'found_title' => $product->display_name,
+                    'found_description' => $product->description ?: $product->short_description,
+                    'existing_product_id' => $product->id,
+                ]
+            );
+
+            $result = $search->search($product->sku, $product->brand?->name, 'auto', false);
+            $images = array_values(array_unique(array_filter($result['images'] ?? [])));
+
+            if (count($images) < $minImages) {
+                $looseQuery = trim(implode(' ', array_filter([$product->sku, $product->name, $product->name_ro])));
+                $loose = $search->searchLoose($looseQuery, $product->brand?->name);
+                $images = array_values(array_unique(array_filter(array_merge($images, $loose['images'] ?? []))));
+            }
+
+            if ($images === []) {
+                $stats['not_found']++;
+                $nextImages = collect($currentImages)
+                    ->merge($fallbackImages->generate($product, $minImages - count($currentImages)))
+                    ->filter(fn ($path) => $isUsableImage($path))
+                    ->unique()
+                    ->take($minImages)
+                    ->values()
+                    ->all();
+                $stats['fallback_added'] += max(0, count($nextImages) - count($currentImages));
+
+                if ($nextImages !== []) {
+                    $product->forceFill([
+                        'main_image' => $nextImages[0],
+                        'gallery' => $nextImages,
+                        'needs_image_review' => true,
+                    ])->save();
+                    $syncImages($product, $nextImages);
+                    $stats['updated']++;
+                } else {
+                    $product->forceFill(['needs_image_review' => true])->save();
+                }
+
+                if (count($nextImages) < $minImages) {
+                    $stats['still_below_min']++;
+                }
+
+                if (! $quiet) {
+                    $this->line("Images {$product->sku}: ".count($currentImages).' -> '.count($nextImages).' (fallback)');
+                }
+
+                continue;
+            }
+
+            $collector->collect($item, $images);
+            $processor->processSelected($item->fresh(['imageAssets', 'batch']));
+
+            $processed = $item->fresh()->processed_images_json ?: [];
+            $nextImages = collect($currentImages)
+                ->merge($processed)
+                ->filter(fn ($path) => $isUsableImage($path))
+                ->unique()
+                ->take(max($minImages, 3))
+                ->values()
+                ->all();
+            $fallbackUsed = false;
+
+            if (count($nextImages) < $minImages) {
+                $fallbacks = $fallbackImages->generate($product, $minImages - count($nextImages));
+                $nextImages = collect($nextImages)
+                    ->merge($fallbacks)
+                    ->filter(fn ($path) => $isUsableImage($path))
+                    ->unique()
+                    ->take($minImages)
+                    ->values()
+                    ->all();
+                $fallbackUsed = $fallbacks !== [];
+                $stats['fallback_added'] += count($fallbacks);
+            }
+
+            if ($nextImages !== []) {
+                $product->forceFill([
+                    'main_image' => $nextImages[0],
+                    'gallery' => $nextImages,
+                    'needs_image_review' => $fallbackUsed || count($nextImages) < $minImages,
+                    'parser_confidence' => $result['confidence'] ?? $product->parser_confidence,
+                    'parser_source_urls' => array_values(array_unique(array_merge(
+                        $product->parser_source_urls ?: [],
+                        $result['source_urls'] ?? []
+                    ))),
+                ])->save();
+                $syncImages($product, $nextImages);
+                $stats['updated']++;
+            }
+
+            if (count($nextImages) < $minImages) {
+                $stats['still_below_min']++;
+            }
+
+            if (! $quiet) {
+                $this->line("Images {$product->sku}: ".count($currentImages).' -> '.count($nextImages));
+            }
+        } catch (Throwable $e) {
+            $stats['errors']++;
+            $product->forceFill(['needs_image_review' => true])->save();
+
+            if (count($samples) < 30) {
+                $samples[] = [
+                    'sku' => $product->sku,
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+    }
+
+    $this->info(json_encode([
+        'stats' => $stats,
+        'samples' => $samples,
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+})->purpose('Audit and optionally enrich product cards until each has 2-3 usable images');
+
+Artisan::command('masterscule:parser-price-dry-run {paths*}', function () {
+    $importer = app(ProductPriceListImportService::class);
+
+    foreach ($this->argument('paths') as $path) {
+        if (! is_file($path)) {
+            $this->error("File not found: {$path}");
+            continue;
+        }
+
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $safeName = Str::slug(pathinfo($path, PATHINFO_FILENAME)) ?: uniqid('price_', true);
+        $storedPath = 'parser/imports/cli-dry-run/'.now()->format('YmdHis').'/'.$safeName.'.'.$extension;
+        Storage::disk('local')->put($storedPath, file_get_contents($path));
+
+        $batch = ProductParserBatch::create([
+            'title' => 'CLI dry-run - '.basename($path),
+            'source_type' => 'price_list',
+            'supplier_name' => 'CLI price import',
+            'file_name' => basename($path),
+            'file_path' => $storedPath,
+            'file_type' => $extension,
+            'price_type' => 'retail_price',
+            'import_mode' => 'dry_run',
+            'status' => 'pending',
+            'options_json' => [
+                'search_images' => false,
+                'process_images' => false,
+                'create_drafts_automatically' => false,
+                'add_photos_to_existing' => false,
+            ],
+        ]);
+
+        $importer->dryRun($batch);
+        $batch->refresh();
+
+        $this->line(sprintf(
+            '%s | status=%s | rows=%d | products=%d | service=%d | new=%d | existing=%d | no_category=%d | no_stock=%d | errors=%d',
+            $batch->file_name,
+            $batch->status,
+            $batch->total_rows,
+            $batch->product_rows,
+            $batch->service_rows,
+            $batch->new_sku_count,
+            $batch->existing_sku_count,
+            $batch->rows_without_category,
+            $batch->rows_without_stock,
+            $batch->error_rows
+        ));
+    }
+})->purpose('Run safe dry-run reports for supplier price lists');
+
+Artisan::command('masterscule:parser-price-test-import {paths*} {--limit=20} {--no-images}', function () {
+    $importer = app(ProductPriceListImportService::class);
+    $limit = max(1, (int) $this->option('limit'));
+    $searchImages = ! (bool) $this->option('no-images');
+
+    foreach ($this->argument('paths') as $path) {
+        if (! is_file($path)) {
+            $this->error("File not found: {$path}");
+            continue;
+        }
+
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $safeName = Str::slug(pathinfo($path, PATHINFO_FILENAME)) ?: uniqid('price_', true);
+        $storedPath = 'parser/imports/cli-test-import/'.now()->format('YmdHis').'/'.$safeName.'.'.$extension;
+        Storage::disk('local')->put($storedPath, file_get_contents($path));
+
+        $batch = ProductParserBatch::create([
+            'title' => 'CLI test import - '.basename($path),
+            'source_type' => 'price_list',
+            'supplier_name' => 'CLI price import',
+            'file_name' => basename($path),
+            'file_path' => $storedPath,
+            'file_type' => $extension,
+            'price_type' => 'retail_price',
+            'import_mode' => 'create_drafts',
+            'status' => 'pending',
+            'options_json' => [
+                'row_limit' => $limit,
+                'search_images' => $searchImages,
+                'process_images' => $searchImages,
+                'create_drafts_automatically' => true,
+                'add_photos_to_existing' => false,
+            ],
+        ]);
+
+        $importer->import($batch);
+        $batch->refresh();
+
+        $this->line(sprintf(
+            '%s | status=%s | products=%d | drafts=%d | existing=%d | no_category=%d | no_images=%d | errors=%d',
+            $batch->file_name,
+            $batch->status,
+            $batch->product_rows,
+            $batch->created_drafts,
+            $batch->existing_sku_count,
+            $batch->rows_without_category,
+            $batch->items()->where('needs_image_review', true)->count(),
+            $batch->error_rows
+        ));
+    }
+})->purpose('Create a limited draft test import from supplier price lists');
+
+Artisan::command('masterscule:parser-price-import {paths*} {--no-images}', function () {
+    $importer = app(ProductPriceListImportService::class);
+    $searchImages = ! (bool) $this->option('no-images');
+
+    foreach ($this->argument('paths') as $path) {
+        if (! is_file($path)) {
+            $this->error("File not found: {$path}");
+            continue;
+        }
+
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $safeName = Str::slug(pathinfo($path, PATHINFO_FILENAME)) ?: uniqid('price_', true);
+        $storedPath = 'parser/imports/cli-full-import/'.now()->format('YmdHis').'/'.$safeName.'.'.$extension;
+        Storage::disk('local')->put($storedPath, file_get_contents($path));
+
+        $batch = ProductParserBatch::create([
+            'title' => 'CLI full import - '.basename($path),
+            'source_type' => 'price_list',
+            'supplier_name' => 'CLI price import',
+            'file_name' => basename($path),
+            'file_path' => $storedPath,
+            'file_type' => $extension,
+            'price_type' => 'retail_price',
+            'import_mode' => 'create_drafts',
+            'status' => 'pending',
+            'options_json' => [
+                'search_images' => $searchImages,
+                'process_images' => $searchImages,
+                'create_drafts_automatically' => true,
+                'add_photos_to_existing' => false,
+                'replace_existing_photos' => false,
+            ],
+        ]);
+
+        $importer->import($batch);
+        $batch->refresh();
+
+        $this->line(sprintf(
+            'batch=%d | %s | status=%s | products=%d | drafts=%d | existing=%d | no_price=%d | no_category=%d | errors=%d',
+            $batch->id,
+            $batch->file_name,
+            $batch->status,
+            $batch->product_rows,
+            $batch->created_drafts,
+            $batch->existing_sku_count,
+            $batch->rows_without_price,
+            $batch->rows_without_category,
+            $batch->error_rows
+        ));
+    }
+})->purpose('Import complete supplier price lists without row limits');
+
+Artisan::command('masterscule:sync-price-list-prices {--batch=*} {--dry-run}', function () {
+    $batchIds = array_values(array_filter(array_map('intval', (array) $this->option('batch'))));
+    $dryRun = (bool) $this->option('dry-run');
+    $items = ProductParserItem::query()
+        ->with(['createdProduct', 'existingProduct'])
+        ->whereNotNull('parsed_price')
+        ->whereHas('batch', function ($query) {
+            $query->where('source_type', 'price_list')
+                ->where('import_mode', 'create_drafts')
+                ->whereIn('status', ['completed', 'completed_with_errors']);
+        })
+        ->when($batchIds !== [], fn ($query) => $query->whereIn('batch_id', $batchIds))
+        ->orderBy('batch_id')
+        ->orderBy('id')
+        ->get();
+
+    $checked = 0;
+    $updated = 0;
+    $missingProducts = 0;
+    $missingPrices = 0;
+
+    foreach ($items as $item) {
+        $checked++;
+        $price = $item->parsed_price !== null ? round((float) $item->parsed_price, 2) : null;
+
+        if ($price === null) {
+            $missingPrices++;
+            continue;
+        }
+
+        $product = $item->createdProduct
+            ?: $item->existingProduct
+            ?: Product::where('sku', $item->sku)->first();
+
+        if (! $product) {
+            $missingProducts++;
+            continue;
+        }
+
+        $oldPrice = round((float) $product->price, 2);
+        $needsUpdate = abs($oldPrice - $price) >= 0.01
+            || $product->currency !== 'MDL'
+            || $product->old_price !== null
+            || (bool) $product->is_discounted;
+
+        if (! $needsUpdate) {
+            continue;
+        }
+
+        $updated++;
+
+        if (! $dryRun) {
+            $product->forceFill([
+                'price' => $price,
+                'old_price' => null,
+                'currency' => 'MDL',
+                'is_discounted' => false,
+            ])->save();
+        }
+    }
+
+    $this->info(json_encode([
+        'checked_items' => $checked,
+        'updated_products' => $updated,
+        'missing_products' => $missingProducts,
+        'missing_prices' => $missingPrices,
+        'batch_filter' => $batchIds,
+        'dry_run' => $dryRun,
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+})->purpose('Synchronize product prices exactly from imported retail price-list rows');
+
+Artisan::command('masterscule:publish-parser-drafts {--limit=0} {--skip-images} {--quiet-output}', function (
+    ProductSearchService $search,
+    ProductImageCollectorService $collector,
+    ProductImageProcessorService $processor
+) {
+    $limit = max(0, (int) $this->option('limit'));
+    $skipImages = (bool) $this->option('skip-images');
+    $quietOutput = (bool) $this->option('quiet-output');
+    $query = Product::with(['brand', 'images'])
+        ->where(function ($builder) {
+            $builder
+                ->where('status', 'draft')
+                ->orWhere('is_active', false)
+                ->orWhereNull('description')
+                ->orWhere('description', '')
+                ->orWhereNull('description_ro')
+                ->orWhere('description_ro', '')
+                ->orWhereNull('main_image')
+                ->orWhere('main_image', '')
+                ->orWhere('main_image', 'like', '%placeholder%');
+        })
+        ->orderBy('id');
+
+    if ($limit > 0) {
+        $query->limit($limit);
+    }
+
+    $products = $query->get();
+    $stats = [
+        'checked' => 0,
+        'images_found' => 0,
+        'images_processed' => 0,
+        'descriptions_filled' => 0,
+        'published' => 0,
+        'image_review' => 0,
+        'errors' => 0,
+    ];
+
+    foreach ($products as $product) {
+        $stats['checked']++;
+        $item = $product->source_parser_item_id
+            ? ProductParserItem::with(['batch', 'imageAssets'])->find($product->source_parser_item_id)
+            : null;
+
+        if (! $item) {
+            $batch = ProductParserBatch::firstOrCreate(
+                ['title' => 'CLI publish enrichment'],
+                [
+                    'source_type' => 'batch',
+                    'sku_count' => 0,
+                    'status' => 'running',
+                    'options_json' => ['image_limit' => 4],
+                ]
+            );
+            $item = ProductParserItem::firstOrCreate(
+                ['batch_id' => $batch->id, 'sku' => $product->sku],
+                [
+                    'brand' => $product->brand?->name,
+                    'category_id' => $product->category_id,
+                    'status' => 'queued',
+                    'name_ru' => $product->name,
+                    'name_ro' => $product->name_ro,
+                    'description_ru' => $product->description,
+                    'description_ro' => $product->description_ro,
+                    'found_title' => $product->display_name,
+                    'found_description' => $product->description ?: $product->short_description,
+                ]
+            );
+        }
+
+        $hasUsableImage = $product->main_image && ! str_contains($product->main_image, 'placeholder');
+
+        if (! $skipImages && ! $hasUsableImage) {
+            try {
+                $result = $search->search($product->sku, $product->brand?->name, 'auto', false);
+                if (empty($result['images'] ?? [])) {
+                    $looseQuery = trim(implode(' ', array_filter([
+                        $product->sku,
+                        $product->name,
+                        $product->name_ro,
+                    ])));
+                    $looseResult = $search->searchLoose($looseQuery, $product->brand?->name);
+                    $result = ! empty($looseResult['images'] ?? [])
+                        ? $looseResult
+                        : array_merge($result, [
+                            'sources' => array_merge($result['sources'] ?? [], $looseResult['sources'] ?? []),
+                            'source_urls' => array_values(array_unique(array_merge($result['source_urls'] ?? [], $looseResult['source_urls'] ?? []))),
+                        ]);
+                }
+                ProductParserSource::where('parser_item_id', $item->id)->delete();
+
+                foreach ($result['sources'] ?? [] as $source) {
+                    ProductParserSource::create([
+                        'parser_item_id' => $item->id,
+                        'url' => $source['url'],
+                        'domain' => $source['domain'] ?? parse_url($source['url'], PHP_URL_HOST),
+                        'title' => $source['title'] ?? null,
+                        'snippet' => $source['snippet'] ?? null,
+                        'source_type' => $source['source_type'] ?? 'generic',
+                        'confidence_score' => $source['confidence_score'] ?? null,
+                        'raw_data_json' => $source['raw_data_json'] ?? null,
+                    ]);
+                }
+
+                $images = array_values(array_filter($result['images'] ?? []));
+                if ($images) {
+                    $stats['images_found']++;
+                    $collector->collect($item, $images);
+                    $processor->processSelected($item->fresh(['imageAssets', 'batch']));
+                    $processed = $item->fresh()->processed_images_json ?: [];
+
+                    if ($processed) {
+                        $product->forceFill([
+                            'main_image' => $processed[0],
+                            'gallery' => $processed,
+                            'parser_confidence' => $result['confidence'] ?? $product->parser_confidence,
+                            'parser_source_urls' => $result['source_urls'] ?? $product->parser_source_urls,
+                            'needs_image_review' => count($processed) < 3,
+                        ])->save();
+
+                        ProductImage::where('product_id', $product->id)->delete();
+                        foreach ($processed as $index => $path) {
+                            ProductImage::create([
+                                'product_id' => $product->id,
+                                'path' => $path,
+                                'alt' => $product->display_name,
+                                'sort_order' => $index + 1,
+                            ]);
+                        }
+
+                        $stats['images_processed']++;
+                    }
+                }
+
+                if (! $images) {
+                    $product->forceFill(['needs_image_review' => true])->save();
+                }
+            } catch (Throwable $e) {
+                $stats['errors']++;
+                $product->forceFill(['needs_image_review' => true])->save();
+                $item->forceFill([
+                    'status' => 'failed',
+                    'error_message' => trim(($item->error_message ? $item->error_message.' ' : '').'Publish enrichment image search failed: '.$e->getMessage()),
+                ])->save();
+            }
+        }
+
+        $description = $product->description ?: $item->description_ru ?: $item->found_description ?: $product->short_description;
+        $descriptionRo = $product->description_ro ?: $item->description_ro ?: $item->found_description ?: $description;
+
+        if (! $product->description || ! $product->description_ro) {
+            $stats['descriptions_filled']++;
+        }
+
+        $product->forceFill([
+            'description' => $description,
+            'description_ro' => $descriptionRo,
+            'status' => 'published',
+            'approval_status' => 'approved',
+            'is_active' => true,
+            'needs_review' => false,
+            'needs_image_review' => ! ($product->fresh()->main_image && ! str_contains((string) $product->fresh()->main_image, 'placeholder')),
+        ])->save();
+
+        $item->forceFill([
+            'status' => 'approved',
+            'approval_status' => 'approved',
+            'created_product_id' => $product->id,
+        ])->save();
+
+        if ($product->fresh()->needs_image_review) {
+            $stats['image_review']++;
+        }
+
+        $stats['published']++;
+        if (! $quietOutput) {
+            $this->line("Published {$product->sku} ({$stats['checked']}/{$products->count()})");
+        }
+    }
+
+    $this->info(json_encode($stats, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+})->purpose('Enrich parser drafts with images/descriptions and publish them after explicit approval');
 
 if (! function_exists('ensureTrisToolBrand')) {
 function ensureTrisToolBrand(string $name, string $slug): Brand
@@ -237,11 +1037,11 @@ function uniqueProductSlug(string $title, string $sku): string
     return $slug;
 }
 
-function convertMdlToRon(string $price): float
+function parseMdlPrice(string $price): float
 {
     $mdl = (float) str_replace([' ', ','], ['', '.'], $price);
 
-    return max(19, round($mdl * 0.23));
+    return round($mdl, 2);
 }
 
 function categoryForTrisToolTitle(string $title, string $brandSlug): Category
@@ -272,7 +1072,7 @@ function downloadTrisToolImage(string $source, string $sku, string $brandSlug): 
     File::ensureDirectoryExists(dirname($path));
 
     if (! File::exists($path)) {
-        $response = Http::timeout(30)->retry(2, 500)->get(tristoolAssetUrl($source));
+        $response = tristoolHttp()->timeout(30)->retry(2, 500)->get(tristoolAssetUrl($source));
 
         if ($response->successful() && $response->body() !== '') {
             File::put($path, $response->body());
@@ -280,6 +1080,61 @@ function downloadTrisToolImage(string $source, string $sku, string $brandSlug): 
     }
 
     return File::exists($path) ? $relative : '/images/products/product-placeholder-toolbox.svg';
+}
+
+function findTrisToolCardBySku(string $sku): ?array
+{
+    $searchUrl = 'https://tristool.md/ru/search?searchword='.rawurlencode($sku);
+    $response = tristoolHttp()->withHeaders([
+        'User-Agent' => 'MasterScule.md price repair/1.0',
+        'Accept' => 'text/html,application/xhtml+xml',
+    ])->timeout(20)->retry(1, 350)->get($searchUrl);
+
+    if (! $response->successful()) {
+        return null;
+    }
+
+    $needle = normalizeTrisToolSku($sku);
+
+    return collect(parseTrisToolCards($response->body()))
+        ->map(fn ($card) => $card + ['sku_score' => tristoolSkuScore($needle, normalizeTrisToolSku($card['sku']))])
+        ->filter(fn ($card) => $card['sku_score'] > 0)
+        ->sortByDesc('sku_score')
+        ->first();
+}
+
+function normalizeTrisToolSku(string $sku): string
+{
+    return Str::lower(preg_replace('/[^a-z0-9]/i', '', $sku));
+}
+
+function tristoolSkuScore(string $needle, string $found): int
+{
+    if ($needle === '' || $found === '') {
+        return 0;
+    }
+
+    if ($needle === $found) {
+        return 100;
+    }
+
+    if ('sc'.$needle === $found) {
+        return 94;
+    }
+
+    if (Str::endsWith($found, $needle)) {
+        return 88;
+    }
+
+    return Str::contains($found, $needle) ? 82 : 0;
+}
+
+function tristoolHttp(): \Illuminate\Http\Client\PendingRequest
+{
+    return Http::withOptions([
+        'proxy' => '',
+        'verify' => false,
+    ]);
 }
 
 function tristoolAssetUrl(string $source): string

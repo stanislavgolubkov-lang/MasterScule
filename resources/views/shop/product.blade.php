@@ -22,9 +22,6 @@
         </form>
         <div class="service-row"><span>{{ __('ui.fast_delivery') }}</span><span>{{ __('ui.warranty') }}</span><span>{{ __('ui.consultation') }}</span></div>
         <x-consultation-cta compact class="product-consultation" />
-        @if(config('features.ai_assistant'))
-            <a class="ai-link" href="{{ route('ai.advisor') }}" data-ai-open data-ai-prefill="{{ app()->isLocale('ru') ? 'Подскажи, подходит ли товар '.$product->display_name.' с кодом '.$product->sku.' для моей задачи.' : 'Spune-mi daca produsul '.$product->display_name.' cu SKU '.$product->sku.' este potrivit pentru lucrarea mea.' }}">{{ __('ui.ask_ai_about_product') }}</a>
-        @endif
     </div>
 </section>
 

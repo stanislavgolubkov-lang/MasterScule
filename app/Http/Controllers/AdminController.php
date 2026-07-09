@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Order;
+use App\Models\PaymentTransaction;
 use App\Models\Product;
 use App\Models\ProductImage;
+use App\Models\ProductParserItem;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
@@ -30,6 +32,19 @@ class AdminController extends Controller
             'brandsCount' => Brand::count(),
             'categoriesCount' => Category::count(),
             'usersCount' => User::count(),
+            'ordersToday' => Order::whereDate('created_at', today())->count(),
+            'ordersWeek' => Order::where('created_at', '>=', now()->subDays(7))->count(),
+            'ordersTotal' => (float) Order::sum('total'),
+            'draftProducts' => Product::where('status', 'draft')->count(),
+            'productsWithoutPhoto' => Product::where(function ($query) {
+                $query
+                    ->whereNull('main_image')
+                    ->orWhere('main_image', '')
+                    ->orWhere('main_image', 'like', '%placeholder%');
+            })->count(),
+            'productsWithoutCategory' => Product::whereNull('category_id')->count(),
+            'parserErrors' => ProductParserItem::whereIn('status', ['failed', 'not_found'])->count(),
+            'pendingPayments' => PaymentTransaction::whereIn('status', ['created', 'waiting_for_payment'])->count(),
             'orders' => Order::latest()->limit(8)->get(),
         ]);
     }
@@ -38,7 +53,7 @@ class AdminController extends Controller
     {
         $this->guard();
 
-        $products = Product::with(['brand', 'category'])
+        $products = Product::with(['brand', 'category', 'categories'])
             ->when(request('q'), function ($query, $search) {
                 $query->where(function ($inner) use ($search) {
                     $inner
@@ -48,7 +63,11 @@ class AdminController extends Controller
                 });
             })
             ->when(request('brand_id'), fn ($query, $brandId) => $query->where('brand_id', $brandId))
-            ->when(request('category_id'), fn ($query, $categoryId) => $query->where('category_id', $categoryId))
+            ->when(request('category_id'), function ($query, $categoryId) {
+                $category = Category::with('childrenRecursive')->find($categoryId);
+
+                $query->inCatalogCategories($category?->descendantsAndSelfIds() ?: [(int) $categoryId]);
+            })
             ->latest()
             ->paginate(12)
             ->withQueryString();
@@ -66,6 +85,7 @@ class AdminController extends Controller
         $data = $this->productData($request);
         $product = Product::create($data);
         $this->syncProductImages($product);
+        $this->syncProductCategories($request, $product);
 
         return back()->with('success', app()->isLocale('ru') ? 'Товар создан.' : 'Produsul a fost creat.');
     }
@@ -76,6 +96,7 @@ class AdminController extends Controller
 
         $product->forceFill($this->productData($request, $product))->save();
         $this->syncProductImages($product);
+        $this->syncProductCategories($request, $product);
 
         return back()->with('success', app()->isLocale('ru') ? 'Товар обновлен.' : 'Produsul a fost actualizat.');
     }
@@ -97,6 +118,15 @@ class AdminController extends Controller
             'orders' => Order::with(['user', 'items', 'paymentTransactions'])->latest()->paginate(20),
             'orderStatuses' => ['new', 'pending_payment', 'processing', 'paid', 'stock_conflict', 'payment_failed', 'shipped', 'completed', 'canceled'],
             'paymentStatuses' => ['pending', 'paid', 'failed', 'refunded'],
+        ]);
+    }
+
+    public function payments()
+    {
+        $this->guard();
+
+        return view('admin.payments', [
+            'transactions' => PaymentTransaction::with('order')->latest()->paginate(25),
         ]);
     }
 
@@ -129,6 +159,8 @@ class AdminController extends Controller
         $data = $request->validate([
             'brand_id' => ['required', 'exists:brands,id'],
             'category_id' => ['required', 'exists:categories,id'],
+            'category_ids' => ['nullable', 'array'],
+            'category_ids.*' => ['integer', 'exists:categories,id'],
             'name' => ['required', 'string', 'max:255'],
             'name_ro' => ['nullable', 'string', 'max:255'],
             'sku' => ['required', 'string', 'max:80', Rule::unique('products', 'sku')->ignore($product)],
@@ -242,6 +274,19 @@ class AdminController extends Controller
                 'sort_order' => $index + 1,
             ]);
         }
+    }
+
+    private function syncProductCategories(Request $request, Product $product): void
+    {
+        $categoryIds = collect((array) $request->input('category_ids', []))
+            ->push($product->category_id)
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $product->syncCategoryLinks($categoryIds, (int) $product->category_id, 'admin');
     }
 
     private function uniqueProductSlug(string $name, string $sku, ?Product $product = null): string

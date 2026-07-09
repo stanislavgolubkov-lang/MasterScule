@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.admin')
 
 @section('content')
 <section class="shell page-title">
@@ -61,6 +61,14 @@
                     </select>
                 </label>
             </div>
+
+            <label>{{ app()->isLocale('ru') ? 'Дополнительные категории' : 'Categorii suplimentare' }}
+                <select name="category_ids[]" multiple size="6">
+                    @foreach($categories as $category)
+                        <option value="{{ $category->id }}" @selected(in_array($category->id, (array) old('category_ids', [])))>{{ $category->display_name }}</option>
+                    @endforeach
+                </select>
+            </label>
 
             <div class="admin-two-cols">
                 <label>{{ __('ui.price_ron') }}
@@ -175,6 +183,8 @@
                     $galleryText = implode("\n", array_filter($product->gallery ?? []));
                     $attributesText = collect($product->attributes ?? [])->map(fn ($value, $key) => $key.': '.$value)->implode("\n");
                     $packageText = implode("\n", array_filter($product->package_contents ?? []));
+                    $linkedCategoryIds = $product->categories->pluck('id')->push($product->category_id)->filter()->unique()->values()->all();
+                    $categoryList = $product->categories->pluck('display_name')->push($product->category?->display_name)->filter()->unique()->implode(', ');
                 @endphp
 
                 <article class="admin-product-card">
@@ -186,7 +196,7 @@
                             <img src="{{ $product->main_image }}" alt="{{ $product->display_name }}">
                             <div>
                                 <strong>{{ $product->sku }}</strong>
-                                <span>{{ $product->brand?->name }} / {{ $product->category?->display_name }}</span>
+                                <span>{{ $product->brand?->name }} / {{ $categoryList ?: $product->category?->display_name }}</span>
                             </div>
                             @if($product->badge)
                                 <em>{{ $product->badge }}</em>
@@ -258,6 +268,13 @@
                                 </label>
                                 <label>{{ app()->isLocale('ru') ? 'Галерея изображений' : 'Galerie imagini' }}
                                     <textarea name="gallery_text">{{ old('gallery_text', $galleryText) }}</textarea>
+                                </label>
+                                <label>{{ app()->isLocale('ru') ? 'Дополнительные категории' : 'Categorii suplimentare' }}
+                                    <select name="category_ids[]" multiple size="6">
+                                        @foreach($categories as $category)
+                                            <option value="{{ $category->id }}" @selected(in_array($category->id, (array) old('category_ids', $linkedCategoryIds)))>{{ $category->display_name }}</option>
+                                        @endforeach
+                                    </select>
                                 </label>
                                 <div class="admin-three-cols">
                                     <label>{{ __('ui.warranty') }}

@@ -53,6 +53,7 @@ Route::middleware('admin.only')->group(function () {
     Route::delete('/admin/products/{product}', [AdminController::class, 'destroyProduct'])->name('admin.products.destroy');
     Route::get('/admin/orders', [AdminController::class, 'orders'])->name('admin.orders');
     Route::patch('/admin/orders/{order}', [AdminController::class, 'updateOrder'])->name('admin.orders.update');
+    Route::get('/admin/payments', [AdminController::class, 'payments'])->name('admin.payments');
     Route::get('/admin/users', [AdminController::class, 'users'])->name('admin.users');
     Route::get('/admin/parser', [ProductParserController::class, 'index'])->name('admin.parser.index');
     Route::post('/admin/parser/price-list', [ProductParserController::class, 'storePriceList'])->name('admin.parser.price-list');
@@ -63,6 +64,7 @@ Route::middleware('admin.only')->group(function () {
     Route::post('/admin/parser/batch', [ProductParserController::class, 'storeBatch'])->name('admin.parser.batch');
     Route::post('/admin/parser/settings', [ProductParserController::class, 'updateSettings'])->name('admin.parser.settings.update');
     Route::get('/admin/parser/batches/{batch}', [ProductParserController::class, 'showBatch'])->name('admin.parser.batches.show');
+    Route::post('/admin/parser/batches/{batch}/run-import', [ProductParserController::class, 'runPriceListImport'])->name('admin.parser.batches.run-import');
     Route::post('/admin/parser/batches/{batch}/cancel', [ProductParserController::class, 'cancelBatch'])->name('admin.parser.batches.cancel');
     Route::delete('/admin/parser/batches/{batch}', [ProductParserController::class, 'destroyBatch'])->name('admin.parser.batches.destroy');
     Route::get('/admin/parser/items/{item}', [ProductParserController::class, 'showItem'])->name('admin.parser.items.show');

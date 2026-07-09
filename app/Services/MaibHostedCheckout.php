@@ -43,7 +43,7 @@ class MaibHostedCheckout
         $transaction = PaymentTransaction::create([
             'order_id' => $order->id,
             'provider' => 'maib',
-            'status' => 'initiated',
+            'status' => 'created',
             'amount' => $order->total,
             'currency' => $order->currency,
             'request_payload_json' => $payload,
@@ -55,7 +55,7 @@ class MaibHostedCheckout
                 ->post($this->endpoint(), $payload);
         } catch (Throwable $exception) {
             $transaction->forceFill([
-                'status' => 'request_failed',
+                'status' => 'failed',
                 'response_payload_json' => ['message' => $exception->getMessage()],
                 'processed_at' => now(),
             ])->save();
@@ -70,7 +70,7 @@ class MaibHostedCheckout
 
         if (! $response->successful()) {
             $transaction->forceFill([
-                'status' => 'request_rejected',
+                'status' => 'failed',
                 'response_payload_json' => $response->json() ?: ['body' => $response->body()],
                 'processed_at' => now(),
             ])->save();
@@ -85,17 +85,18 @@ class MaibHostedCheckout
         }
 
         $data = $response->json() ?: [];
-        $reference = $data['id'] ?? $data['payId'] ?? $data['paymentId'] ?? $data['transactionId'] ?? null;
+        $reference = $this->referenceFromResponse($data);
+        $checkoutUrl = $this->checkoutUrlFromResponse($data);
 
         $transaction->forceFill([
             'provider_transaction_id' => $reference,
-            'status' => 'pending',
+            'status' => $checkoutUrl ? 'waiting_for_payment' : 'created',
             'response_payload_json' => $data,
         ])->save();
 
         return [
             'reference' => $reference,
-            'url' => $data['checkoutUrl'] ?? $data['redirectUrl'] ?? $data['payUrl'] ?? $data['url'] ?? null,
+            'url' => $checkoutUrl,
             'raw' => $data,
             'transaction' => $transaction,
         ];
@@ -109,7 +110,10 @@ class MaibHostedCheckout
             return ! (app()->environment('production') && $this->isConfigured());
         }
 
-        $signature = $request->header('X-Signature') ?: $request->input('signature');
+        $signature = $request->header('X-Maib-Signature')
+            ?: $request->header('X-Callback-Signature')
+            ?: $request->header('X-Signature')
+            ?: $request->input('signature');
 
         if (! $signature) {
             return false;
@@ -124,5 +128,28 @@ class MaibHostedCheckout
     private function endpoint(): string
     {
         return rtrim((string) config('services.maib.base_url'), '/').'/'.ltrim((string) config('services.maib.create_payment_path'), '/');
+    }
+
+    private function referenceFromResponse(array $data): ?string
+    {
+        return $data['checkoutId']
+            ?? $data['checkout_id']
+            ?? $data['id']
+            ?? $data['payId']
+            ?? $data['paymentId']
+            ?? $data['transactionId']
+            ?? data_get($data, 'result.checkoutId')
+            ?? data_get($data, 'result.id');
+    }
+
+    private function checkoutUrlFromResponse(array $data): ?string
+    {
+        return $data['checkoutUrl']
+            ?? $data['checkout_url']
+            ?? $data['redirectUrl']
+            ?? $data['payUrl']
+            ?? $data['url']
+            ?? data_get($data, 'result.checkoutUrl')
+            ?? data_get($data, 'result.redirectUrl');
     }
 }

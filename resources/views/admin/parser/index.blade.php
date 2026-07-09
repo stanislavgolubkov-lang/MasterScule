@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.admin')
 
 @section('content')
 @php($ru = app()->isLocale('ru'))
@@ -62,7 +62,8 @@
                 </label>
                 <label>{{ $ru ? 'Режим импорта' : 'Mod import' }}
                     <select name="import_mode">
-                        <option value="create_drafts">{{ $ru ? 'Создавать черновики автоматически' : 'Creeaza drafturi automat' }}</option>
+                        <option value="dry_run">{{ $ru ? 'Dry-run: только отчет, без товаров' : 'Dry-run: doar raport, fara produse' }}</option>
+                        <option value="create_drafts">{{ $ru ? 'После dry-run создать черновики автоматически' : 'Dupa dry-run creeaza drafturi automat' }}</option>
                         <option value="review_only">{{ $ru ? 'Только анализ и проверка' : 'Doar analiza si verificare' }}</option>
                     </select>
                 </label>
@@ -75,7 +76,7 @@
                 <label><input type="checkbox" name="update_existing_products" value="1"> {{ $ru ? 'Не менять существующие товары без ручного действия' : 'Nu modifica produse existente fara actiune manuala' }}</label>
                 <label><input type="checkbox" name="replace_existing_photos" value="1"> {{ $ru ? 'Разрешить замену фото только после подтверждения' : 'Permite inlocuirea fotografiilor doar dupa confirmare' }}</label>
             </div>
-            <button class="btn" type="submit">{{ $ru ? 'Запустить импорт прайса' : 'Porneste importul listei' }}</button>
+            <button class="btn" type="submit">{{ $ru ? 'Запустить dry-run прайса' : 'Porneste dry-run lista' }}</button>
         </form>
     </article>
 
@@ -196,6 +197,7 @@
                         <th>{{ __('ui.date') }}</th>
                         <th>{{ __('ui.parser_batch_title') }}</th>
                         <th>SKU</th>
+                        <th>{{ $ru ? 'Новые / существующие' : 'Noi / existente' }}</th>
                         <th>{{ __('ui.status') }}</th>
                         <th>{{ __('ui.actions') }}</th>
                     </tr>
@@ -206,11 +208,12 @@
                             <td>{{ $batch->created_at->format('d.m.Y H:i') }}</td>
                             <td>{{ $batch->title }}</td>
                             <td>{{ $batch->items_count }} / {{ $batch->sku_count }}</td>
+                            <td>{{ $batch->new_sku_count }} / {{ $batch->existing_sku_count }}</td>
                             <td><span class="parser-status parser-status-{{ $batch->status }}">{{ $batch->status }}</span></td>
                             <td><a class="btn small" href="{{ route('admin.parser.batches.show', $batch) }}">{{ __('ui.open') }}</a></td>
                         </tr>
                     @empty
-                        <tr><td colspan="5">{{ __('ui.parser_no_batches') }}</td></tr>
+                        <tr><td colspan="6">{{ __('ui.parser_no_batches') }}</td></tr>
                     @endforelse
                 </tbody>
             </table>

@@ -17,6 +17,7 @@ use App\Services\ProductParserSettings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use ZipArchive;
 
@@ -56,7 +57,7 @@ class ProductParserController extends Controller
             'category_default_id' => ['nullable', 'exists:categories,id'],
             'price_file' => ['required', 'file', 'max:'.$maxFileSize],
             'price_type' => ['required', Rule::in(['retail_price'])],
-            'import_mode' => ['required', Rule::in(['create_drafts', 'review_only'])],
+            'import_mode' => ['required', Rule::in(['dry_run', 'create_drafts', 'review_only'])],
             'update_existing_products' => ['nullable', 'boolean'],
             'add_photos_to_existing' => ['nullable', 'boolean'],
             'replace_existing_photos' => ['nullable', 'boolean'],
@@ -66,8 +67,12 @@ class ProductParserController extends Controller
         ]);
 
         $file = $request->file('price_file');
-        $extension = strtolower($file->getClientOriginalExtension());
-        abort_unless(in_array($extension, $this->settings->get('allowed_formats', ['xls', 'xlsx', 'csv']), true), 422);
+        $extension = $this->validateParserUpload(
+            $file,
+            $this->settings->get('allowed_formats', ['xls', 'xlsx', 'csv']),
+            $this->priceListMimeMap(),
+            'price_file'
+        );
 
         $storedPath = $file->storeAs(
             'parser/imports/'.now()->format('YmdHis'),
@@ -86,20 +91,55 @@ class ProductParserController extends Controller
             'brand_default' => $this->brandValue($data['brand_default'] ?? null),
             'category_default_id' => $data['category_default_id'] ?? null,
             'price_type' => 'retail_price',
-            'import_mode' => $data['import_mode'],
+            'import_mode' => 'dry_run',
             'status' => 'pending',
             'options_json' => [
+                'requested_import_mode' => $data['import_mode'] === 'dry_run' ? 'create_drafts' : $data['import_mode'],
                 'update_existing_products' => $request->boolean('update_existing_products'),
                 'add_photos_to_existing' => $request->boolean('add_photos_to_existing', true),
                 'replace_existing_photos' => $request->boolean('replace_existing_photos'),
                 'search_images' => $request->boolean('search_images', true),
                 'process_images' => $request->boolean('search_images', true),
                 'translate_descriptions' => $request->boolean('translate_descriptions', true),
-                'create_drafts_automatically' => $data['import_mode'] === 'create_drafts' && $request->boolean('create_drafts_automatically', true),
+                'create_drafts_automatically' => $data['import_mode'] !== 'review_only' && $request->boolean('create_drafts_automatically', true),
                 'image_limit' => (int) $this->settings->get('max_images_per_product', 4),
             ],
         ]);
         $batch->addLog('Price list uploaded by admin', ['file' => $file->getClientOriginalName()]);
+
+        ParsePriceListJob::dispatch($batch->id);
+
+        return redirect()->route('admin.parser.batches.show', $batch)->with('success', __('ui.parser_price_dry_run_started'));
+    }
+
+    public function runPriceListImport(Request $request, ProductParserBatch $batch)
+    {
+        $this->guard('parser.run');
+        $this->ensureEnabled();
+
+        abort_unless($batch->source_type === 'price_list', 404);
+
+        $data = $request->validate([
+            'import_mode' => ['required', Rule::in(['create_drafts', 'review_only'])],
+            'row_limit' => ['nullable', 'integer', 'min:1', 'max:5000'],
+        ]);
+
+        $options = $batch->options_json ?: [];
+        $options['create_drafts_automatically'] = $data['import_mode'] === 'create_drafts'
+            && (bool) ($options['create_drafts_automatically'] ?? true);
+        $options['row_limit'] = $data['row_limit'] ?? null;
+
+        $batch->forceFill([
+            'import_mode' => $data['import_mode'],
+            'status' => 'pending',
+            'options_json' => $options,
+            'started_at' => null,
+            'finished_at' => null,
+        ])->save();
+        $batch->addLog('Admin started import from dry-run report', [
+            'mode' => $data['import_mode'],
+            'row_limit' => $data['row_limit'] ?? null,
+        ]);
 
         ParsePriceListJob::dispatch($batch->id);
 
@@ -160,8 +200,13 @@ class ProductParserController extends Controller
             'mode' => ['required', Rule::in(['find_only', 'find_prepare_photos', 'create_drafts'])],
         ]);
 
+        $skuFile = $request->file('sku_file');
+        if ($skuFile) {
+            $this->validateParserUpload($skuFile, ['csv', 'txt', 'xlsx'], $this->skuFileMimeMap(), 'sku_file');
+        }
+
         $rows = collect($this->rowsFromText($data['sku_text'] ?? ''))
-            ->merge($request->hasFile('sku_file') ? $this->rowsFromFile($request->file('sku_file')->getRealPath(), $request->file('sku_file')->getClientOriginalExtension()) : [])
+            ->merge($skuFile ? $this->rowsFromFile($skuFile->getRealPath(), $skuFile->getClientOriginalExtension()) : [])
             ->filter(fn ($row) => trim((string) ($row['sku'] ?? '')) !== '')
             ->unique(fn ($row) => mb_strtolower(trim((string) $row['sku'])))
             ->values();
@@ -503,6 +548,59 @@ class ProductParserController extends Controller
     private function ensureEnabled(): void
     {
         abort_unless((bool) $this->settings->get('enabled', true), 403);
+    }
+
+    private function validateParserUpload($file, array $allowedExtensions, array $mimeMap, string $field): string
+    {
+        $extension = strtolower((string) $file->getClientOriginalExtension());
+        $allowedExtensions = array_map('strtolower', $allowedExtensions);
+
+        if (! in_array($extension, $allowedExtensions, true)) {
+            throw ValidationException::withMessages([$field => __('ui.parser_file_type_invalid')]);
+        }
+
+        $allowedMimes = $mimeMap[$extension] ?? [];
+        $detectedMimes = array_filter([
+            strtolower((string) $file->getMimeType()),
+            strtolower((string) $file->getClientMimeType()),
+        ]);
+
+        if ($allowedMimes !== [] && ! array_intersect($detectedMimes, $allowedMimes)) {
+            throw ValidationException::withMessages([$field => __('ui.parser_file_type_invalid')]);
+        }
+
+        if ($this->looksLikeExecutableUpload((string) $file->getRealPath())) {
+            throw ValidationException::withMessages([$field => __('ui.parser_file_type_invalid')]);
+        }
+
+        return $extension;
+    }
+
+    private function looksLikeExecutableUpload(string $path): bool
+    {
+        $sample = strtolower((string) file_get_contents($path, false, null, 0, 4096));
+
+        return str_contains($sample, '<?php')
+            || str_contains($sample, '<?=')
+            || (bool) preg_match('/^\s*(<script\b|#!.*\b(node|php)\b|import\s+|export\s+|const\s+|let\s+|var\s+|function\s+|console\.)/i', $sample);
+    }
+
+    private function priceListMimeMap(): array
+    {
+        return [
+            'csv' => ['text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel'],
+            'xls' => ['application/vnd.ms-excel', 'application/vnd.ms-office', 'application/octet-stream'],
+            'xlsx' => ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip'],
+        ];
+    }
+
+    private function skuFileMimeMap(): array
+    {
+        return [
+            'csv' => ['text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel'],
+            'txt' => ['text/plain'],
+            'xlsx' => ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip'],
+        ];
     }
 
     private function brandValue(?string $value): ?string

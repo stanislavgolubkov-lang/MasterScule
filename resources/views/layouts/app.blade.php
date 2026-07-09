@@ -14,7 +14,6 @@
 </head>
 <body>
     @php
-        $aiEnabled = (bool) config('features.ai_assistant');
         $wishlistEnabled = (bool) config('features.wishlist');
         $newsletterEnabled = (bool) config('features.newsletter');
     @endphp
@@ -113,51 +112,14 @@
             @foreach($navCategories->take(6) as $category)
                 <a href="{{ route('catalog', $category->slug) }}">{{ $category->display_name }}</a>
             @endforeach
-            @if($aiEnabled)
-                <a href="{{ route('ai.advisor') }}" data-ai-open>{{ __('ui.ai_describe_work') }}</a>
-            @endif
         </div>
     </div>
 
     <x-catalog-mega-menu :categories="$navCategories" />
 
-    @if($aiEnabled)
-    <div id="ai-modal" class="ai-modal" hidden>
-        <div class="ai-modal-backdrop" data-ai-close></div>
-        <section class="ai-modal-panel" role="dialog" aria-modal="true" aria-labelledby="ai-modal-title">
-            <button class="ai-modal-close" type="button" data-ai-close aria-label="{{ __('ui.close') }}">x</button>
-            <span class="ai-panel-kicker">{{ __('ui.ai_kicker') }}</span>
-            <h2 id="ai-modal-title">{{ __('ui.ai_title') }}</h2>
-            <p>{{ __('ui.ai_intro') }}</p>
-            <form class="ai-modal-form" action="{{ route('ai.ask') }}" method="post">
-                @csrf
-                <textarea name="prompt" required placeholder="{{ __('ui.ai_placeholder') }}"></textarea>
-                <div class="ai-prompts">
-                    <button type="button" data-ai-prompt="{{ __('ui.ai_placeholder') }}">{{ __('ui.ai_prompt_garage') }}</button>
-                    <button type="button" data-ai-prompt="{{ app()->isLocale('ru') ? 'Нужен пневмоинструмент M7 для автосервиса' : 'Am nevoie de un pistol pneumatic M7 pentru service auto' }}">{{ __('ui.ai_prompt_m7') }}</button>
-                    <button type="button" data-ai-prompt="{{ app()->isLocale('ru') ? 'Как добавить товар в корзину и оформить заказ?' : 'Cum adaug un produs in cos si finalizez comanda?' }}">{{ __('ui.ai_prompt_checkout') }}</button>
-                    <button type="button" data-ai-prompt="{{ app()->isLocale('ru') ? 'Объясни доставку, гарантию и возврат' : 'Explica livrarea, garantia si returul' }}">{{ __('ui.ai_prompt_delivery') }}</button>
-                </div>
-                <button class="btn" type="submit">{{ __('ui.ask_ai') }}</button>
-            </form>
-            <div class="ai-modal-state" hidden></div>
-            <pre class="ai-response ai-modal-response" hidden></pre>
-            <div class="ai-modal-products"></div>
-        </section>
-    </div>
-
-    <a class="floating-ai" href="{{ route('ai.advisor') }}" aria-label="{{ __('ui.ai_title') }}" data-ai-open>
-        <span class="floating-ai-orb">AI</span>
-        <span class="floating-ai-text"><strong>{{ __('ui.ai_float_title') }}</strong><small>{{ __('ui.ai_float_text') }}</small></span>
-    </a>
-    @endif
-
-    <nav class="bottom-nav {{ $aiEnabled ? 'has-ai' : '' }}">
+    <nav class="bottom-nav">
         <a href="{{ route('home') }}">{{ __('ui.bottom_home') }}</a>
         <a href="{{ route('catalog') }}" data-catalog-open aria-expanded="false" aria-controls="catalog-modal">{{ __('ui.bottom_catalog') }}</a>
-        @if($aiEnabled)
-            <a class="ai" href="{{ route('ai.advisor') }}" data-ai-open>{{ __('ui.bottom_ai') }}</a>
-        @endif
         <a href="{{ route('cart.index') }}">{{ __('ui.bottom_cart') }}</a>
         <a href="{{ auth()->check() ? route('account.dashboard') : route('login') }}">{{ __('ui.bottom_account') }}</a>
     </nav>

@@ -13,7 +13,8 @@ class Product extends Model
         'parser_confidence', 'parser_source_urls', 'main_image', 'gallery', 'attributes', 'package_contents',
         'rating', 'reviews_count', 'is_active', 'is_featured', 'is_bestseller', 'is_new', 'is_discounted',
         'warranty', 'weight', 'dimensions', 'approval_status', 'needs_review', 'needs_stock_review',
-        'needs_image_review', 'source_import_batch_id', 'source_parser_item_id', 'meta_title', 'meta_description',
+        'needs_image_review', 'source_import_batch_id', 'source_parser_item_id', 'vehicle_application',
+        'meta_title', 'meta_description',
     ];
 
     protected $casts = [
@@ -44,9 +45,53 @@ class Product extends Model
         return $this->belongsTo(Category::class);
     }
 
+    public function categories()
+    {
+        return $this->belongsToMany(Category::class)
+            ->withPivot(['is_primary', 'source', 'confidence'])
+            ->withTimestamps();
+    }
+
     public function images()
     {
         return $this->hasMany(ProductImage::class);
+    }
+
+    public function scopeInCatalogCategories($query, array $categoryIds)
+    {
+        $categoryIds = array_values(array_unique(array_filter(array_map('intval', $categoryIds))));
+
+        if ($categoryIds === []) {
+            return $query;
+        }
+
+        return $query->where(function ($inner) use ($categoryIds) {
+            $inner
+                ->whereIn('category_id', $categoryIds)
+                ->orWhereHas('categories', fn ($categories) => $categories->whereIn('categories.id', $categoryIds));
+        });
+    }
+
+    public function syncCategoryLinks(array $categoryIds, ?int $primaryCategoryId = null, string $source = 'admin', array $confidenceById = []): void
+    {
+        $categoryIds = collect($categoryIds)
+            ->push($primaryCategoryId)
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $sync = $categoryIds->mapWithKeys(function (int $categoryId) use ($primaryCategoryId, $source, $confidenceById) {
+            return [
+                $categoryId => [
+                    'is_primary' => $primaryCategoryId ? $categoryId === (int) $primaryCategoryId : false,
+                    'source' => $source,
+                    'confidence' => max(0, min(100, (int) ($confidenceById[$categoryId] ?? 100))),
+                ],
+            ];
+        })->all();
+
+        $this->categories()->sync($sync);
     }
 
     public function getBadgeAttribute(): ?string

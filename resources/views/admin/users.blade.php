@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.admin')
 
 @section('content')
 <section class="shell page-title"><p>{{ __('ui.admin') }} / {{ __('ui.users') }}</p><h1>{{ app()->isLocale('ru') ? 'Администраторы и пользователи' : 'Admin si utilizator' }}</h1></section>

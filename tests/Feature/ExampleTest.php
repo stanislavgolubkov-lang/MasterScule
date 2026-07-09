@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
+use App\Jobs\ParsePriceListJob;
 use App\Jobs\ParseSkuBatchJob;
 use App\Models\Brand;
 use App\Models\Category;
@@ -49,6 +51,17 @@ class ExampleTest extends TestCase
         $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
 
         $this->actingAs($admin)->get('/admin/users')->assertStatus(200)->assertSee('admin@masterscule.md');
+    }
+
+    public function test_seeded_admin_can_open_payments_page(): void
+    {
+        $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
+
+        $this
+            ->actingAs($admin)
+            ->get('/admin/payments')
+            ->assertOk()
+            ->assertSee(__('ui.admin_payments'));
     }
 
     public function test_admin_entry_shows_admin_login_for_guests(): void
@@ -180,6 +193,7 @@ class ExampleTest extends TestCase
                 'shipping_postcode' => '2001',
                 'payment_method' => 'cash_on_delivery',
                 'shipping_method' => 'courier',
+                'terms_accepted' => '1',
             ]);
 
         $response->assertRedirect();
@@ -204,6 +218,7 @@ class ExampleTest extends TestCase
                 'shipping_postcode' => '2001',
                 'payment_method' => 'cash_on_delivery',
                 'shipping_method' => 'courier',
+                'terms_accepted' => '1',
             ]);
 
         $response->assertRedirect();
@@ -218,14 +233,14 @@ class ExampleTest extends TestCase
     {
         Http::fake([
             'https://maib.test/*' => Http::response([
-                'id' => 'pay-test-123',
+                'checkoutId' => 'checkout-test-123',
                 'checkoutUrl' => 'https://pay.example/checkout',
             ]),
         ]);
 
         config([
             'services.maib.base_url' => 'https://maib.test',
-            'services.maib.create_payment_path' => '/payments',
+            'services.maib.create_payment_path' => '/v2/checkouts',
             'services.maib.project_id' => 'project-test',
             'services.maib.secret' => 'secret-test',
             'services.maib.signature_secret' => null,
@@ -245,32 +260,46 @@ class ExampleTest extends TestCase
                 'shipping_postcode' => '2001',
                 'payment_method' => 'online_card',
                 'shipping_method' => 'courier',
+                'terms_accepted' => '1',
             ])
             ->assertRedirect('https://pay.example/checkout');
 
-        $order = Order::where('payment_reference', 'pay-test-123')->firstOrFail();
+        Http::assertSent(fn ($request) => $request->url() === 'https://maib.test/v2/checkouts');
+
+        $order = Order::where('payment_reference', 'checkout-test-123')->firstOrFail();
 
         $this->assertSame('pending_payment', $order->status);
         $this->assertSame('pending', $order->payment_status);
         $this->assertNull($order->stock_deducted_at);
         $this->assertSame($stock, $product->fresh()->stock_quantity);
         $this->assertSame(1, PaymentTransaction::where('order_id', $order->id)->count());
+        $this->assertSame('waiting_for_payment', PaymentTransaction::where('order_id', $order->id)->firstOrFail()->status);
 
         $this
             ->postJson('/payment/maib/callback', [
-                'paymentReference' => 'pay-test-123',
-                'status' => 'paid',
+                'checkoutId' => 'checkout-test-123',
+                'status' => 'WaitingForPayment',
             ])
             ->assertOk()
-            ->assertJson(['ok' => true, 'status' => 'paid', 'stock_captured' => true]);
+            ->assertJson(['ok' => true, 'status' => 'waiting_for_payment', 'stock_captured' => false]);
+
+        $this->assertSame($stock, $product->fresh()->stock_quantity);
+
+        $this
+            ->postJson('/payment/maib/callback', [
+                'checkoutId' => 'checkout-test-123',
+                'status' => 'Completed',
+            ])
+            ->assertOk()
+            ->assertJson(['ok' => true, 'status' => 'completed', 'stock_captured' => true]);
 
         $this->assertSame($stock - 1, $product->fresh()->stock_quantity);
         $this->assertNotNull($order->fresh()->stock_deducted_at);
 
         $this
             ->postJson('/payment/maib/callback', [
-                'paymentReference' => 'pay-test-123',
-                'status' => 'paid',
+                'checkoutId' => 'checkout-test-123',
+                'status' => 'Completed',
             ])
             ->assertOk();
 
@@ -285,6 +314,24 @@ class ExampleTest extends TestCase
         $this->get('/')->assertOk()->assertDontSee('AI-консультант');
         $this->get('/ai/tool-advisor')->assertNotFound();
         $this->postJson('/ai/tool-advisor', ['prompt' => 'test'])->assertNotFound();
+    }
+
+    public function test_frontend_ai_entry_points_are_not_rendered(): void
+    {
+        config(['features.ai_assistant' => true]);
+
+        $this
+            ->get('/')
+            ->assertOk()
+            ->assertDontSee('data-ai-open', false)
+            ->assertDontSee('floating-ai')
+            ->assertDontSee('AI-консультант');
+
+        $this
+            ->get('/product/king-tony-7596mr')
+            ->assertOk()
+            ->assertDontSee('data-ai-open', false)
+            ->assertDontSee(__('ui.ask_ai_about_product'));
     }
 
     public function test_disabled_wishlist_and_compare_routes_are_not_accessible(): void
@@ -331,6 +378,111 @@ class ExampleTest extends TestCase
         $user = User::where('email', 'andrei.popescu@example.com')->firstOrFail();
 
         $this->actingAs($user)->get('/admin/parser')->assertForbidden();
+    }
+
+    public function test_parser_price_list_upload_accepts_safe_csv_and_dispatches_job(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+
+        $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
+        $file = UploadedFile::fake()->createWithContent('price.csv', implode("\n", [
+            'Артикул;Наименование;ОтпускЦена;Остаток',
+            'NC-4233-SAFE;Пистолет пневматический M7 NC-4233-SAFE;799;5',
+        ]));
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.parser.price-list'), [
+                'supplier_name' => 'Test supplier',
+                'price_file' => $file,
+                'price_type' => 'retail_price',
+                'import_mode' => 'create_drafts',
+                'search_images' => '0',
+                'translate_descriptions' => '1',
+                'create_drafts_automatically' => '1',
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('product_parser_batches', [
+            'source_type' => 'price_list',
+            'file_type' => 'csv',
+            'import_mode' => 'dry_run',
+            'status' => 'pending',
+        ]);
+        Queue::assertPushed(ParsePriceListJob::class);
+    }
+
+    public function test_price_list_dry_run_tracks_brand_vehicle_context_without_creating_products(): void
+    {
+        Storage::fake('local');
+
+        $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
+        $csv = implode("\n", [
+            'Артикул;Наименование;ОтпускЦена;Остаток',
+            ';JTC;;',
+            ';BENZ & BMW;;',
+            'JTC-4902;Головка TORX 1/2" для снятия механизма стеклоочистителей BMW;163;15',
+        ]);
+        Storage::disk('local')->put('parser/test/jtc.csv', $csv);
+
+        $batch = ProductParserBatch::create([
+            'user_id' => $admin->id,
+            'title' => 'JTC dry-run test',
+            'source_type' => 'price_list',
+            'file_name' => 'jtc.csv',
+            'file_path' => 'parser/test/jtc.csv',
+            'file_type' => 'csv',
+            'price_type' => 'retail_price',
+            'import_mode' => 'dry_run',
+            'status' => 'pending',
+            'options_json' => [
+                'search_images' => false,
+                'process_images' => false,
+                'create_drafts_automatically' => false,
+            ],
+        ]);
+
+        app(ProductPriceListImportService::class)->dryRun($batch);
+
+        $batch->refresh();
+        $this->assertSame('dry_run_completed', $batch->status);
+        $this->assertSame(1, $batch->product_rows);
+        $this->assertSame(2, $batch->service_rows);
+        $this->assertSame(1, $batch->new_sku_count);
+        $this->assertSame(1, $batch->planned_drafts);
+        $this->assertSame(0, $batch->created_drafts);
+
+        $item = ProductParserItem::where('sku', 'JTC-4902')->firstOrFail();
+        $this->assertSame('JTC', $item->brand);
+        $this->assertSame('BENZ & BMW', $item->vehicle_application);
+        $this->assertSame('dry_run_ready', $item->status);
+        $this->assertFalse((bool) $item->needs_category_review);
+        $this->assertDatabaseMissing('products', ['sku' => 'JTC-4902']);
+    }
+
+    public function test_parser_price_list_upload_rejects_disguised_php_file(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+
+        $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
+        $file = UploadedFile::fake()->createWithContent('bad.csv', "<?php echo 'bad';");
+
+        $this
+            ->actingAs($admin)
+            ->from(route('admin.parser.index'))
+            ->post(route('admin.parser.price-list'), [
+                'supplier_name' => 'Test supplier',
+                'price_file' => $file,
+                'price_type' => 'retail_price',
+                'import_mode' => 'create_drafts',
+            ])
+            ->assertRedirect(route('admin.parser.index'))
+            ->assertSessionHasErrors('price_file');
+
+        $this->assertDatabaseMissing('product_parser_batches', ['file_name' => 'bad.csv']);
+        Queue::assertNothingPushed();
     }
 
     public function test_parser_single_sku_uses_existing_product_without_duplicate(): void
@@ -490,6 +642,13 @@ class ExampleTest extends TestCase
         $this->assertSame($existing->id, $existingItem->existing_product_id);
         $this->assertSame($initialExistingCount, Product::where('sku', '7596MR')->count());
         $this->assertDatabaseMissing('product_parser_items', ['sku' => 'M7 (Mighty Seven)']);
+    }
+
+    public function test_tristool_import_keeps_mdl_price_without_ron_conversion(): void
+    {
+        $this->assertTrue(function_exists('parseMdlPrice'));
+        $this->assertEquals(2600.00, parseMdlPrice('2 600,00'));
+        $this->assertEquals(195.00, parseMdlPrice('195,00'));
     }
 
     public function test_price_list_import_requires_category_review_for_weak_match(): void

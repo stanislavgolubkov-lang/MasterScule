@@ -10,6 +10,7 @@ class ProductParserItem extends Model
         'batch_id',
         'row_number',
         'sku',
+        'normalized_sku',
         'brand',
         'category_id',
         'status',
@@ -22,6 +23,9 @@ class ProductParserItem extends Model
         'parsed_stock',
         'detected_group',
         'detected_subgroup',
+        'vehicle_application',
+        'tristools_url',
+        'tristools_match_confidence',
         'detected_category_id',
         'detected_category_path',
         'category_confidence_score',
@@ -30,6 +34,8 @@ class ProductParserItem extends Model
         'needs_category_review',
         'needs_stock_review',
         'needs_image_review',
+        'needs_translation_review',
+        'needs_price_review',
         'approval_status',
         'name_ru',
         'name_ro',
@@ -62,8 +68,11 @@ class ProductParserItem extends Model
         'needs_category_review' => 'boolean',
         'needs_stock_review' => 'boolean',
         'needs_image_review' => 'boolean',
+        'needs_translation_review' => 'boolean',
+        'needs_price_review' => 'boolean',
         'parsed_price' => 'decimal:2',
         'parsed_stock' => 'integer',
+        'tristools_match_confidence' => 'integer',
     ];
 
     public function batch()

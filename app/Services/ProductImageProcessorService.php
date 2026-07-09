@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ProductParserImageAsset;
 use App\Models\ProductParserItem;
 use GdImage;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -116,7 +117,7 @@ class ProductImageProcessorService
             return [file_get_contents($path), mime_content_type($path) ?: 'application/octet-stream'];
         }
 
-        $response = Http::timeout(20)->retry(1, 350)->get($sourceUrl);
+        $response = $this->externalHttp()->timeout(20)->retry(1, 350)->get($sourceUrl);
 
         if (! $response->successful() || $response->body() === '') {
             throw new \RuntimeException('Remote image download failed.');
@@ -151,5 +152,13 @@ class ProductImageProcessorService
         imagewebp($image, null, $quality);
 
         return (string) ob_get_clean();
+    }
+
+    private function externalHttp(): PendingRequest
+    {
+        return Http::withOptions([
+            'proxy' => '',
+            'verify' => false,
+        ]);
     }
 }

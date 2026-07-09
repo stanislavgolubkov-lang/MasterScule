@@ -24,7 +24,7 @@ return [
 
     'maib' => [
         'base_url' => env('MAIB_BASE_URL'),
-        'create_payment_path' => env('MAIB_CREATE_PAYMENT_PATH', '/api/v1/payments'),
+        'create_payment_path' => env('MAIB_CREATE_PAYMENT_PATH', '/v2/checkouts'),
         'project_id' => env('MAIB_PROJECT_ID'),
         'secret' => env('MAIB_SECRET', env('MAIB_PROJECT_SECRET')),
         'signature_secret' => env('MAIB_SIGNATURE_SECRET'),

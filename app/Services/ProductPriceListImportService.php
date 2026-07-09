@@ -23,13 +23,23 @@ class ProductPriceListImportService
     ) {
     }
 
+    public function dryRun(ProductParserBatch $batch): void
+    {
+        $this->run($batch, true);
+    }
+
     public function import(ProductParserBatch $batch): void
+    {
+        $this->run($batch, false);
+    }
+
+    private function run(ProductParserBatch $batch, bool $dryRun): void
     {
         $batch->forceFill([
             'status' => 'processing',
             'started_at' => $batch->started_at ?: now(),
         ])->save();
-        $batch->addLog('Price list import started', [
+        $batch->addLog($dryRun ? 'Price list dry-run started' : 'Price list import started', [
             'file' => $batch->file_name,
             'supplier' => $batch->supplier_name,
         ]);
@@ -43,26 +53,17 @@ class ProductPriceListImportService
                 'error_rows' => 1,
                 'finished_at' => now(),
             ])->save();
-            $batch->addLog('Price list import failed', ['error' => $e->getMessage()]);
+            $batch->addLog('Price list parsing failed', ['error' => $e->getMessage()]);
 
             return;
         }
 
         $options = $batch->options_json ?: [];
-        $context = [
-            'brand' => $this->brandValue($batch->brand_default),
-            'group' => null,
-            'subgroup' => null,
-        ];
+        $rowLimit = $dryRun ? 0 : max(0, (int) ($options['row_limit'] ?? 0));
+        $context = $this->initialContext($batch);
         $seenSkus = [];
-        $stats = [
-            'parsed_rows' => 0,
-            'product_rows' => 0,
-            'created_drafts' => 0,
-            'updated_existing' => 0,
-            'skipped_rows' => 0,
-            'error_rows' => 0,
-        ];
+        $existingProducts = $this->existingProductsIndex();
+        $stats = $this->emptyStats();
 
         ProductParserItem::where('batch_id', $batch->id)->delete();
 
@@ -72,6 +73,7 @@ class ProductPriceListImportService
             try {
                 if ($this->isServiceRow($row)) {
                     $this->applyContext($context, $row);
+                    $stats['service_rows']++;
                     $stats['skipped_rows']++;
                     continue;
                 }
@@ -81,32 +83,67 @@ class ProductPriceListImportService
                     continue;
                 }
 
+                if ($rowLimit > 0 && $stats['product_rows'] >= $rowLimit) {
+                    continue;
+                }
+
                 $sku = $this->cleanSku((string) $row['sku']);
-                if (isset($seenSkus[Str::lower($sku)])) {
-                    $this->skippedItem($batch, $row, $sku, 'Duplicate SKU inside price list.');
+                $normalizedSku = $this->normalizeSku($sku);
+                $brand = $this->brandValue($row['brand'] ?? null) ?: $context['brand'];
+                $duplicateKey = $this->brandKey($brand).'|'.$normalizedSku;
+
+                if (isset($seenSkus[$duplicateKey])) {
+                    $this->skippedItem($batch, $row, $sku, 'Duplicate SKU inside price list.', $brand, $normalizedSku, $context);
+                    $stats['duplicate_sku_count']++;
                     $stats['skipped_rows']++;
                     continue;
                 }
-                $seenSkus[Str::lower($sku)] = true;
+
+                $seenSkus[$duplicateKey] = true;
                 $stats['product_rows']++;
 
-                $brand = $this->brandValue($row['brand'] ?? null) ?: $context['brand'];
                 $group = $row['group'] ?: $context['group'];
                 $subgroup = $row['subgroup'] ?: $context['subgroup'];
+                $vehicleApplication = $context['vehicle_application'];
                 $name = trim((string) $row['name']);
                 $price = $this->parsePrice($row['price'] ?? null);
                 $stock = $this->parseStock($row['stock'] ?? null);
+                $needsPriceReview = $price === null;
                 $needsStockReview = $stock === null;
-                $existing = Product::where('sku', $sku)->first();
-                $category = $this->categoryDetector->detect($sku, $name, $brand, $group, $subgroup);
+                $existing = $this->findExistingProduct($sku, $brand, $existingProducts);
+                $category = $this->categoryDetector->detect($sku, $name, $brand, $group, $subgroup, $vehicleApplication);
                 $content = $this->contentBuilder->build($sku, $name, $brand, $group);
+
+                if ($needsPriceReview) {
+                    $stats['rows_without_price']++;
+                }
+
+                if ($needsStockReview) {
+                    $stats['rows_without_stock']++;
+                }
+
+                if ($category['needs_review']) {
+                    $stats['rows_without_category']++;
+                }
+
+                if ($existing) {
+                    $stats['existing_sku_count']++;
+                    $stats['updated_existing']++;
+                } else {
+                    $stats['new_sku_count']++;
+                    if (! $category['needs_review']) {
+                        $stats['planned_drafts']++;
+                    }
+                }
+
                 $item = ProductParserItem::create([
                     'batch_id' => $batch->id,
                     'row_number' => $row['row_number'],
                     'sku' => $sku,
+                    'normalized_sku' => $normalizedSku,
                     'brand' => $brand,
                     'category_id' => $category['category_id'] ?: ($batch->category_default_id ?: null),
-                    'status' => $existing ? 'existing_product_found' : ($category['needs_review'] ? 'needs_category_review' : 'parsed'),
+                    'status' => $this->initialItemStatus($dryRun, $existing !== null, $category['needs_review']),
                     'confidence_score' => $category['confidence'],
                     'raw_name' => $row['name'],
                     'parsed_name' => $name,
@@ -116,6 +153,7 @@ class ProductPriceListImportService
                     'parsed_stock' => $stock,
                     'detected_group' => $group,
                     'detected_subgroup' => $subgroup,
+                    'vehicle_application' => $vehicleApplication,
                     'detected_category_id' => $category['detected_category_id'],
                     'detected_category_path' => $category['detected_category_path'],
                     'category_confidence_score' => $category['confidence'],
@@ -123,6 +161,9 @@ class ProductPriceListImportService
                     'category_detection_notes_json' => $category['notes'],
                     'needs_category_review' => $category['needs_review'],
                     'needs_stock_review' => $needsStockReview,
+                    'needs_price_review' => $needsPriceReview,
+                    'needs_translation_review' => false,
+                    'needs_image_review' => ! $dryRun,
                     'approval_status' => 'pending_review',
                     'name_ru' => $content['name_ru'],
                     'name_ro' => $content['name_ro'],
@@ -141,13 +182,17 @@ class ProductPriceListImportService
                         'Stock' => $stock,
                         'Group' => $group,
                         'Subgroup' => $subgroup,
+                        'Vehicle application' => $vehicleApplication,
                         'Price source' => 'ОтпускЦена / retail',
                     ], fn ($value) => $value !== null && $value !== ''),
                     'existing_product_id' => $existing?->id,
                 ]);
 
+                if ($dryRun) {
+                    continue;
+                }
+
                 if ($existing) {
-                    $stats['updated_existing']++;
                     if (($options['search_images'] ?? true) === true && ($options['add_photos_to_existing'] ?? true) === true) {
                         $this->enrichImages($item, $brand);
                         $item->refresh();
@@ -196,6 +241,14 @@ class ProductPriceListImportService
             }
         }
 
+        $stats['sku_count'] = $stats['product_rows'];
+        $report = $stats + [
+            'sheet' => $parsed['sheet'] ?? null,
+            'headers' => $parsed['headers'] ?? [],
+            'mapping' => $parsed['mapping'] ?? [],
+            'dry_run' => $dryRun,
+        ];
+
         $batch->forceFill([
             'sku_count' => $stats['product_rows'],
             'total_rows' => $parsed['total_rows'],
@@ -204,11 +257,65 @@ class ProductPriceListImportService
             'created_drafts' => $stats['created_drafts'],
             'updated_existing' => $stats['updated_existing'],
             'skipped_rows' => $stats['skipped_rows'],
+            'service_rows' => $stats['service_rows'],
+            'new_sku_count' => $stats['new_sku_count'],
+            'existing_sku_count' => $stats['existing_sku_count'],
+            'duplicate_sku_count' => $stats['duplicate_sku_count'],
+            'rows_without_price' => $stats['rows_without_price'],
+            'rows_without_stock' => $stats['rows_without_stock'],
+            'rows_without_category' => $stats['rows_without_category'],
+            'planned_drafts' => $stats['planned_drafts'],
             'error_rows' => $stats['error_rows'],
-            'status' => $stats['error_rows'] > 0 ? 'completed_with_errors' : 'completed',
+            'dry_run_report_json' => $report,
+            'status' => $dryRun
+                ? ($stats['error_rows'] > 0 ? 'completed_with_errors' : 'dry_run_completed')
+                : ($stats['error_rows'] > 0 ? 'completed_with_errors' : 'completed'),
             'finished_at' => now(),
         ])->save();
-        $batch->addLog('Price list import completed', $stats + ['sheet' => $parsed['sheet'] ?? null]);
+        $batch->addLog($dryRun ? 'Price list dry-run completed' : 'Price list import completed', $report);
+    }
+
+    private function emptyStats(): array
+    {
+        return [
+            'parsed_rows' => 0,
+            'product_rows' => 0,
+            'created_drafts' => 0,
+            'updated_existing' => 0,
+            'skipped_rows' => 0,
+            'service_rows' => 0,
+            'new_sku_count' => 0,
+            'existing_sku_count' => 0,
+            'duplicate_sku_count' => 0,
+            'rows_without_price' => 0,
+            'rows_without_stock' => 0,
+            'rows_without_category' => 0,
+            'planned_drafts' => 0,
+            'error_rows' => 0,
+        ];
+    }
+
+    private function initialItemStatus(bool $dryRun, bool $existing, bool $needsCategoryReview): string
+    {
+        if ($existing) {
+            return 'existing_product_found';
+        }
+
+        if ($needsCategoryReview) {
+            return 'needs_category_review';
+        }
+
+        return $dryRun ? 'dry_run_ready' : 'parsed';
+    }
+
+    private function initialContext(ProductParserBatch $batch): array
+    {
+        return [
+            'brand' => $this->brandValue($batch->brand_default) ?: $this->brandFromText((string) $batch->file_name),
+            'group' => null,
+            'subgroup' => null,
+            'vehicle_application' => null,
+        ];
     }
 
     private function enrichImages(ProductParserItem $item, ?string $brand): void
@@ -235,6 +342,8 @@ class ProductPriceListImportService
                 'found_images_json' => $images,
                 'selected_images_json' => collect($images)->take(4)->values()->all(),
                 'source_urls_json' => $result['source_urls'] ?? [],
+                'tristools_url' => collect($result['sources'] ?? [])->firstWhere('domain', 'tristool.md')['url'] ?? (($result['source_urls'][0] ?? null)),
+                'tristools_match_confidence' => $result['confidence'] ?? null,
                 'needs_image_review' => count($images) < 3,
             ])->save();
         } catch (Throwable $e) {
@@ -246,15 +355,20 @@ class ProductPriceListImportService
         }
     }
 
-    private function skippedItem(ProductParserBatch $batch, array $row, ?string $sku, string $reason): void
+    private function skippedItem(ProductParserBatch $batch, array $row, ?string $sku, string $reason, ?string $brand = null, ?string $normalizedSku = null, array $context = []): void
     {
         ProductParserItem::create([
             'batch_id' => $batch->id,
             'row_number' => $row['row_number'] ?? null,
             'sku' => $sku ?: 'row-'.$row['row_number'],
+            'normalized_sku' => $normalizedSku ?: ($sku ? $this->normalizeSku($sku) : null),
+            'brand' => $brand,
             'raw_name' => $row['name'] ?? null,
             'raw_price' => $row['price'] ?? null,
             'raw_stock' => $row['stock'] ?? null,
+            'detected_group' => $context['group'] ?? null,
+            'detected_subgroup' => $context['subgroup'] ?? null,
+            'vehicle_application' => $context['vehicle_application'] ?? null,
             'status' => 'skipped',
             'error_message' => $reason,
             'import_row_json' => $row['raw'] ?? [],
@@ -283,12 +397,18 @@ class ProductPriceListImportService
     private function applyContext(array &$context, array $row): void
     {
         $text = trim((string) ($row['name'] ?: collect($row['raw_values'] ?? [])->first(fn ($value) => trim((string) $value) !== '')));
-        $lower = Str::lower($text);
 
-        if (Str::contains($lower, ['king tony', 'kingtony'])) {
-            $context['brand'] = 'King Tony';
-        } elseif (Str::contains($lower, ['m7', 'mighty seven'])) {
-            $context['brand'] = 'M7 / Mighty Seven';
+        if ($brand = $this->brandFromText($text)) {
+            $context['brand'] = $brand;
+            $context['group'] = null;
+            $context['subgroup'] = null;
+            $context['vehicle_application'] = null;
+        } elseif ($this->looksLikeVehicleApplication($text)) {
+            $context['vehicle_application'] = $this->normalizeVehicleApplication($text);
+        } elseif ($this->looksLikeTopSection($text)) {
+            $context['group'] = null;
+            $context['subgroup'] = null;
+            $context['vehicle_application'] = null;
         } elseif (mb_strlen($text) <= 80) {
             if ($context['group'] && $context['group'] !== $text) {
                 $context['subgroup'] = $text;
@@ -296,6 +416,86 @@ class ProductPriceListImportService
                 $context['group'] = $text;
             }
         }
+    }
+
+    private function existingProductsIndex(): array
+    {
+        $index = [];
+
+        Product::with('brand:id,name')->select(['id', 'sku', 'brand_id'])->get()->each(function (Product $product) use (&$index) {
+            $normalizedSku = $this->normalizeSku($product->sku);
+            if ($normalizedSku === '') {
+                return;
+            }
+
+            $brandKey = $this->brandKey($product->brand?->name);
+            $index[$brandKey.'|'.$normalizedSku] = $product;
+            $index['*|'.$normalizedSku] ??= $product;
+        });
+
+        return $index;
+    }
+
+    private function findExistingProduct(string $sku, ?string $brand, array $existingProducts): ?Product
+    {
+        $normalizedSku = $this->normalizeSku($sku);
+
+        return $existingProducts[$this->brandKey($brand).'|'.$normalizedSku]
+            ?? $existingProducts['*|'.$normalizedSku]
+            ?? null;
+    }
+
+    private function brandFromText(string $text): ?string
+    {
+        $lower = Str::lower($text);
+
+        return match (true) {
+            Str::contains($lower, ['king tony', 'kingtony']) => 'King Tony',
+            Str::contains($lower, ['m7', 'mighty seven']) => 'M7 / Mighty Seven',
+            Str::contains($lower, ['jtc']) => 'JTC',
+            Str::contains($lower, ['hoegert', 'högert', 'hogert', 'gtv']) => 'Hoegert',
+            Str::contains($lower, ['tongrun', 'torin', 'big red']) => 'Torin BIG RED',
+            default => null,
+        };
+    }
+
+    private function looksLikeTopSection(string $text): bool
+    {
+        $lower = Str::lower($text);
+
+        return Str::contains($lower, ['01 оборудование', 'оборудование']) && mb_strlen($text) <= 40;
+    }
+
+    private function looksLikeVehicleApplication(string $text): bool
+    {
+        $lower = Str::lower($text);
+
+        return Str::contains($lower, [
+            'benz',
+            'bmw',
+            'mercedes',
+            'vw',
+            'audi',
+            'vag',
+            'opel',
+            'renault',
+            'toyota',
+            'ford',
+            'volvo',
+            'fiat',
+            'peugeot',
+            'citroen',
+            'mazda',
+            'nissan',
+            'honda',
+        ]) && mb_strlen($text) <= 120;
+    }
+
+    private function normalizeVehicleApplication(string $text): string
+    {
+        $text = trim(preg_replace('/\s+/u', ' ', $text) ?: $text);
+
+        return mb_strtoupper($text, 'UTF-8');
     }
 
     private function parsePrice(?string $value): ?float
@@ -332,6 +532,18 @@ class ProductPriceListImportService
     private function cleanSku(string $sku): string
     {
         return trim(preg_replace('/\s+/u', '', $sku) ?: '');
+    }
+
+    private function normalizeSku(string $sku): string
+    {
+        return Str::lower(preg_replace('/[^a-z0-9]/i', '', $sku) ?: '');
+    }
+
+    private function brandKey(?string $brand): string
+    {
+        $brand = trim((string) $brand);
+
+        return $brand === '' ? '*' : Str::lower(preg_replace('/[^a-z0-9]+/i', '', $brand) ?: $brand);
     }
 
     private function looksLikeSku(string $sku): bool

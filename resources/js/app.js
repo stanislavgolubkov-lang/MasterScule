@@ -2,8 +2,6 @@ document.addEventListener('click', (event) => {
     const openTarget = event.target.closest('[data-open]');
     const closeTarget = event.target.closest('[data-close]');
     const aiPrompt = event.target.closest('[data-ai-prompt]');
-    const aiOpen = event.target.closest('[data-ai-open]');
-    const aiClose = event.target.closest('[data-ai-close]');
     const catalogOpen = event.target.closest('[data-catalog-open]');
     const catalogClose = event.target.closest('[data-catalog-close]');
     const mobileCatalogToggle = event.target.closest('[data-mobile-catalog-toggle]');
@@ -41,15 +39,6 @@ document.addEventListener('click', (event) => {
             input.value = aiPrompt.dataset.aiPrompt;
             input.focus();
         }
-    }
-
-    if (aiOpen) {
-        event.preventDefault();
-        openAiModal(aiOpen.dataset.aiPrefill || '');
-    }
-
-    if (aiClose) {
-        closeAiModal();
     }
 
     if (catalogOpen) {
@@ -97,83 +86,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
-        closeAiModal();
         closeCatalogModal();
         closeMobileMenu();
     }
 });
-
-document.addEventListener('submit', async (event) => {
-    const form = event.target.closest('.ai-modal-form');
-    if (!form) return;
-
-    event.preventDefault();
-
-    const modal = document.getElementById('ai-modal');
-    const state = modal?.querySelector('.ai-modal-state');
-    const responseBox = modal?.querySelector('.ai-modal-response');
-    const productsBox = modal?.querySelector('.ai-modal-products');
-    const button = form.querySelector('button[type="submit"]');
-
-    if (!state || !responseBox || !productsBox || !button) return;
-
-    state.hidden = false;
-    state.textContent = document.documentElement.lang === 'ru' ? 'AI готовит ответ...' : 'AI pregateste raspunsul...';
-    responseBox.hidden = true;
-    productsBox.innerHTML = '';
-    button.disabled = true;
-
-    try {
-        const response = await fetch(form.action, {
-            method: 'POST',
-            headers: {
-                Accept: 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-            },
-            body: new FormData(form),
-        });
-
-        if (!response.ok) throw new Error('Request failed');
-
-        const payload = await response.json();
-        state.hidden = true;
-        responseBox.hidden = false;
-        responseBox.textContent = payload.response || '';
-        productsBox.innerHTML = (payload.products || []).map((product) => `
-            <a class="ai-mini-product" href="${escapeAttr(product.url)}">
-                <img src="${escapeAttr(product.image)}" alt="">
-                <span><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(product.brand || '')} - ${escapeHtml(product.sku)} - ${escapeHtml(product.price)}</small></span>
-            </a>
-        `).join('');
-    } catch (error) {
-        state.hidden = false;
-        state.textContent = document.documentElement.lang === 'ru' ? 'Сейчас не удалось получить ответ. Попробуйте еще раз.' : 'Nu am putut primi raspunsul acum. Incearca din nou.';
-    } finally {
-        button.disabled = false;
-    }
-});
-
-function openAiModal(prefill = '') {
-    const modal = document.getElementById('ai-modal');
-    if (!modal) return;
-
-    modal.hidden = false;
-    document.body.classList.add('ai-modal-open');
-
-    const input = modal.querySelector('textarea[name="prompt"]');
-    if (input) {
-        if (prefill) input.value = prefill;
-        window.setTimeout(() => input.focus(), 30);
-    }
-}
-
-function closeAiModal() {
-    const modal = document.getElementById('ai-modal');
-    if (!modal || modal.hidden) return;
-
-    modal.hidden = true;
-    document.body.classList.remove('ai-modal-open');
-}
 
 function toggleCatalogMenu(trigger = null) {
     if (window.matchMedia('(max-width: 920px)').matches) {
@@ -334,18 +250,4 @@ function setHeroSlide(slider, index) {
     slider.dataset.heroIndex = String(index);
     slides.forEach((slide, slideIndex) => slide.classList.toggle('is-active', slideIndex === index));
     dots.forEach((dot, dotIndex) => dot.classList.toggle('is-active', dotIndex === index));
-}
-
-function escapeHtml(value) {
-    return String(value ?? '').replace(/[&<>"']/g, (char) => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;',
-    }[char]));
-}
-
-function escapeAttr(value) {
-    return escapeHtml(value).replace(/`/g, '&#096;');
 }

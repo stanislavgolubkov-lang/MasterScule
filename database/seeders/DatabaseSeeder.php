@@ -90,7 +90,10 @@ class DatabaseSeeder extends Seeder
             Product::create($data);
         }
 
-        $this->call(CatalogStructureSeeder::class);
+        $this->call([
+            CatalogStructureSeeder::class,
+            ParserCatalogSeeder::class,
+        ]);
 
         Banner::create([
             'title' => 'Scule profesionale pentru service si garaj',

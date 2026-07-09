@@ -25,6 +25,12 @@ class ParsePriceListJob implements ShouldQueue
             return;
         }
 
+        if ($batch->import_mode === 'dry_run') {
+            $importer->dryRun($batch);
+
+            return;
+        }
+
         $importer->import($batch);
     }
 }

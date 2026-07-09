@@ -57,11 +57,14 @@ class ProductDraftService
             'needs_image_review' => (bool) $item->needs_image_review,
             'source_import_batch_id' => $item->batch_id,
             'source_parser_item_id' => $item->id,
+            'vehicle_application' => $item->vehicle_application,
             'parser_confidence' => $item->confidence_score,
             'parser_source_urls' => $item->source_urls_json ?: [],
             'main_image' => $mainImage,
             'gallery' => $images,
-            'attributes' => $item->found_specs_json ?: [],
+            'attributes' => array_filter(($item->found_specs_json ?: []) + [
+                'Vehicle application' => $item->vehicle_application,
+            ]),
             'package_contents' => ['Draft parser preview'],
             'rating' => 5,
             'reviews_count' => 0,
@@ -76,6 +79,7 @@ class ProductDraftService
         ]);
 
         $this->syncImages($product, $images);
+        $product->syncCategoryLinks([$category->id], $category->id, 'parser_draft');
 
         $item->forceFill([
             'status' => 'draft_created',

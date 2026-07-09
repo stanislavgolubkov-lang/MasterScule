@@ -13,6 +13,13 @@ class Category extends Model
 
     public function products()
     {
+        return $this->belongsToMany(Product::class)
+            ->withPivot(['is_primary', 'source', 'confidence'])
+            ->withTimestamps();
+    }
+
+    public function primaryProducts()
+    {
         return $this->hasMany(Product::class);
     }
 

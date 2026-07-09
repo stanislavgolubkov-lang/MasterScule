@@ -57,10 +57,10 @@ class ShopController extends Controller
         $categoryIds = $activeCategory?->descendantsAndSelfIds();
         $showProducts = $this->shouldShowProducts($request, $activeCategory);
 
-        $products = Product::with(['brand', 'category'])
+        $products = Product::with(['brand', 'category', 'categories'])
             ->where('is_active', true)
             ->when(! $showProducts, fn ($query) => $query->whereRaw('1 = 0'))
-            ->when($activeCategory, fn ($query) => $query->whereIn('category_id', $categoryIds))
+            ->when($activeCategory, fn ($query) => $query->inCatalogCategories($categoryIds))
             ->when($request->filled('q'), function ($query) use ($request) {
                 $terms = $this->searchTerms($request->string('q')->toString());
 
@@ -81,6 +81,11 @@ class ShopController extends Controller
                                     ->orWhere('slug', 'like', $like);
                             })
                             ->orWhereHas('category', function ($category) use ($like) {
+                                $category->where('name', 'like', $like)
+                                    ->orWhere('name_ro', 'like', $like)
+                                    ->orWhere('slug', 'like', $like);
+                            })
+                            ->orWhereHas('categories', function ($category) use ($like) {
                                 $category->where('name', 'like', $like)
                                     ->orWhere('name_ro', 'like', $like)
                                     ->orWhere('slug', 'like', $like);
@@ -134,13 +139,20 @@ class ShopController extends Controller
 
     public function product(string $slug)
     {
-        $product = Product::with(['brand', 'category'])->where('slug', $slug)->where('is_active', true)->firstOrFail();
+        $product = Product::with(['brand', 'category', 'categories'])->where('slug', $slug)->where('is_active', true)->firstOrFail();
+        $similarCategoryIds = $product->categories
+            ->pluck('id')
+            ->push($product->category_id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
 
         return view('shop.product', [
             'product' => $product,
             'similarProducts' => Product::with('brand')
                 ->where('id', '!=', $product->id)
-                ->where('category_id', $product->category_id)
+                ->inCatalogCategories($similarCategoryIds)
                 ->where('is_active', true)
                 ->limit(4)
                 ->get(),
@@ -172,7 +184,7 @@ class ShopController extends Controller
         $brand = Brand::where('slug', $slug)->where('is_active', true)->firstOrFail();
 
         return view('shop.catalog', [
-            'products' => Product::with(['brand', 'category'])->where('brand_id', $brand->id)->where('is_active', true)->paginate(12),
+            'products' => Product::with(['brand', 'category', 'categories'])->where('brand_id', $brand->id)->where('is_active', true)->paginate(12),
             'activeCategory' => null,
             'activePathIds' => [],
             'breadcrumbs' => [],
@@ -232,7 +244,7 @@ class ShopController extends Controller
             'title' => $title,
             'subtitle' => __('ui.collection_text'),
             'products' => $query
-                ->with(['brand', 'category'])
+                ->with(['brand', 'category', 'categories'])
                 ->where('is_active', true)
                 ->orderByDesc('is_featured')
                 ->paginate(12),
