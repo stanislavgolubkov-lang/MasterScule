@@ -57,6 +57,14 @@ class Product extends Model
         return $this->hasMany(ProductImage::class);
     }
 
+    public function scopeAvailableForSale($query)
+    {
+        return $query
+            ->where('is_active', true)
+            ->where('stock_status', 'in_stock')
+            ->where('stock_quantity', '>', 0);
+    }
+
     public function scopeInCatalogCategories($query, array $categoryIds)
     {
         $categoryIds = array_values(array_unique(array_filter(array_map('intval', $categoryIds))));

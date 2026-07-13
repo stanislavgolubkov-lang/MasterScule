@@ -357,6 +357,9 @@ class ProductPriceListImportService
 
     private function skippedItem(ProductParserBatch $batch, array $row, ?string $sku, string $reason, ?string $brand = null, ?string $normalizedSku = null, array $context = []): void
     {
+        $isDuplicate = str_contains($reason, 'Duplicate SKU');
+        $hasStock = trim((string) ($row['stock'] ?? '')) !== '';
+
         ProductParserItem::create([
             'batch_id' => $batch->id,
             'row_number' => $row['row_number'] ?? null,
@@ -365,7 +368,9 @@ class ProductPriceListImportService
             'brand' => $brand,
             'raw_name' => $row['name'] ?? null,
             'raw_price' => $row['price'] ?? null,
+            'parsed_price' => $isDuplicate && $hasStock ? $this->parsePrice($row['price'] ?? null) : null,
             'raw_stock' => $row['stock'] ?? null,
+            'parsed_stock' => $isDuplicate && $hasStock ? $this->parseStock($row['stock'] ?? null) : null,
             'detected_group' => $context['group'] ?? null,
             'detected_subgroup' => $context['subgroup'] ?? null,
             'vehicle_application' => $context['vehicle_application'] ?? null,
@@ -548,7 +553,12 @@ class ProductPriceListImportService
 
     private function looksLikeSku(string $sku): bool
     {
-        return (bool) preg_match('/[0-9]/', $sku) && mb_strlen($sku) <= 80;
+        if (mb_strlen($sku) > 80) {
+            return false;
+        }
+
+        return (bool) preg_match('/[0-9]/', $sku)
+            || (bool) preg_match('/^[A-Z]{2,}[A-Z0-9]*[-_\/][A-Z0-9]+$/i', $sku);
     }
 
     private function brandValue(?string $value): ?string

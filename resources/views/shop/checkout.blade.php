@@ -2,7 +2,7 @@
 
 @section('content')
 @php($checkoutUser = auth()->user())
-<section class="shell page-title"><p>{{ __('ui.cart') }} / Checkout</p><h1>{{ __('ui.checkout_title') }}</h1></section>
+<section class="shell page-title"><p>{{ __('ui.cart') }} / {{ __('ui.checkout') }}</p><h1>{{ __('ui.checkout_title') }}</h1></section>
 <section class="shell checkout-grid">
     <form method="post" action="{{ route('checkout.store') }}" class="checkout-form">
         @csrf

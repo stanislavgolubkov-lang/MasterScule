@@ -313,6 +313,7 @@ class CheckoutController extends Controller
         $product->forceFill([
             'stock_quantity' => $newStock,
             'stock_status' => $newStock > 0 ? 'in_stock' : 'out_of_stock',
+            'is_active' => $newStock > 0,
         ])->save();
     }
 
@@ -321,7 +322,7 @@ class CheckoutController extends Controller
         $cart = collect(session('cart', []));
         $products = Product::with('brand')
             ->whereIn('id', $cart->keys())
-            ->where('is_active', true)
+            ->availableForSale()
             ->get()
             ->keyBy('id');
 

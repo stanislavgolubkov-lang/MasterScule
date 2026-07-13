@@ -9,84 +9,111 @@ class ProductParserContentBuilder
 {
     public function build(string $sku, string $sourceName, ?string $brand = null, ?string $group = null): array
     {
-        $sourceName = $this->cleanName($sourceName);
+        $sourceName = $this->clean($sourceName);
         $brand = trim((string) $brand);
-        $nameRu = $this->nameRu($sourceName, $brand, $sku);
-        $nameRo = $this->nameRo($sourceName, $brand, $sku);
-        $usageRu = $this->usageRu($nameRu, $brand, $group);
-        $usageRo = $this->usageRo($nameRo, $brand, $group);
+        $nameRu = ProductLocalizer::russianName($sourceName, $brand, $sku);
+        $nameRo = $this->romanianName($sourceName, $brand, $sku);
+        $shortRu = "{$nameRu} — технический товар для профессионального использования в автосервисе, мастерской или гараже.";
+        $shortRo = "{$nameRo} este un produs tehnic pentru utilizare profesionala in service auto, atelier sau garaj.";
+        $scopeRu = $group ? ' Раздел прайс-листа: '.$this->clean($group).'.' : '';
+        $scopeRo = $group ? ' Grupa din lista de preturi: '.$this->romanianText($this->clean($group)).'.' : '';
 
         return [
             'name_ru' => $nameRu,
             'name_ro' => $nameRo,
-            'short_description_ru' => Str::limit($usageRu, 180, ''),
-            'short_description_ro' => Str::limit($usageRo, 180, ''),
-            'description_ru' => $usageRu.' Код товара: '.$sku.'. Проверьте характеристики, категорию и изображения перед публикацией.',
-            'description_ro' => $usageRo.' Cod produs: '.$sku.'. Verifica categoria, caracteristicile si imaginile inainte de publicare.',
+            'short_description_ru' => Str::limit($shortRu, 240, ''),
+            'short_description_ro' => Str::limit($shortRo, 240, ''),
+            'description_ru' => $shortRu.' Артикул: '.$sku.'.'.$scopeRu,
+            'description_ro' => $shortRo.' Cod produs: '.$sku.'.'.$scopeRo,
         ];
     }
 
-    private function cleanName(string $name): string
+    public function mergeOfficialContent(array $content, ?string $officialTitle, ?string $officialDescription, string $sku, ?string $brand = null): array
     {
-        $name = html_entity_decode(strip_tags($name), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $name = preg_replace('/\s+/u', ' ', $name) ?: '';
+        $officialTitle = $this->clean((string) $officialTitle);
+        $officialDescription = $this->clean((string) $officialDescription);
 
-        return trim($name, " \t\n\r\0\x0B,.;");
-    }
-
-    private function nameRu(string $name, string $brand, string $sku): string
-    {
-        return ProductLocalizer::russianName($name, $brand, $sku);
-    }
-
-    private function nameRo(string $name, string $brand, string $sku): string
-    {
-        $lower = Str::lower($name);
-
-        if (! preg_match('/[А-Яа-яЁё]/u', $name)) {
-            return ProductLocalizer::name($name, $brand, $sku);
+        if ($officialTitle !== '' && ! Str::contains(Str::lower($officialTitle), ['search', 'official product page'])) {
+            $content['name_ru'] = ProductLocalizer::russianName($officialTitle, (string) $brand, $sku);
+            $content['name_ro'] = $this->romanianName($officialTitle, (string) $brand, $sku);
+        }
+        if ($officialDescription !== '') {
+            $content['description_ru'] = $this->russianText($officialDescription).' Артикул: '.$sku.'.';
+            $content['description_ro'] = $this->romanianText($officialDescription).' Cod produs: '.$sku.'.';
+            $content['short_description_ru'] = Str::limit($content['description_ru'], 240, '');
+            $content['short_description_ro'] = Str::limit($content['description_ro'], 240, '');
         }
 
-        $replacements = [
-            'пневматический' => 'pneumatic',
-            'пневмогайковерт' => 'pistol pneumatic de impact',
-            'пистолет' => 'pistol',
+        return $content;
+    }
+
+    private function romanianName(string $name, string $brand, string $sku): string
+    {
+        return ProductLocalizer::name(Str::ucfirst($this->romanianText($name)), $brand, $sku);
+    }
+
+    private function romanianText(string $text): string
+    {
+        return $this->replaceTechnicalTerms($text, [
+            'пневматический гайковерт' => 'cheie pneumatica de impact',
+            'пневматический инструмент' => 'instrument pneumatic',
+            'аккумуляторный инструмент' => 'instrument cu acumulator',
+            'динамометрический ключ' => 'cheie dinamometrica',
+            'торцевая головка' => 'cheie tubulara',
+            'набор инструментов' => 'set de scule',
             'набор' => 'set',
-            'комплект' => 'set',
-            'ключ' => 'cheie',
-            'головка' => 'cheie tubulara',
-            'трещотка' => 'clichet',
             'отвертка' => 'surubelnita',
+            'трещотка' => 'clichet',
             'съемник' => 'extractor',
-            'съёмник' => 'extractor',
+            'домкрат' => 'cric',
+            'тележка' => 'carucior',
+            'шкаф' => 'dulap',
+            'ящик' => 'cutie',
+            'компрессор' => 'compresor',
             'шланг' => 'furtun',
-            'муфта' => 'cupla',
-            'смазочная' => 'gresare',
-            'динамометрический' => 'dinamometric',
-            'инструментов' => 'scule',
-            'инструмент' => 'instrument',
-        ];
+            'гидравлический' => 'hidraulic',
+            'головка' => 'cheie tubulara',
+            'ключ' => 'cheie',
+            'клещи' => 'cleste',
+            'молоток' => 'ciocan',
+            'сверло' => 'burghiu',
+            'диск' => 'disc',
+            'для' => 'pentru',
+        ]);
+    }
 
-        foreach ($replacements as $from => $to) {
-            $lower = str_replace($from, $to, $lower);
+    private function russianText(string $text): string
+    {
+        if (preg_match('/\p{Cyrillic}/u', $text)) {
+            return $this->clean($text);
         }
 
-        $name = trim(preg_replace('/\s+/u', ' ', $lower) ?: $name);
-
-        return ProductLocalizer::name(Str::ucfirst($name), $brand, $sku);
+        return $this->replaceTechnicalTerms($text, [
+            'air impact wrench' => 'пневматический гайковерт',
+            'impact wrench' => 'ударный гайковерт',
+            'torque wrench' => 'динамометрический ключ',
+            'socket set' => 'набор торцевых головок',
+            'tool set' => 'набор инструментов',
+            'screwdriver' => 'отвертка',
+            'puller' => 'съемник',
+            'hydraulic jack' => 'гидравлический домкрат',
+            'cordless' => 'аккумуляторный',
+            'pneumatic' => 'пневматический',
+        ]);
     }
 
-    private function usageRu(string $name, string $brand, ?string $group): string
+    private function replaceTechnicalTerms(string $text, array $dictionary): string
     {
-        $scope = $group ? ' Раздел прайса: '.$group.'.' : '';
+        $result = Str::lower($this->clean($text));
+        uksort($dictionary, fn ($a, $b) => mb_strlen($b) <=> mb_strlen($a));
 
-        return "{$name} - технический товар".($brand ? " {$brand}" : '')." для автосервиса, мастерской и гаража.{$scope}";
+        return trim(preg_replace('/\s+/u', ' ', str_ireplace(array_keys($dictionary), array_values($dictionary), $result)) ?: $text);
     }
 
-    private function usageRo(string $name, string $brand, ?string $group): string
+    private function clean(string $value): string
     {
-        $scope = $group ? ' Sectiune pret: '.$group.'.' : '';
+        $value = html_entity_decode(strip_tags($value), ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
-        return "{$name} este un produs tehnic".($brand ? " {$brand}" : '')." pentru service auto, atelier si garaj.{$scope}";
+        return trim(preg_replace('/\s+/u', ' ', $value) ?: '', " \t\n\r\0\x0B,.;");
     }
 }

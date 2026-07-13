@@ -32,10 +32,10 @@
 
 <section class="hero hero-premium" data-hero-slider>
     @foreach([
-        ['class' => 'hero-slide-service is-active', 'primary' => route('catalog'), 'secondary' => route('promotions'), 'image' => '/images/products/king-tony-7596mr.jpg', 'mini' => ['/images/products/m7-nc-4255q.jpg', '/images/products/king-tony-34262-1dg.jpg']],
-        ['class' => 'hero-slide-king', 'primary' => route('brand.show', 'king-tony'), 'secondary' => route('catalog', 'seturi-de-scule'), 'image' => '/images/products/king-tony-7596mr.jpg', 'mini' => ['/images/products/king-tony-11311mq02.jpg', '/images/products/king-tony-7k09mp.jpg']],
-        ['class' => 'hero-slide-m7', 'primary' => route('brand.show', 'm7-mighty-seven'), 'secondary' => route('catalog', 'scule-pneumatice'), 'image' => '/images/products/m7-nc-4255q.jpg', 'mini' => ['/images/products/m7-dw-406.jpg', '/images/products/m7-qt-102.jpg']],
-        ['class' => 'hero-slide-equipment', 'primary' => route('catalog', 'echipamente-service'), 'secondary' => route('catalog', 'dulapuri-si-organizare'), 'image' => '/images/products/m7-sm-0503.jpg', 'mini' => ['/images/products/king-tony-34262-1dg.jpg', '/images/products/product-placeholder-toolbox.svg']],
+        ['class' => 'hero-slide-service is-active', 'primary' => route('catalog'), 'secondary' => route('promotions')],
+        ['class' => 'hero-slide-king', 'primary' => route('brand.show', 'king-tony'), 'secondary' => route('catalog', 'seturi-de-scule')],
+        ['class' => 'hero-slide-m7', 'primary' => route('brand.show', 'm7-mighty-seven'), 'secondary' => route('catalog', 'scule-pneumatice')],
+        ['class' => 'hero-slide-equipment', 'primary' => route('catalog', 'echipamente-service'), 'secondary' => route('catalog', 'dulapuri-si-organizare')],
     ] as $index => $slide)
         <div class="hero-slide {{ $slide['class'] }}" data-hero-slide>
             <div class="hero-backdrop" aria-hidden="true"></div>
@@ -52,14 +52,6 @@
                     </div>
                 </div>
                 <div class="hero-showcase" aria-hidden="true">
-                    <div class="hero-product-stage {{ $index === 2 ? 'hero-product-stage-orange' : '' }}">
-                        <span class="hero-product-badge">{{ $copy[$index]['badge'] }}</span>
-                        <img src="{{ $slide['image'] }}" alt="">
-                    </div>
-                    <div class="hero-product-row">
-                        <div class="hero-product-mini"><img src="{{ $slide['mini'][0] }}" alt=""></div>
-                        <div class="hero-product-mini"><img src="{{ $slide['mini'][1] }}" alt=""></div>
-                    </div>
                     <div class="hero-panel">
                         <span class="hero-panel-label">{{ $copy[$index]['badge'] }}</span>
                         <h2>{{ $copy[$index]['panel'] }}</h2>

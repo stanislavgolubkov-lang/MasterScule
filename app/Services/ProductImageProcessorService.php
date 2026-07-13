@@ -46,6 +46,10 @@ class ProductImageProcessorService
 
     private function processAsset(ProductParserImageAsset $asset, ProductParserItem $item, int $index): string
     {
+        if (Str::contains(Str::lower($asset->source_url), 'tristool.')) {
+            throw new \RuntimeException('TrisTool media is not allowed in the official image pipeline.');
+        }
+
         [$bytes, $mime] = $this->readSource($asset->source_url);
         $source = @imagecreatefromstring($bytes);
 
@@ -53,34 +57,43 @@ class ProductImageProcessorService
             throw new \RuntimeException('Unsupported or broken image source.');
         }
 
+        if (imagesx($source) < 220 || imagesy($source) < 220) {
+            imagedestroy($source);
+
+            throw new \RuntimeException('Official image source is too small for a product card.');
+        }
+
         $size = max(600, (int) $this->settings->get('image_size', 1200));
         $thumbSize = max(150, (int) $this->settings->get('thumb_size', 300));
         $quality = max(75, min(95, (int) $this->settings->get('webp_quality', 88)));
         $main = $this->squareCanvas($source, $size);
         $hasWatermark = $this->watermark->apply($main);
-        $thumb = $this->squareCanvas($source, $thumbSize);
+        $thumb = $index === 0 ? $this->squareCanvas($source, $thumbSize) : null;
         imagedestroy($source);
 
         $safeSku = Str::slug($item->sku) ?: 'sku';
-        $baseDir = 'parser/imports/'.($item->batch_id ?: 'manual').'/'.$safeSku;
+        $brandDir = Str::slug($item->brand ?: 'unknown-brand') ?: 'unknown-brand';
+        $baseDir = 'products/official/'.$brandDir.'/'.$safeSku;
         $suffix = $index === 0 ? 'main' : 'gallery-'.$index;
-        $originalPath = "{$baseDir}/original/{$safeSku}-original-{$index}.bin";
-        $processedPath = "{$baseDir}/processed/{$safeSku}-{$suffix}.webp";
-        $thumbPath = "{$baseDir}/processed/{$safeSku}-thumb".($index === 0 ? '' : '-'.$index).".webp";
+        $processedPath = "{$baseDir}/{$safeSku}-{$suffix}.webp";
+        $thumbPath = $index === 0 ? "{$baseDir}/{$safeSku}-thumb.webp" : null;
 
-        Storage::disk('public')->put($originalPath, $bytes);
         Storage::disk('public')->put($processedPath, $this->encodeWebp($main, $quality));
-        Storage::disk('public')->put($thumbPath, $this->encodeWebp($thumb, $quality));
+        if ($thumbPath && $thumb instanceof GdImage) {
+            Storage::disk('public')->put($thumbPath, $this->encodeWebp($thumb, $quality));
+        }
 
         imagedestroy($main);
-        imagedestroy($thumb);
+        if ($thumb instanceof GdImage) {
+            imagedestroy($thumb);
+        }
 
         $publicProcessedPath = Storage::url($processedPath);
 
         $asset->forceFill([
-            'original_path' => Storage::url($originalPath),
+            'original_path' => null,
             'processed_path' => $publicProcessedPath,
-            'thumb_path' => Storage::url($thumbPath),
+            'thumb_path' => $thumbPath ? Storage::url($thumbPath) : null,
             'width' => $size,
             'height' => $size,
             'mime_type' => 'image/webp',
@@ -132,8 +145,7 @@ class ProductImageProcessorService
         $white = imagecolorallocate($canvas, 255, 255, 255);
         imagefill($canvas, 0, 0, $white);
 
-        $sourceWidth = imagesx($source);
-        $sourceHeight = imagesy($source);
+        [$sourceX, $sourceY, $sourceWidth, $sourceHeight] = $this->contentBounds($source);
         $targetMax = (int) ($size * 0.84);
         $scale = min($targetMax / max(1, $sourceWidth), $targetMax / max(1, $sourceHeight));
         $targetWidth = max(1, (int) round($sourceWidth * $scale));
@@ -141,9 +153,58 @@ class ProductImageProcessorService
         $x = (int) (($size - $targetWidth) / 2);
         $y = (int) (($size - $targetHeight) / 2);
 
-        imagecopyresampled($canvas, $source, $x, $y, 0, 0, $targetWidth, $targetHeight, $sourceWidth, $sourceHeight);
+        imagecopyresampled($canvas, $source, $x, $y, $sourceX, $sourceY, $targetWidth, $targetHeight, $sourceWidth, $sourceHeight);
 
         return $canvas;
+    }
+
+    private function contentBounds(GdImage $source): array
+    {
+        $width = imagesx($source);
+        $height = imagesy($source);
+        $step = max(1, (int) floor(max($width, $height) / 500));
+        $left = $width;
+        $top = $height;
+        $right = -1;
+        $bottom = -1;
+
+        for ($y = 0; $y < $height; $y += $step) {
+            for ($x = 0; $x < $width; $x += $step) {
+                $rgba = imagecolorat($source, $x, $y);
+                $alpha = ($rgba >> 24) & 0x7f;
+                $red = ($rgba >> 16) & 0xff;
+                $green = ($rgba >> 8) & 0xff;
+                $blue = $rgba & 0xff;
+
+                if ($alpha >= 118 || ($red >= 246 && $green >= 246 && $blue >= 246)) {
+                    continue;
+                }
+
+                $left = min($left, $x);
+                $top = min($top, $y);
+                $right = max($right, $x);
+                $bottom = max($bottom, $y);
+            }
+        }
+
+        if ($right < $left || $bottom < $top) {
+            return [0, 0, $width, $height];
+        }
+
+        $detectedWidth = $right - $left + 1;
+        $detectedHeight = $bottom - $top + 1;
+
+        if (($detectedWidth * $detectedHeight) < ($width * $height * 0.015)) {
+            return [0, 0, $width, $height];
+        }
+
+        $padding = max(4, (int) round(max($detectedWidth, $detectedHeight) * 0.06));
+        $left = max(0, $left - $padding);
+        $top = max(0, $top - $padding);
+        $right = min($width - 1, $right + $padding);
+        $bottom = min($height - 1, $bottom + $padding);
+
+        return [$left, $top, $right - $left + 1, $bottom - $top + 1];
     }
 
     private function encodeWebp(GdImage $image, int $quality): string

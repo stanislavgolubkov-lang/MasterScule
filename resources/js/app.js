@@ -8,6 +8,7 @@ document.addEventListener('click', (event) => {
     const catalogSidebarMobileToggle = event.target.closest('[data-catalog-sidebar-mobile-toggle]');
     const catalogSidebarToggle = event.target.closest('[data-catalog-sidebar-toggle]');
     const heroDot = event.target.closest('[data-hero-dot]');
+    const productGalleryButton = event.target.closest('[data-product-gallery-src]');
 
     if (openTarget) {
         const target = document.getElementById(openTarget.dataset.open);
@@ -64,6 +65,18 @@ document.addEventListener('click', (event) => {
 
     if (heroDot) {
         setHeroSlide(heroDot.closest('[data-hero-slider]'), Number(heroDot.dataset.heroDot));
+    }
+
+    if (productGalleryButton) {
+        const mainImage = document.querySelector('[data-product-main-image]');
+        if (mainImage) {
+            mainImage.src = productGalleryButton.dataset.productGallerySrc;
+            document.querySelectorAll('[data-product-gallery-src]').forEach((button) => {
+                const active = button === productGalleryButton;
+                button.classList.toggle('active', active);
+                button.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+        }
     }
 });
 

@@ -61,9 +61,9 @@ class CartController extends Controller
     {
         $items = collect(session('cart', []))
             ->map(function ($quantity, $productId) {
-                $product = Product::with('brand')->where('is_active', true)->find($productId);
+                $product = Product::with('brand')->availableForSale()->find($productId);
 
-                if (! $product || $product->stock_status !== 'in_stock') {
+                if (! $product) {
                     return null;
                 }
 

@@ -558,6 +558,313 @@ Artisan::command('masterscule:audit-product-images {--apply} {--limit=0} {--min=
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 })->purpose('Audit and optionally enrich product cards until each has 2-3 usable images');
 
+Artisan::command('masterscule:fetch-real-product-images {--apply} {--limit=100} {--min=3} {--brand=} {--sku=} {--after-id=0} {--only-review} {--missing-main} {--available-only} {--replace-fallback} {--quiet-output}', function (
+    ProductSearchService $search,
+    ProductImageCollectorService $collector,
+    ProductImageProcessorService $processor
+) {
+    $apply = (bool) $this->option('apply');
+    $limit = max(0, (int) $this->option('limit'));
+    $minImages = max(1, min(4, (int) $this->option('min')));
+    $brandFilter = trim((string) $this->option('brand'));
+    $skuFilter = trim((string) $this->option('sku'));
+    $afterId = max(0, (int) $this->option('after-id'));
+    $onlyReview = (bool) $this->option('only-review');
+    $missingMain = (bool) $this->option('missing-main');
+    $availableOnly = (bool) $this->option('available-only');
+    $replaceFallback = (bool) $this->option('replace-fallback');
+    $quiet = (bool) $this->option('quiet-output');
+
+    $isFallback = fn (?string $path): bool => filled($path) && Str::contains((string) $path, ['fallback', 'placeholder', 'product-placeholder']);
+    $isRealImage = fn (?string $path): bool => filled($path) && ! $isFallback($path);
+    $galleryFor = function (Product $product) use ($isRealImage): array {
+        return collect([$product->main_image])
+            ->merge($product->gallery ?: [])
+            ->merge($product->images->pluck('path'))
+            ->filter(fn ($path) => $isRealImage($path))
+            ->unique()
+            ->values()
+            ->all();
+    };
+    $hasFallback = function (Product $product) use ($isFallback): bool {
+        return collect([$product->main_image])
+            ->merge($product->gallery ?: [])
+            ->merge($product->images->pluck('path'))
+            ->contains(fn ($path) => $isFallback($path));
+    };
+    $syncImages = function (Product $product, array $images): void {
+        ProductImage::where('product_id', $product->id)->delete();
+
+        foreach (array_values(array_filter($images)) as $index => $path) {
+            ProductImage::create([
+                'product_id' => $product->id,
+                'path' => $path,
+                'alt' => $product->display_name,
+                'sort_order' => $index + 1,
+            ]);
+        }
+    };
+
+    $query = Product::with(['brand', 'images'])->orderBy('id');
+
+    if ($skuFilter !== '') {
+        $query->where('sku', $skuFilter);
+    }
+
+    if ($afterId > 0) {
+        $query->where('id', '>', $afterId);
+    }
+
+    if ($brandFilter !== '') {
+        $query->whereHas('brand', fn ($brand) => $brand->where('name', 'like', '%'.$brandFilter.'%'));
+    }
+
+    if ($onlyReview) {
+        $query->where(function ($products) {
+            $products
+                ->where('needs_image_review', true)
+                ->orWhere('main_image', 'like', '%fallback%')
+                ->orWhereHas('images', fn ($images) => $images->where('path', 'like', '%fallback%'));
+        });
+    }
+
+    if ($missingMain) {
+        $query->where(function ($products) {
+            $products
+                ->whereNull('main_image')
+                ->orWhere('main_image', '')
+                ->orWhere('main_image', 'like', '%placeholder%')
+                ->orWhere('main_image', 'like', '%product-placeholder%');
+        });
+    }
+
+    if ($availableOnly) {
+        $query->availableForSale();
+    }
+
+    if ($limit > 0) {
+        $query->limit($limit);
+    }
+
+    $batch = $apply
+        ? ProductParserBatch::create([
+            'title' => 'CLI real product image fetch '.now()->format('Y-m-d H:i:s'),
+            'source_type' => 'image_search',
+            'sku_count' => 0,
+            'status' => 'running',
+            'options_json' => [
+                'min_images' => $minImages,
+                'brand' => $brandFilter,
+                'sku' => $skuFilter,
+                'after_id' => $afterId,
+                'missing_main' => $missingMain,
+                'available_only' => $availableOnly,
+                'replace_fallback' => $replaceFallback,
+            ],
+        ])
+        : null;
+
+    $stats = [
+        'checked' => 0,
+        'already_real_ok' => 0,
+        'searched' => 0,
+        'updated' => 0,
+        'cleaned_fallback' => 0,
+        'not_found' => 0,
+        'processed_empty' => 0,
+        'still_below_min' => 0,
+        'errors' => 0,
+        'apply' => $apply,
+        'min_images' => $minImages,
+        'fallback_generated' => 0,
+        'last_id' => null,
+    ];
+    $samples = [];
+
+    foreach ($query->get() as $product) {
+        $stats['checked']++;
+        $stats['last_id'] = $product->id;
+        $currentReal = $galleryFor($product);
+        $productHasFallback = $hasFallback($product);
+
+        if (count($currentReal) >= $minImages && (! $replaceFallback || ! $productHasFallback)) {
+            $stats['already_real_ok']++;
+
+            if ($apply && $product->needs_image_review) {
+                $product->forceFill(['needs_image_review' => false])->save();
+                $syncImages($product, $currentReal);
+            }
+
+            continue;
+        }
+
+        if (! $apply) {
+            if (count($samples) < 30) {
+                $samples[] = [
+                    'sku' => $product->sku,
+                    'brand' => $product->brand?->name,
+                    'real_images' => count($currentReal),
+                    'has_fallback' => $productHasFallback,
+                    'name' => $product->name,
+                ];
+            }
+
+            continue;
+        }
+
+        try {
+            $stats['searched']++;
+            $item = ProductParserItem::updateOrCreate(
+                ['batch_id' => $batch->id, 'sku' => $product->sku],
+                [
+                    'brand' => $product->brand?->name,
+                    'category_id' => $product->category_id,
+                    'status' => 'queued',
+                    'name_ru' => $product->name,
+                    'name_ro' => $product->name_ro,
+                    'description_ru' => $product->description,
+                    'description_ro' => $product->description_ro,
+                    'found_title' => $product->display_name,
+                    'found_description' => $product->description ?: $product->short_description,
+                    'existing_product_id' => $product->id,
+                ]
+            );
+
+            $result = $search->search($product->sku, $product->brand?->name, 'auto', false);
+            $images = array_values(array_unique(array_filter($result['images'] ?? [])));
+
+            if (count($images) < $minImages) {
+                $looseQuery = trim(implode(' ', array_filter([$product->sku, $product->brand?->name, $product->name, $product->name_ro])));
+                $loose = $search->searchLoose($looseQuery, $product->brand?->name);
+                $images = array_values(array_unique(array_filter(array_merge($images, $loose['images'] ?? []))));
+            }
+
+            if ($images === []) {
+                $stats['not_found']++;
+
+                if ($currentReal !== []) {
+                    $product->forceFill([
+                        'main_image' => $currentReal[0],
+                        'gallery' => $currentReal,
+                        'needs_image_review' => true,
+                    ])->save();
+                    $syncImages($product, $currentReal);
+                    $stats['cleaned_fallback']++;
+                } else {
+                    $product->forceFill(['needs_image_review' => true])->save();
+                }
+
+                if (count($samples) < 30) {
+                    $samples[] = [
+                        'sku' => $product->sku,
+                        'brand' => $product->brand?->name,
+                        'result' => 'not_found',
+                    ];
+                }
+
+                if (! $quiet) {
+                    $this->warn("Real images not found: {$product->sku}");
+                }
+
+                continue;
+            }
+
+            $collector->collect($item, $images);
+            $processor->processSelected($item->fresh(['imageAssets', 'batch']));
+            $processed = collect($item->fresh()->processed_images_json ?: [])
+                ->filter(fn ($path) => $isRealImage($path))
+                ->unique()
+                ->values()
+                ->all();
+
+            if ($processed === []) {
+                $stats['processed_empty']++;
+
+                if ($currentReal !== []) {
+                    $product->forceFill([
+                        'main_image' => $currentReal[0],
+                        'gallery' => $currentReal,
+                        'needs_image_review' => true,
+                    ])->save();
+                    $syncImages($product, $currentReal);
+                    $stats['cleaned_fallback']++;
+                } else {
+                    $product->forceFill(['needs_image_review' => true])->save();
+                }
+
+                if (count($samples) < 30) {
+                    $samples[] = [
+                        'sku' => $product->sku,
+                        'brand' => $product->brand?->name,
+                        'result' => 'download_or_process_failed',
+                        'candidate_count' => count($images),
+                    ];
+                }
+
+                if (! $quiet) {
+                    $this->warn("Real images failed processing: {$product->sku}");
+                }
+
+                continue;
+            }
+
+            $nextImages = collect($processed)
+                ->merge($currentReal)
+                ->filter(fn ($path) => $isRealImage($path))
+                ->unique()
+                ->take(max($minImages, 3))
+                ->values()
+                ->all();
+
+            $product->forceFill([
+                'main_image' => $nextImages[0],
+                'gallery' => $nextImages,
+                'needs_image_review' => count($nextImages) < $minImages,
+                'parser_confidence' => $result['confidence'] ?? $product->parser_confidence,
+                'parser_source_urls' => array_values(array_unique(array_merge(
+                    $product->parser_source_urls ?: [],
+                    $result['source_urls'] ?? []
+                ))),
+            ])->save();
+            $syncImages($product, $nextImages);
+            $stats['updated']++;
+
+            if (count($nextImages) < $minImages) {
+                $stats['still_below_min']++;
+            }
+
+            if (! $quiet) {
+                $this->line("Real images {$product->sku}: ".count($currentReal).' -> '.count($nextImages));
+            }
+        } catch (Throwable $e) {
+            $stats['errors']++;
+            $product->forceFill(['needs_image_review' => true])->save();
+
+            if (count($samples) < 30) {
+                $samples[] = [
+                    'sku' => $product->sku,
+                    'brand' => $product->brand?->name,
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+    }
+
+    if ($batch) {
+        $batch->forceFill([
+            'status' => $stats['errors'] > 0 ? 'completed_with_errors' : 'completed',
+            'sku_count' => $stats['checked'],
+            'finished_at' => now(),
+            'options_json' => array_merge($batch->options_json ?: [], ['stats' => $stats]),
+        ])->save();
+    }
+
+    $this->info(json_encode([
+        'stats' => $stats,
+        'samples' => $samples,
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+})->purpose('Fetch real product images by SKU and replace fallback-generated product images');
+
 Artisan::command('masterscule:parser-price-dry-run {paths*}', function () {
     $importer = app(ProductPriceListImportService::class);
 
@@ -727,7 +1034,20 @@ Artisan::command('masterscule:sync-price-list-prices {--batch=*} {--dry-run}', f
         ->when($batchIds !== [], fn ($query) => $query->whereIn('batch_id', $batchIds))
         ->orderBy('batch_id')
         ->orderBy('id')
-        ->get();
+        ->get()
+        ->groupBy(fn ($item) => $item->normalized_sku ?: Str::lower(preg_replace('/[^a-z0-9]/i', '', (string) $item->sku) ?: $item->sku))
+        ->map(function ($group) {
+            return $group
+                ->sort(function ($a, $b) {
+                    $stockPriority = ((int) ($b->parsed_stock !== null)) <=> ((int) ($a->parsed_stock !== null));
+
+                    return $stockPriority
+                        ?: ($b->batch_id <=> $a->batch_id)
+                        ?: ($b->id <=> $a->id);
+                })
+                ->first();
+        })
+        ->values();
 
     $checked = 0;
     $updated = 0;

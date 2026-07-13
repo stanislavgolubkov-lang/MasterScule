@@ -2,7 +2,8 @@
 
 @section('content')
 <section class="shell page-title"><p>{{ __('ui.admin') }} / {{ __('ui.users') }}</p><h1>{{ app()->isLocale('ru') ? 'Администраторы и пользователи' : 'Admin si utilizator' }}</h1></section>
-<section class="shell panel">
+<section class="shell panel admin-table-panel">
+    <div class="admin-table-scroll">
     <table>
         <tr><th>{{ __('ui.name') }}</th><th>Email</th><th>{{ app()->isLocale('ru') ? 'Роль' : 'Rol' }}</th><th>{{ __('ui.phone') }}</th><th>{{ __('ui.company_name') }}</th><th>{{ __('ui.status') }}</th></tr>
         @foreach($users as $user)
@@ -16,6 +17,7 @@
             </tr>
         @endforeach
     </table>
+    </div>
     {{ $users->links() }}
 </section>
 @endsection

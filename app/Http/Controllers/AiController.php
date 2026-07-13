@@ -16,7 +16,7 @@ class AiController extends Controller
 
         return view('ai.advisor', [
             'recommendations' => Product::with('brand')
-                ->where('is_active', true)
+                ->availableForSale()
                 ->where('is_featured', true)
                 ->where('main_image', 'not like', '%product-placeholder%')
                 ->orderByDesc('is_bestseller')
@@ -24,6 +24,7 @@ class AiController extends Controller
                 ->get(),
             'responseProducts' => Product::with('brand')
                 ->whereIn('id', $responseProductIds)
+                ->availableForSale()
                 ->where('main_image', 'not like', '%product-placeholder%')
                 ->get(),
             'quickPrompts' => app()->isLocale('ru') ? [
@@ -94,7 +95,7 @@ class AiController extends Controller
 
         return Product::query()
             ->with(['brand', 'category'])
-            ->where('is_active', true)
+            ->availableForSale()
             ->where('main_image', 'not like', '%product-placeholder%')
             ->when(str_contains($prompt, 'king') || str_contains($prompt, 'tony'), fn ($query) => $query->whereHas('brand', fn ($brand) => $brand->where('slug', 'king-tony')))
             ->when(str_contains($prompt, 'm7') || str_contains($prompt, 'mighty') || str_contains($prompt, 'seven'), fn ($query) => $query->whereHas('brand', fn ($brand) => $brand->where('slug', 'm7-mighty-seven')))

@@ -12,7 +12,7 @@ class AccountController extends Controller
         return view('account.dashboard', [
             'user' => Auth::user(),
             'orders' => Auth::user()->orders()->with('items')->latest()->limit(6)->get(),
-            'featuredProducts' => Product::with('brand')->where('is_featured', true)->limit(4)->get(),
+            'featuredProducts' => Product::with('brand')->availableForSale()->where('is_featured', true)->limit(4)->get(),
         ]);
     }
 }

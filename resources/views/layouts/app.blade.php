@@ -56,12 +56,12 @@
         <nav class="main-nav">
             <div class="shell nav-inner">
                 <a class="catalog-link" href="{{ route('catalog') }}" data-catalog-open aria-expanded="false" aria-controls="catalog-modal">{{ __('ui.catalog_products') }}</a>
-                <a href="{{ route('brands') }}">{{ __('ui.brands') }}</a>
-                <a href="{{ route('catalog', 'echipamente-pentru-service') }}">{{ __('ui.for_service') }}</a>
-                <a href="{{ route('catalog', 'instrument-manual') }}">{{ __('ui.garage') }}</a>
-                <a class="orange" href="{{ route('promotions') }}">{{ __('ui.promotions') }}</a>
-                <a href="{{ route('new') }}">{{ __('ui.new_items') }}</a>
-                <a href="{{ route('page', 'contacts') }}">{{ __('ui.contact') }}</a>
+                <a class="{{ request()->routeIs('brands', 'brand.show') ? 'active' : '' }}" href="{{ route('brands') }}">{{ __('ui.brands') }}</a>
+                <a class="{{ request()->is('catalog/echipamente-pentru-service*') ? 'active' : '' }}" href="{{ route('catalog', 'echipamente-pentru-service') }}">{{ __('ui.for_service') }}</a>
+                <a class="{{ request()->is('catalog/instrument-manual*') ? 'active' : '' }}" href="{{ route('catalog', 'instrument-manual') }}">{{ __('ui.garage') }}</a>
+                <a class="orange {{ request()->routeIs('promotions') ? 'active' : '' }}" href="{{ route('promotions') }}">{{ __('ui.promotions') }}</a>
+                <a class="{{ request()->routeIs('new') ? 'active' : '' }}" href="{{ route('new') }}">{{ __('ui.new_items') }}</a>
+                <a class="{{ request()->routeIs('page') && request()->route('slug') === 'contacts' ? 'active' : '' }}" href="{{ route('page', 'contacts') }}">{{ __('ui.contact') }}</a>
             </div>
         </nav>
     </header>
@@ -86,7 +86,7 @@
 
     <footer class="site-footer">
         <div class="shell footer-grid">
-            <div><h4>{{ __('ui.footer_clients') }}</h4><a href="#">{{ __('ui.how_to_buy') }}</a><a href="{{ route('page', 'delivery-payment') }}">{{ __('ui.delivery_payment') }}</a><a href="{{ route('page', 'returns') }}">{{ __('ui.returns') }}</a></div>
+            <div><h4>{{ __('ui.footer_clients') }}</h4><a href="{{ route('page', 'delivery-payment') }}">{{ __('ui.how_to_buy') }}</a><a href="{{ route('page', 'delivery-payment') }}">{{ __('ui.delivery_payment') }}</a><a href="{{ route('page', 'returns') }}">{{ __('ui.returns') }}</a></div>
             <div><h4>{{ __('ui.company') }}</h4><a href="{{ route('page', 'about') }}">{{ __('ui.about_us') }}</a><a href="{{ route('page', 'terms') }}">{{ __('ui.terms') }}</a><a href="{{ route('page', 'privacy-policy') }}">{{ __('ui.privacy') }}</a></div>
             <div><h4>{{ __('ui.categories') }}</h4>@foreach($navCategories->take(5) as $category)<a href="{{ route('catalog', $category->slug) }}">{{ $category->display_name }}</a>@endforeach</div>
             <div><h4>{{ __('ui.contact') }}</h4><span>{{ config('store.phone') }}</span><span>{{ config('store.email') }}</span><span>{{ config('store.address') }}</span></div>
@@ -118,10 +118,10 @@
     <x-catalog-mega-menu :categories="$navCategories" />
 
     <nav class="bottom-nav">
-        <a href="{{ route('home') }}">{{ __('ui.bottom_home') }}</a>
-        <a href="{{ route('catalog') }}" data-catalog-open aria-expanded="false" aria-controls="catalog-modal">{{ __('ui.bottom_catalog') }}</a>
-        <a href="{{ route('cart.index') }}">{{ __('ui.bottom_cart') }}</a>
-        <a href="{{ auth()->check() ? route('account.dashboard') : route('login') }}">{{ __('ui.bottom_account') }}</a>
+        <a class="{{ request()->routeIs('home') ? 'active' : '' }}" href="{{ route('home') }}">{{ __('ui.bottom_home') }}</a>
+        <a class="{{ request()->routeIs('catalog', 'product.show', 'brand.show') ? 'active' : '' }}" href="{{ route('catalog') }}" data-catalog-open aria-expanded="false" aria-controls="catalog-modal">{{ __('ui.bottom_catalog') }}</a>
+        <a class="{{ request()->routeIs('cart.*', 'checkout.*') ? 'active' : '' }}" href="{{ route('cart.index') }}">{{ __('ui.bottom_cart') }}</a>
+        <a class="{{ request()->routeIs('account.*', 'login', 'register') ? 'active' : '' }}" href="{{ auth()->check() ? route('account.dashboard') : route('login') }}">{{ __('ui.bottom_account') }}</a>
     </nav>
 </body>
 </html>

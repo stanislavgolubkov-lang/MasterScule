@@ -8,126 +8,94 @@ class ProductLocalizer
 {
     public static function name(string $title, string $brandName = '', ?string $sku = null): string
     {
-        return self::ensureBrand($title, self::brand($brandName));
+        return self::ensureBrand(self::clean($title), self::brand($brandName), false, $sku);
     }
 
     public static function russianName(string $title, string $brandName = '', ?string $sku = null): string
     {
-        $name = trim((string) preg_replace('/\s+/u', ' ', $title));
+        $name = self::clean($title);
 
         if ($name === '') {
-            return trim('Профессиональный инструмент '.self::brand($brandName).' '.($sku ?? ''));
+            $name = 'Профессиональный инструмент';
+        } elseif (! preg_match('/\p{Cyrillic}/u', $name)) {
+            $dictionary = [
+                'air impact wrench' => 'пневматический гайковерт',
+                'impact wrench' => 'ударный гайковерт',
+                'torque wrench' => 'динамометрический ключ',
+                'socket set' => 'набор торцевых головок',
+                'tool set' => 'набор инструментов',
+                'screwdriver' => 'отвертка',
+                'puller' => 'съемник',
+                'hydraulic jack' => 'гидравлический домкрат',
+                'cordless' => 'аккумуляторный',
+                'pneumatic' => 'пневматический',
+                'set de scule' => 'набор инструментов',
+                'set de tubulare' => 'набор торцевых головок',
+                'cheie dinamometrica' => 'динамометрический ключ',
+                'cheie tubulara' => 'торцевая головка',
+                'pistol pneumatic' => 'пневматический инструмент',
+                'compresor' => 'компрессор',
+                'carucior' => 'тележка',
+                'dulap' => 'шкаф',
+                'cric' => 'домкрат',
+                'extractor' => 'съемник',
+            ];
+            uksort($dictionary, fn ($a, $b) => mb_strlen($b) <=> mb_strlen($a));
+            $name = str_ireplace(array_keys($dictionary), array_values($dictionary), $name);
         }
 
-        if (preg_match('/[А-Яа-яЁё]/u', $name)) {
-            return self::ensureBrand($name, self::brand($brandName));
-        }
-
-        $replacements = [
-            '/\bSet de scule\b/iu' => 'Набор инструментов',
-            '/\bSet scule\b/iu' => 'Набор инструментов',
-            '/\bSet de tubulare\b/iu' => 'Набор головок',
-            '/\bSet tubulare\b/iu' => 'Набор головок',
-            '/\bSet reparatie filet\b/iu' => 'Набор для восстановления резьбы',
-            '/\bSet profesional\b/iu' => 'Профессиональный набор',
-            '/\bCheie dinamometrica\b/iu' => 'Динамометрический ключ',
-            '/\bCheie tubulara\b/iu' => 'Торцевая головка',
-            '/\bChei combinate\b/iu' => 'Комбинированные ключи',
-            '/\bChei si surubelnite\b/iu' => 'Ключи и отвертки',
-            '/\bTubulare si clichete\b/iu' => 'Головки и трещотки',
-            '/\bPistol pneumatic\b/iu' => 'Пневмогайковерт',
-            '/\bPistoale pneumatice\b/iu' => 'Пневмопистолеты',
-            '/\bCompresor\b/iu' => 'Компрессор',
-            '/\bCarucior scule\b/iu' => 'Тележка для инструментов',
-            '/\bDulap\b/iu' => 'Шкаф',
-            '/\bCric\b/iu' => 'Домкрат',
-            '/\bCricuri\b/iu' => 'Домкраты',
-            '/\bExtractor\b/iu' => 'Съемник',
-            '/\bExtractoare\b/iu' => 'Съемники',
-            '/\bSurubelnite\b/iu' => 'Отвертки',
-            '/\bSurubelnita\b/iu' => 'Отвертка',
-            '/\bClichet\b/iu' => 'Трещотка',
-            '/\bChei\b/iu' => 'Ключи',
-            '/\bCheie\b/iu' => 'Ключ',
-            '/\bbit\b/iu' => 'бит',
-            '/\bbiti\b/iu' => 'биты',
-            '/\bantifurt\b/iu' => 'для секреток',
-            '/\bprofesional\b/iu' => 'профессиональный',
-            '/\bpneumatic\b/iu' => 'пневматический',
-            '/\bpneumatice\b/iu' => 'пневматические',
-            '/\bmanual\b/iu' => 'ручной',
-            '/\bpiese\b/iu' => 'предметов',
-            '/\bmm\b/iu' => 'мм',
-            '/\bpana la\b/iu' => 'до',
-            '/\bpentru\b/iu' => 'для',
-            '/\bcu\b/iu' => 'с',
-            '/\bsi\b/iu' => 'и',
-        ];
-
-        foreach ($replacements as $pattern => $replacement) {
-            $name = preg_replace($pattern, $replacement, $name);
-        }
-
-        $name = preg_replace('/\s+/u', ' ', $name);
-        $name = trim($name, " \t\n\r\0\x0B,.-");
-
-        return self::ensureBrand($name, self::brand($brandName));
+        return self::ensureBrand(Str::ucfirst(self::clean($name)), self::brand($brandName), true, $sku);
     }
 
     public static function russianDescription(?string $description, string $displayName, string $brandName = '', ?string $sku = null): string
     {
-        $description = trim((string) $description);
-
-        if ($description !== '' && preg_match('/[А-Яа-яЁё]/u', $description)) {
+        $description = self::clean((string) $description);
+        if ($description !== '' && preg_match('/\p{Cyrillic}/u', $description)) {
             return $description;
         }
 
-        $brand = self::brand($brandName);
-        $code = $sku ? " Код товара: {$sku}." : '';
-        $brandText = Str::contains(Str::lower($displayName), Str::lower($brand)) ? '' : " {$brand}";
+        $code = $sku ? " Артикул: {$sku}." : '';
 
-        return "{$displayName}{$brandText} подходит для автосервиса, мастерской и гаража. Карточка содержит цену в MDL, наличие, изображение, гарантию и основные технические характеристики.{$code}";
+        return "{$displayName} — технический товар для профессионального использования в автосервисе, мастерской или гараже.{$code}";
     }
 
     public static function shortDescription(string $displayName, string $brandName): string
     {
-        $brand = self::brand($brandName);
-
-        if (app()->isLocale('ru')) {
-            return "{$displayName}: товар {$brand} для автосервиса, мастерской и гаража.";
-        }
-
-        return "{$displayName}: produs {$brand} pentru service auto, atelier si garaj.";
+        return app()->isLocale('ru')
+            ? "{$displayName}: профессиональный инструмент для автосервиса, мастерской и гаража."
+            : "{$displayName}: produs profesional pentru service auto, atelier si garaj.";
     }
 
     public static function fullDescription(string $displayName, string $brandName, string $sku): string
     {
-        $brand = self::brand($brandName);
-
-        if (app()->isLocale('ru')) {
-            return "{$displayName}, код {$sku}, товар {$brand} для автосервиса, мастерской и гаража. Карточка содержит код, цену в MDL, изображение, наличие, гарантию и основные характеристики.";
-        }
-
-        return "{$displayName}, cod {$sku}, este un produs {$brand} pregatit pentru utilizare in service auto, atelier si garaj.";
+        return app()->isLocale('ru')
+            ? "{$displayName}, артикул {$sku}. Технический товар для профессионального использования в автосервисе, мастерской или гараже."
+            : "{$displayName}, cod {$sku}. Produs tehnic pentru utilizare profesionala in service auto, atelier sau garaj.";
     }
 
-    private static function ensureBrand(string $name, string $brand): string
+    private static function ensureBrand(string $name, string $brand, bool $russian, ?string $sku = null): string
     {
-        $name = trim((string) preg_replace('/\s+/u', ' ', $name));
-
-        if ($name === '') {
-            $name = app()->isLocale('ru') ? 'Профессиональный инструмент' : 'Produs profesional';
-        }
+        $name = $name ?: ($russian ? 'Профессиональный инструмент' : 'Produs profesional');
 
         if ($brand !== '' && ! Str::contains(Str::lower($name), Str::lower($brand))) {
             $name .= ' '.$brand;
         }
+        if ($sku && ! Str::contains(Str::lower($name), Str::lower($sku))) {
+            $name .= ' '.$sku;
+        }
 
-        return Str::limit($name, 130, '');
+        return Str::limit(self::clean($name), 200, '');
+    }
+
+    private static function clean(string $value): string
+    {
+        $value = html_entity_decode(strip_tags($value), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        return trim(preg_replace('/\s+/u', ' ', $value) ?: '', " \t\n\r\0\x0B,.;-");
     }
 
     private static function brand(string $brandName): string
     {
-        return str_contains($brandName, 'M7') ? 'M7' : (trim($brandName) ?: 'King Tony');
+        return Str::contains(Str::upper(trim($brandName)), 'M7') ? 'M7' : trim($brandName);
     }
 }

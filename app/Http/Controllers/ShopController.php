@@ -37,14 +37,14 @@ class ShopController extends Controller
                 ->limit(9)
                 ->get(),
             'featuredProducts' => Product::with(['brand', 'category'])
-                ->where('is_active', true)
+                ->availableForSale()
                 ->where('is_featured', true)
                 ->where('main_image', 'not like', '%product-placeholder%')
                 ->orderByDesc('is_bestseller')
                 ->orderByDesc('id')
                 ->limit(12)
                 ->get(),
-            'productsCount' => Product::where('is_active', true)->count(),
+            'productsCount' => Product::availableForSale()->count(),
             'brands' => Brand::where('is_active', true)->orderByDesc('is_featured')->get(),
         ]);
     }
@@ -58,7 +58,7 @@ class ShopController extends Controller
         $showProducts = $this->shouldShowProducts($request, $activeCategory);
 
         $products = Product::with(['brand', 'category', 'categories'])
-            ->where('is_active', true)
+            ->availableForSale()
             ->when(! $showProducts, fn ($query) => $query->whereRaw('1 = 0'))
             ->when($activeCategory, fn ($query) => $query->inCatalogCategories($categoryIds))
             ->when($request->filled('q'), function ($query) use ($request) {
@@ -130,8 +130,8 @@ class ShopController extends Controller
             'brands' => Brand::where('is_active', true)->get(),
             'selectedBrands' => collect((array) $request->input('brand'))->filter()->values()->all(),
             'priceBounds' => [
-                'min' => (int) floor(Product::where('is_active', true)->min('price') ?? 0),
-                'max' => (int) ceil(Product::where('is_active', true)->max('price') ?? 0),
+                'min' => (int) floor(Product::availableForSale()->min('price') ?? 0),
+                'max' => (int) ceil(Product::availableForSale()->max('price') ?? 0),
             ],
             'viewMode' => $request->string('view')->toString() === 'list' ? 'list' : 'grid',
         ]);
@@ -139,7 +139,7 @@ class ShopController extends Controller
 
     public function product(string $slug)
     {
-        $product = Product::with(['brand', 'category', 'categories'])->where('slug', $slug)->where('is_active', true)->firstOrFail();
+        $product = Product::with(['brand', 'category', 'categories'])->where('slug', $slug)->availableForSale()->firstOrFail();
         $similarCategoryIds = $product->categories
             ->pluck('id')
             ->push($product->category_id)
@@ -153,13 +153,13 @@ class ShopController extends Controller
             'similarProducts' => Product::with('brand')
                 ->where('id', '!=', $product->id)
                 ->inCatalogCategories($similarCategoryIds)
-                ->where('is_active', true)
+                ->availableForSale()
                 ->limit(4)
                 ->get(),
             'brandProducts' => Product::with('brand')
                 ->where('id', '!=', $product->id)
                 ->where('brand_id', $product->brand_id)
-                ->where('is_active', true)
+                ->availableForSale()
                 ->limit(4)
                 ->get(),
         ]);
@@ -175,7 +175,9 @@ class ShopController extends Controller
     public function brands()
     {
         return view('shop.brands', [
-            'brands' => Brand::withCount('products')->where('is_active', true)->get(),
+            'brands' => Brand::withCount([
+                'products' => fn ($products) => $products->availableForSale(),
+            ])->where('is_active', true)->get(),
         ]);
     }
 
@@ -184,7 +186,7 @@ class ShopController extends Controller
         $brand = Brand::where('slug', $slug)->where('is_active', true)->firstOrFail();
 
         return view('shop.catalog', [
-            'products' => Product::with(['brand', 'category', 'categories'])->where('brand_id', $brand->id)->where('is_active', true)->paginate(12),
+            'products' => Product::with(['brand', 'category', 'categories'])->where('brand_id', $brand->id)->availableForSale()->paginate(12),
             'activeCategory' => null,
             'activePathIds' => [],
             'breadcrumbs' => [],
@@ -198,8 +200,8 @@ class ShopController extends Controller
             'brands' => Brand::where('is_active', true)->get(),
             'selectedBrands' => [$brand->slug],
             'priceBounds' => [
-                'min' => (int) floor(Product::where('is_active', true)->min('price') ?? 0),
-                'max' => (int) ceil(Product::where('is_active', true)->max('price') ?? 0),
+                'min' => (int) floor(Product::availableForSale()->min('price') ?? 0),
+                'max' => (int) ceil(Product::availableForSale()->max('price') ?? 0),
             ],
             'viewMode' => 'grid',
         ]);
@@ -245,7 +247,7 @@ class ShopController extends Controller
             'subtitle' => __('ui.collection_text'),
             'products' => $query
                 ->with(['brand', 'category', 'categories'])
-                ->where('is_active', true)
+                ->availableForSale()
                 ->orderByDesc('is_featured')
                 ->paginate(12),
         ]);

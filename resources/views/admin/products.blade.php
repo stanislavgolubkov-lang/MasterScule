@@ -166,6 +166,13 @@
                     @endforeach
                 </select>
             </label>
+            <label>{{ __('ui.admin_image_state') }}
+                <select name="image_state">
+                    <option value="">{{ __('ui.admin_all_images') }}</option>
+                    <option value="ready" @selected(request('image_state') === 'ready')>{{ __('ui.admin_with_photo') }}</option>
+                    <option value="missing" @selected(request('image_state') === 'missing')>{{ __('ui.admin_without_photo') }}</option>
+                </select>
+            </label>
             <div class="admin-toolbar-actions">
                 <button class="btn" type="submit">{{ __('ui.filter') }}</button>
                 <a class="btn outline" href="{{ route('admin.products') }}">{{ __('ui.reset') }}</a>
@@ -193,7 +200,11 @@
                         @method('PATCH')
 
                         <div class="admin-product-media">
-                            <img src="{{ $product->main_image }}" alt="{{ $product->display_name }}">
+                            <img
+                                src="{{ $product->main_image ?: '/images/products/product-placeholder-toolbox.svg' }}"
+                                alt="{{ $product->display_name }}"
+                                onerror="this.onerror=null;this.src='/images/products/product-placeholder-toolbox.svg';"
+                            >
                             <div>
                                 <strong>{{ $product->sku }}</strong>
                                 <span>{{ $product->brand?->name }} / {{ $categoryList ?: $product->category?->display_name }}</span>

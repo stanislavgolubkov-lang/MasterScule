@@ -68,6 +68,20 @@ class AdminController extends Controller
 
                 $query->inCatalogCategories($category?->descendantsAndSelfIds() ?: [(int) $categoryId]);
             })
+            ->when(request('image_state') === 'missing', function ($query) {
+                $query->where(function ($images) {
+                    $images
+                        ->whereNull('main_image')
+                        ->orWhere('main_image', '')
+                        ->orWhere('main_image', 'like', '%placeholder%');
+                });
+            })
+            ->when(request('image_state') === 'ready', function ($query) {
+                $query
+                    ->whereNotNull('main_image')
+                    ->where('main_image', '!=', '')
+                    ->where('main_image', 'not like', '%placeholder%');
+            })
             ->latest()
             ->paginate(12)
             ->withQueryString();

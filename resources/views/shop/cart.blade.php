@@ -6,7 +6,11 @@
     <div class="cart-list">
         @forelse($cart['items'] as $item)
             <div class="cart-item">
-                <img src="{{ $item['product']->main_image }}" alt="{{ $item['product']->display_name }}">
+                <img
+                    src="{{ $item['product']->main_image ?: '/images/products/product-placeholder-toolbox.svg' }}"
+                    alt="{{ $item['product']->display_name }}"
+                    onerror="this.onerror=null;this.src='/images/products/product-placeholder-toolbox.svg';"
+                >
                 <div><h3>{{ $item['product']->display_name }}</h3><small>{{ __('ui.product_code') }}: {{ $item['product']->sku }}</small><span class="stock">● {{ __('ui.in_stock') }}</span></div>
                 <strong>{{ money($item['product']->price) }}</strong>
                 <form action="{{ route('cart.update', $item['product']) }}" method="post" class="qty">@csrf @method('PATCH')<input type="number" min="0" name="quantity" value="{{ $item['quantity'] }}"><button>OK</button></form>
