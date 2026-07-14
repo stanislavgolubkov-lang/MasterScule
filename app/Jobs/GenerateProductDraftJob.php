@@ -11,9 +11,7 @@ class GenerateProductDraftJob implements ShouldQueue
 {
     use Queueable;
 
-    public function __construct(public int $itemId)
-    {
-    }
+    public function __construct(public int $itemId) {}
 
     public function handle(ProductDraftService $drafts): void
     {
@@ -21,6 +19,7 @@ class GenerateProductDraftJob implements ShouldQueue
 
         if ($item) {
             $drafts->createDraft($item);
+            ValidateProductDraftQualityJob::dispatch($item->id);
         }
     }
 }

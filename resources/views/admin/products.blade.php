@@ -19,21 +19,23 @@
 @endif
 
 <section class="shell admin-products-layout">
-    <aside class="panel admin-product-create">
-        <div class="admin-panel-head">
-            <span>{{ __('ui.new_product') }}</span>
-            <h2>{{ __('ui.add_to_catalog') }}</h2>
-        </div>
+    <details class="panel admin-product-create" @if($errors->any()) open @endif>
+        <summary class="admin-create-summary">
+            <span>
+                <strong>{{ __('ui.add_to_catalog') }}</strong>
+                <small>{{ app()->isLocale('ru') ? 'Откройте только когда нужно создать товар вручную.' : 'Deschide doar cand creezi manual un produs.' }}</small>
+            </span>
+        </summary>
 
         <form method="post" action="{{ route('admin.products.store') }}" enctype="multipart/form-data" class="admin-product-form">
             @csrf
 
-            <label>{{ __('ui.product_name') }}
+            <label>{{ app()->isLocale('ru') ? 'Название RU' : 'Denumire RU' }}
                 <input name="name" value="{{ old('name') }}" required placeholder="{{ app()->isLocale('ru') ? 'Например: набор King Tony 7596MR' : 'Ex: Set de scule King Tony 7596MR' }}">
             </label>
 
-            <label>{{ __('ui.site_name') }}
-                <input name="name_ro" value="{{ old('name_ro') }}" placeholder="{{ app()->isLocale('ru') ? 'Опционально' : 'Optional' }}">
+            <label>{{ app()->isLocale('ru') ? 'Название RO' : 'Denumire RO' }}
+                <input name="name_ro" value="{{ old('name_ro') }}">
             </label>
 
             <div class="admin-two-cols">
@@ -87,12 +89,20 @@
                 <input name="main_image" value="{{ old('main_image') }}" placeholder="/images/products/produs.jpg">
             </label>
 
-            <label>{{ __('ui.short_description') }}
+            <label>{{ app()->isLocale('ru') ? 'Короткое описание RU' : 'Descriere scurta RU' }}
                 <textarea name="short_description" placeholder="{{ app()->isLocale('ru') ? 'Короткий текст для карточки товара' : 'Text scurt pentru cardul produsului' }}">{{ old('short_description') }}</textarea>
             </label>
 
-            <label>{{ __('ui.product_description') }}
-                <textarea name="description_ro" placeholder="{{ app()->isLocale('ru') ? 'Полное описание для страницы товара' : 'Descriere completa pentru pagina produsului' }}">{{ old('description_ro') }}</textarea>
+            <label>{{ app()->isLocale('ru') ? 'Короткое описание RO' : 'Descriere scurta RO' }}
+                <textarea name="short_description_ro">{{ old('short_description_ro') }}</textarea>
+            </label>
+
+            <label>{{ app()->isLocale('ru') ? 'Полное описание RU' : 'Descriere completa RU' }}
+                <textarea name="description">{{ old('description') }}</textarea>
+            </label>
+
+            <label>{{ app()->isLocale('ru') ? 'Полное описание RO' : 'Descriere completa RO' }}
+                <textarea name="description_ro">{{ old('description_ro') }}</textarea>
             </label>
 
             <details class="admin-details">
@@ -134,7 +144,7 @@
             </details>
 
             <div class="admin-product-flags">
-                <label><input type="checkbox" name="is_active" value="1" checked> {{ __('ui.active') }}</label>
+                <label><input type="checkbox" name="is_active" value="1" @checked(old('is_active'))> {{ app()->isLocale('ru') ? 'Проверить и опубликовать' : 'Verifica si publica' }}</label>
                 <label><input type="checkbox" name="is_featured" value="1" @checked(old('is_featured'))> {{ __('ui.featured') }}</label>
                 <label><input type="checkbox" name="is_new" value="1" @checked(old('is_new'))> {{ __('ui.new') }}</label>
                 <label><input type="checkbox" name="is_bestseller" value="1" @checked(old('is_bestseller'))> {{ __('ui.top') }}</label>
@@ -143,7 +153,7 @@
 
             <button class="btn" type="submit">{{ __('ui.add_product') }}</button>
         </form>
-    </aside>
+    </details>
 
     <div class="admin-products-workspace">
         <form method="get" action="{{ route('admin.products') }}" class="panel admin-product-toolbar">
@@ -192,9 +202,29 @@
                     $packageText = implode("\n", array_filter($product->package_contents ?? []));
                     $linkedCategoryIds = $product->categories->pluck('id')->push($product->category_id)->filter()->unique()->values()->all();
                     $categoryList = $product->categories->pluck('display_name')->push($product->category?->display_name)->filter()->unique()->implode(', ');
+                    $publicationCheck = $publicationChecks[$product->id] ?? ['allowed' => false, 'errors' => []];
                 @endphp
 
-                <article class="admin-product-card">
+                <details class="admin-product-card">
+                    <summary class="admin-product-row">
+                        <img
+                            src="{{ $product->main_image ?: '/images/products/product-placeholder-toolbox.svg' }}"
+                            alt="{{ $product->display_name }}"
+                            onerror="this.onerror=null;this.src='/images/products/product-placeholder-toolbox.svg';"
+                        >
+                        <span class="admin-product-row-main">
+                            <strong>{{ $product->display_name }}</strong>
+                            <small>{{ $product->sku }} · {{ $product->brand?->name }} · {{ $categoryList ?: $product->category?->display_name }}</small>
+                        </span>
+                        <span class="admin-product-row-meta">
+                            <strong>{{ money($product->price, $product->currency) }}</strong>
+                            <small>{{ $product->stock_quantity }} {{ __('ui.stock') }}</small>
+                        </span>
+                        <span class="admin-product-row-state {{ $publicationCheck['allowed'] && $product->is_active ? 'is-live' : 'is-muted' }}">
+                            {{ $publicationCheck['allowed'] && $product->is_active ? __('ui.active') : count($publicationCheck['errors']).' '.(app()->isLocale('ru') ? 'проблем' : 'probleme') }}
+                        </span>
+                    </summary>
+
                     <form method="post" action="{{ route('admin.products.update', $product) }}" enctype="multipart/form-data" class="admin-product-edit">
                         @csrf
                         @method('PATCH')
@@ -214,11 +244,22 @@
                             @endif
                         </div>
 
+                        @if(!$publicationCheck['allowed'])
+                            <div class="admin-publication-warning">
+                                <strong>{{ app()->isLocale('ru') ? 'Публикация заблокирована' : 'Publicarea este blocata' }}</strong>
+                                <ul>
+                                    @foreach($publicationCheck['errors'] as $publicationError)
+                                        <li>{{ $publicationError }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        @endif
+
                         <div class="admin-product-fields">
-                            <label>{{ app()->isLocale('ru') ? 'Внутреннее название' : 'Nume intern' }}
+                            <label>{{ app()->isLocale('ru') ? 'Название RU' : 'Denumire RU' }}
                                 <input name="name" value="{{ old('name', $product->name) }}" required>
                             </label>
-                            <label>{{ __('ui.site_name') }}
+                            <label>{{ app()->isLocale('ru') ? 'Название RO' : 'Denumire RO' }}
                                 <input name="name_ro" value="{{ old('name_ro', $product->name_ro) }}">
                             </label>
                             <div class="admin-three-cols">
@@ -259,16 +300,19 @@
                                     <input type="file" name="main_image_file" accept="image/*">
                                 </label>
                             </div>
-                            <label>{{ __('ui.short_description') }}
+                            <label>{{ app()->isLocale('ru') ? 'Короткое описание RU' : 'Descriere scurta RU' }}
                                 <textarea name="short_description">{{ old('short_description', $product->short_description) }}</textarea>
                             </label>
-                            <label>{{ __('ui.product_description') }}
+                            <label>{{ app()->isLocale('ru') ? 'Короткое описание RO' : 'Descriere scurta RO' }}
+                                <textarea name="short_description_ro">{{ old('short_description_ro', $product->short_description_ro) }}</textarea>
+                            </label>
+                            <label>{{ app()->isLocale('ru') ? 'Полное описание RO' : 'Descriere completa RO' }}
                                 <textarea name="description_ro">{{ old('description_ro', $product->description_ro) }}</textarea>
                             </label>
 
                             <details class="admin-details">
                                 <summary>{{ app()->isLocale('ru') ? 'Описания, галерея и SEO' : 'Descrieri, galerie si SEO' }}</summary>
-                                <label>{{ app()->isLocale('ru') ? 'Альтернативное техническое описание' : 'Descriere tehnica alternativa' }}
+                                <label>{{ app()->isLocale('ru') ? 'Полное описание RU' : 'Descriere completa RU' }}
                                     <textarea name="description">{{ old('description', $product->description) }}</textarea>
                                 </label>
                                 <label>{{ __('ui.specifications') }}
@@ -315,12 +359,23 @@
                             </details>
 
                             <div class="admin-product-flags">
-                                <label><input type="checkbox" name="is_active" value="1" @checked($product->is_active)> {{ __('ui.active') }}</label>
+                                <label><input type="checkbox" name="is_active" value="1" @checked($product->is_active)> {{ app()->isLocale('ru') ? 'Проверить и опубликовать' : 'Verifica si publica' }}</label>
                                 <label><input type="checkbox" name="is_featured" value="1" @checked($product->is_featured)> {{ __('ui.featured') }}</label>
                                 <label><input type="checkbox" name="is_new" value="1" @checked($product->is_new)> {{ __('ui.new') }}</label>
                                 <label><input type="checkbox" name="is_bestseller" value="1" @checked($product->is_bestseller)> {{ __('ui.top') }}</label>
                                 <label><input type="checkbox" name="is_discounted" value="1" @checked($product->is_discounted)> {{ __('ui.discounted') }}</label>
                             </div>
+
+                            <details class="admin-details">
+                                <summary>{{ app()->isLocale('ru') ? 'Флаги ручной проверки' : 'Marcaje verificare manuala' }}</summary>
+                                <div class="admin-product-flags">
+                                    <label><input type="checkbox" name="needs_image_review" value="1" @checked($product->needs_image_review)> {{ app()->isLocale('ru') ? 'Фото' : 'Imagine' }}</label>
+                                    <label><input type="checkbox" name="needs_category_review" value="1" @checked($product->needs_category_review)> {{ app()->isLocale('ru') ? 'Категория' : 'Categorie' }}</label>
+                                    <label><input type="checkbox" name="needs_translation_review" value="1" @checked($product->needs_translation_review)> {{ app()->isLocale('ru') ? 'Перевод' : 'Traducere' }}</label>
+                                    <label><input type="checkbox" name="needs_price_review" value="1" @checked($product->needs_price_review)> {{ app()->isLocale('ru') ? 'Цена' : 'Pret' }}</label>
+                                    <label><input type="checkbox" name="needs_stock_review" value="1" @checked($product->needs_stock_review)> {{ app()->isLocale('ru') ? 'Остаток' : 'Stoc' }}</label>
+                                </div>
+                            </details>
 
                             <div class="admin-product-actions">
                                 <button class="btn" type="submit">{{ __('ui.save_changes') }}</button>
@@ -329,12 +384,7 @@
                         </div>
                     </form>
 
-                    <form method="post" action="{{ route('admin.products.destroy', $product) }}" class="admin-delete-form" onsubmit="return confirm('{{ __('ui.delete_confirm') }}')">
-                        @csrf
-                        @method('DELETE')
-                        <button class="delete" type="submit">{{ __('ui.delete_product') }}</button>
-                    </form>
-                </article>
+                </details>
             @empty
                 <div class="empty">{{ __('ui.no_selected_products') }}</div>
             @endforelse

@@ -13,11 +13,23 @@ use Throwable;
 
 class ProductImageProcessorService
 {
+    private const MAX_REMOTE_IMAGE_BYTES = 8388608;
+
+    private const ALLOWED_REMOTE_IMAGE_DOMAINS = [
+        'kingtony.com',
+        'mighty-seven.com',
+        'jtc.com.tw',
+        'jtcautotools.com',
+        'hoegert.com',
+        'torinjacks.com',
+        'torin-usa.com',
+        'tongrunjacks.com',
+    ];
+
     public function __construct(
         private ProductParserSettings $settings,
         private ProductWatermarkService $watermark,
-    ) {
-    }
+    ) {}
 
     public function processSelected(ProductParserItem $item): void
     {
@@ -46,9 +58,9 @@ class ProductImageProcessorService
 
     private function processAsset(ProductParserImageAsset $asset, ProductParserItem $item, int $index): string
     {
-        if (Str::contains(Str::lower($asset->source_url), 'tristool.')) {
-            throw new \RuntimeException('TrisTool media is not allowed in the official image pipeline.');
-        }
+        $isFallbackAsset = $this->isFallbackRemoteImageHost(
+            Str::lower((string) parse_url($asset->source_url, PHP_URL_HOST))
+        );
 
         [$bytes, $mime] = $this->readSource($asset->source_url);
         $source = @imagecreatefromstring($bytes);
@@ -64,26 +76,32 @@ class ProductImageProcessorService
         }
 
         $size = max(600, (int) $this->settings->get('image_size', 1200));
+        $previewSize = max(300, (int) $this->settings->get('preview_size', 600));
         $thumbSize = max(150, (int) $this->settings->get('thumb_size', 300));
         $quality = max(75, min(95, (int) $this->settings->get('webp_quality', 88)));
         $main = $this->squareCanvas($source, $size);
         $hasWatermark = $this->watermark->apply($main);
+        $preview = $this->squareCanvas($source, $previewSize);
         $thumb = $index === 0 ? $this->squareCanvas($source, $thumbSize) : null;
         imagedestroy($source);
 
         $safeSku = Str::slug($item->sku) ?: 'sku';
         $brandDir = Str::slug($item->brand ?: 'unknown-brand') ?: 'unknown-brand';
-        $baseDir = 'products/official/'.$brandDir.'/'.$safeSku;
+        $sourceDir = $isFallbackAsset ? 'fallback' : 'official';
+        $baseDir = "products/{$sourceDir}/{$brandDir}/{$safeSku}";
         $suffix = $index === 0 ? 'main' : 'gallery-'.$index;
         $processedPath = "{$baseDir}/{$safeSku}-{$suffix}.webp";
+        $previewPath = "{$baseDir}/{$safeSku}-{$suffix}-preview.webp";
         $thumbPath = $index === 0 ? "{$baseDir}/{$safeSku}-thumb.webp" : null;
 
         Storage::disk('public')->put($processedPath, $this->encodeWebp($main, $quality));
+        Storage::disk('public')->put($previewPath, $this->encodeWebp($preview, $quality));
         if ($thumbPath && $thumb instanceof GdImage) {
             Storage::disk('public')->put($thumbPath, $this->encodeWebp($thumb, $quality));
         }
 
         imagedestroy($main);
+        imagedestroy($preview);
         if ($thumb instanceof GdImage) {
             imagedestroy($thumb);
         }
@@ -93,6 +111,7 @@ class ProductImageProcessorService
         $asset->forceFill([
             'original_path' => null,
             'processed_path' => $publicProcessedPath,
+            'preview_path' => Storage::url($previewPath),
             'thumb_path' => $thumbPath ? Storage::url($thumbPath) : null,
             'width' => $size,
             'height' => $size,
@@ -101,7 +120,7 @@ class ProductImageProcessorService
             'has_watermark' => $hasWatermark,
             'background_removed' => false,
             'background_removal_failed' => false,
-            'needs_review' => false,
+            'needs_review' => $isFallbackAsset,
             'error_message' => null,
         ])->save();
 
@@ -111,24 +130,14 @@ class ProductImageProcessorService
     private function readSource(string $sourceUrl): array
     {
         if (Str::startsWith($sourceUrl, '/storage/')) {
-            $path = storage_path('app/public/'.Str::after($sourceUrl, '/storage/'));
-
-            if (! is_file($path)) {
-                throw new \RuntimeException('Local storage image file not found.');
-            }
-
-            return [file_get_contents($path), mime_content_type($path) ?: 'application/octet-stream'];
+            return $this->readLocalSource(storage_path('app/public'), Str::after($sourceUrl, '/storage/'));
         }
 
         if (Str::startsWith($sourceUrl, '/')) {
-            $path = public_path(ltrim($sourceUrl, '/'));
-
-            if (! is_file($path)) {
-                throw new \RuntimeException('Local image file not found.');
-            }
-
-            return [file_get_contents($path), mime_content_type($path) ?: 'application/octet-stream'];
+            return $this->readLocalSource(public_path(), ltrim($sourceUrl, '/'));
         }
+
+        $this->assertSafeRemoteImageUrl($sourceUrl);
 
         $response = $this->externalHttp()->timeout(20)->retry(1, 350)->get($sourceUrl);
 
@@ -136,7 +145,86 @@ class ProductImageProcessorService
             throw new \RuntimeException('Remote image download failed.');
         }
 
+        $contentLength = (int) ($response->header('Content-Length') ?: 0);
+        if ($contentLength > self::MAX_REMOTE_IMAGE_BYTES || strlen($response->body()) > self::MAX_REMOTE_IMAGE_BYTES) {
+            throw new \RuntimeException('Remote image is too large.');
+        }
+
+        $contentType = Str::lower((string) $response->header('Content-Type'));
+        if (! Str::contains($contentType, ['image/jpeg', 'image/png', 'image/webp', 'image/gif'])) {
+            throw new \RuntimeException('Remote image content type is not allowed.');
+        }
+
         return [$response->body(), $response->header('Content-Type') ?: 'application/octet-stream'];
+    }
+
+    private function readLocalSource(string $basePath, string $relativePath): array
+    {
+        $base = realpath($basePath);
+        $path = realpath($basePath.DIRECTORY_SEPARATOR.$relativePath);
+
+        if (! $base || ! $path || ! is_file($path)) {
+            throw new \RuntimeException('Local image file not found.');
+        }
+
+        $normalizedBase = rtrim(str_replace('\\', '/', $base), '/').'/';
+        $normalizedPath = str_replace('\\', '/', $path);
+
+        if (! str_starts_with($normalizedPath, $normalizedBase)) {
+            throw new \RuntimeException('Local image path is not allowed.');
+        }
+
+        return [file_get_contents($path), mime_content_type($path) ?: 'application/octet-stream'];
+    }
+
+    private function assertSafeRemoteImageUrl(string $sourceUrl): void
+    {
+        $parts = parse_url($sourceUrl);
+        $scheme = Str::lower((string) ($parts['scheme'] ?? ''));
+        $host = Str::lower(rtrim((string) ($parts['host'] ?? ''), '.'));
+
+        if ($scheme !== 'https' || $host === '') {
+            throw new \RuntimeException('Remote image URL must use HTTPS.');
+        }
+
+        if (! $this->isAllowedRemoteImageHost($host)) {
+            throw new \RuntimeException('Remote image host is not allowed.');
+        }
+
+        $ips = filter_var($host, FILTER_VALIDATE_IP) ? [$host] : (gethostbynamel($host) ?: []);
+
+        if ($ips === []) {
+            throw new \RuntimeException('Remote image host could not be resolved.');
+        }
+
+        foreach ($ips as $ip) {
+            if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                throw new \RuntimeException('Remote image host resolved to a private address.');
+            }
+        }
+    }
+
+    private function isAllowedRemoteImageHost(string $host): bool
+    {
+        $official = collect(self::ALLOWED_REMOTE_IMAGE_DOMAINS)
+            ->contains(fn (string $domain) => $host === $domain || Str::endsWith($host, '.'.$domain));
+
+        return $official || $this->isFallbackRemoteImageHost($host);
+    }
+
+    private function isFallbackRemoteImageHost(string $host): bool
+    {
+        if (! $this->settings->get('tristools_fallback_enabled', false)) {
+            return false;
+        }
+
+        $fallbackHost = Str::lower((string) parse_url(
+            (string) $this->settings->get('tristools.base_url', 'https://tristool.md'),
+            PHP_URL_HOST
+        ));
+
+        return $fallbackHost !== ''
+            && ($host === $fallbackHost || Str::endsWith($host, '.'.$fallbackHost));
     }
 
     private function squareCanvas(GdImage $source, int $size): GdImage
@@ -171,10 +259,10 @@ class ProductImageProcessorService
         for ($y = 0; $y < $height; $y += $step) {
             for ($x = 0; $x < $width; $x += $step) {
                 $rgba = imagecolorat($source, $x, $y);
-                $alpha = ($rgba >> 24) & 0x7f;
-                $red = ($rgba >> 16) & 0xff;
-                $green = ($rgba >> 8) & 0xff;
-                $blue = $rgba & 0xff;
+                $alpha = ($rgba >> 24) & 0x7F;
+                $red = ($rgba >> 16) & 0xFF;
+                $green = ($rgba >> 8) & 0xFF;
+                $blue = $rgba & 0xFF;
 
                 if ($alpha >= 118 || ($red >= 246 && $green >= 246 && $blue >= 246)) {
                     continue;
@@ -219,7 +307,6 @@ class ProductImageProcessorService
     {
         return Http::withOptions([
             'proxy' => '',
-            'verify' => false,
         ]);
     }
 }

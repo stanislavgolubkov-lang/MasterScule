@@ -55,6 +55,22 @@ class ProductParserItem extends Model
         'error_message',
         'created_product_id',
         'existing_product_id',
+        'official_source_url',
+        'official_source_domain',
+        'official_source_confidence',
+        'fallback_source_url',
+        'fallback_source_domain',
+        'fallback_source_used',
+        'source_match_confidence',
+        'needs_source_review',
+        'needs_content_review',
+        'generated_content',
+        'content_source_type',
+        'image_source_type',
+        'translation_source_type',
+        'source_reviewed_at',
+        'image_reviewed_at',
+        'translation_reviewed_at',
     ];
 
     protected $casts = [
@@ -73,6 +89,15 @@ class ProductParserItem extends Model
         'parsed_price' => 'decimal:2',
         'parsed_stock' => 'integer',
         'tristools_match_confidence' => 'integer',
+        'official_source_confidence' => 'integer',
+        'source_match_confidence' => 'integer',
+        'fallback_source_used' => 'boolean',
+        'needs_source_review' => 'boolean',
+        'needs_content_review' => 'boolean',
+        'generated_content' => 'boolean',
+        'source_reviewed_at' => 'datetime',
+        'image_reviewed_at' => 'datetime',
+        'translation_reviewed_at' => 'datetime',
     ];
 
     public function batch()

@@ -15,7 +15,7 @@
     <a href="{{ route('admin.parser.rules') }}">{{ $ru ? 'Правила категорий' : 'Reguli categorii' }}</a>
 </section>
 
-<section class="shell panel">
+<section class="shell panel parser-card parser-table-panel">
     <div class="parser-table-wrap">
         <table class="parser-table">
             <thead>

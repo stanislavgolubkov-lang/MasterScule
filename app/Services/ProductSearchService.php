@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Product;
+use App\Services\ProductSources\ProductSourceDiscoveryService;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -11,6 +12,33 @@ use Throwable;
 class ProductSearchService
 {
     private array $htmlCache = [];
+
+    public function __construct(
+        private readonly TrisToolsEnrichmentService $trisTools,
+        private readonly ProductSourceDiscoveryService $sourceDiscovery,
+    ) {}
+
+    public function searchForParser(string $sku, ?string $brand = null, string $language = 'auto', bool $preferLocal = true): array
+    {
+        $sku = trim($sku);
+        $brand = $brand && $brand !== 'auto' ? trim($brand) : null;
+
+        if ($preferLocal && $existing = Product::with(['brand', 'category'])->where('sku', $sku)->first()) {
+            return $this->fromExistingProduct($existing);
+        }
+
+        return $this->sourceDiscovery->search($sku, $brand);
+    }
+
+    public function searchFallbackForParser(string $sku, ?string $brand = null): array
+    {
+        return $this->sourceDiscovery->search(trim($sku), trim((string) $brand), forceFallback: true);
+    }
+
+    public function searchOfficialForParser(string $sku, ?string $brand = null): array
+    {
+        return $this->sourceDiscovery->search(trim($sku), trim((string) $brand), allowFallback: false);
+    }
 
     public function search(string $sku, ?string $brand = null, string $language = 'auto', bool $preferLocal = true): array
     {
@@ -68,13 +96,27 @@ class ProductSearchService
     {
         $sku = trim($sku);
         $domains = $this->officialDomains($brand);
+        $isM7 = Str::contains(Str::lower((string) $brand), ['m7', 'mighty']);
 
         if ($sku === '' || $domains === []) {
             return $this->emptyResult();
         }
 
-        $images = $this->officialDirectImages($sku, $brand);
-        $pages = $this->officialApiPages($sku, $brand);
+        $apiMatch = $this->officialApiMatch($sku, $brand);
+        if ($isM7 && $apiMatch === []) {
+            return $this->emptyResult();
+        }
+
+        $verifiedApiImages = $apiMatch['images'] ?? [];
+        $images = array_values(array_unique(array_merge(
+            $this->officialDirectImages($sku, $brand),
+            $verifiedApiImages,
+        )));
+        $pages = $apiMatch['pages'] ?? [];
+
+        if ($pages === []) {
+            $pages = $this->officialApiPages($sku, $brand);
+        }
 
         if ($pages === []) {
             foreach ($this->brandSearchPages($sku, $brand) as $searchUrl) {
@@ -92,9 +134,30 @@ class ProductSearchService
             ->take(8)
             ->values();
         $sources = [];
-        $officialTitle = null;
+        $officialTitle = $apiMatch['title'] ?? null;
         $officialDescription = null;
         $officialSpecs = [];
+
+        if ($apiMatch !== []) {
+            foreach ($pages as $pageUrl) {
+                $sources[] = [
+                    'url' => $pageUrl,
+                    'domain' => parse_url($pageUrl, PHP_URL_HOST),
+                    'title' => 'Official product page: '.$sku,
+                    'snippet' => 'Exact SKU matched in the official manufacturer API.',
+                    'source_type' => 'official_brand',
+                    'confidence_score' => 98,
+                    'raw_data_json' => [
+                        'sku' => $sku,
+                        'brand' => $brand,
+                        'images' => $verifiedApiImages,
+                        'official_title' => $officialTitle,
+                    ],
+                ];
+            }
+
+            $pages = collect();
+        }
 
         foreach ($pages as $pageUrl) {
             $pageImages = $this->imagesFromOfficialPage($pageUrl, $sku);
@@ -135,6 +198,15 @@ class ProductSearchService
             ->take(4)
             ->values()
             ->all();
+
+        if ($isM7) {
+            $images = collect($images)
+                ->filter(fn ($url) => in_array($url, $verifiedApiImages, true)
+                    || Str::contains($this->normalizeSku((string) $url), $this->normalizeSku($sku)))
+                ->take(4)
+                ->values()
+                ->all();
+        }
 
         if ($images === []) {
             return $this->emptyResult($sources);
@@ -288,6 +360,61 @@ class ProductSearchService
             ->unique()
             ->values()
             ->all();
+    }
+
+    private function officialApiMatch(string $sku, ?string $brand): array
+    {
+        if (! Str::contains(Str::lower((string) $brand), ['m7', 'mighty'])) {
+            return [];
+        }
+
+        try {
+            $response = $this->externalHttp()
+                ->asForm()
+                ->withHeaders(['User-Agent' => 'MasterSculeOfficialMedia/1.0'])
+                ->timeout(15)
+                ->retry(1, 250)
+                ->post('https://www.mighty-seven.com/api_v1/getprodut_list_search', [
+                    'key' => $sku,
+                    'type1' => '',
+                    'type2' => '',
+                    'type3' => '',
+                    'type4' => '',
+                ]);
+        } catch (Throwable) {
+            return [];
+        }
+
+        if (! $response->successful()) {
+            return [];
+        }
+
+        $payload = $response->json();
+        $html = is_array($payload) ? (string) ($payload['data'] ?? '') : '';
+        preg_match_all(
+            '/<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>[\s\S]*?<img\b[^>]*src=["\']([^"\']+)["\'][^>]*>[\s\S]*?<h3\b[^>]*>([\s\S]*?)<\/h3>[\s\S]*?<p\b[^>]*>([\s\S]*?)<\/p>[\s\S]*?<\/a>/iu',
+            $html,
+            $matches,
+            PREG_SET_ORDER,
+        );
+        $needle = $this->normalizeSku($sku);
+
+        foreach ($matches as $match) {
+            if ($this->normalizeSku($this->cleanContent($match[4] ?? '') ?: '') !== $needle) {
+                continue;
+            }
+
+            $page = $this->absoluteUrl('https://www.mighty-seven.com', $match[1]);
+            $image = $this->absoluteUrl('https://www.mighty-seven.com', $match[2]);
+
+            return [
+                'pages' => array_values(array_filter([$page])),
+                'images' => array_values(array_filter([$image])),
+                'title' => $this->cleanContent($match[3] ?? ''),
+            ];
+        }
+
+        return [];
     }
 
     private function productUrlsFromApiPayload(mixed $payload, string $baseUrl): array
@@ -587,6 +714,6 @@ class ProductSearchService
 
     private function externalHttp(): PendingRequest
     {
-        return Http::withOptions(['proxy' => '', 'verify' => false]);
+        return Http::withOptions(['proxy' => '']);
     }
 }

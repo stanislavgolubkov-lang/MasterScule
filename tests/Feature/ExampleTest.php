@@ -2,9 +2,6 @@
 
 namespace Tests\Feature;
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Queue;
 use App\Jobs\ParsePriceListJob;
 use App\Jobs\ParseSkuBatchJob;
 use App\Models\Brand;
@@ -13,11 +10,16 @@ use App\Models\Order;
 use App\Models\PaymentTransaction;
 use App\Models\Product;
 use App\Models\ProductParserBatch;
+use App\Models\ProductParserImageAsset;
 use App\Models\ProductParserItem;
 use App\Models\User;
+use App\Services\ProductImageProcessorService;
 use App\Services\ProductPriceListImportService;
 use Database\Seeders\CatalogStructureSeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -26,6 +28,34 @@ class ExampleTest extends TestCase
     use RefreshDatabase;
 
     protected bool $seed = true;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Storage::fake('public');
+        UploadedFile::fake()->image('seed-product.png', 80, 80)->storeAs('products', 'seed-product.png', 'public');
+
+        Product::query()->each(function (Product $product) {
+            $product->forceFill([
+                'name_ru' => $product->sku === '7596MR' ? 'Набор инструментов King Tony 7596MR' : ($product->name_ru ?: $product->name),
+                'short_description_ru' => $product->short_description_ru ?: $product->short_description,
+                'short_description_ro' => $product->short_description_ro ?: $product->short_description,
+                'description_ru' => $product->description_ru ?: $product->description,
+                'main_image' => '/storage/products/seed-product.png',
+                'gallery' => ['/storage/products/seed-product.png'],
+                'status' => 'published',
+                'approval_status' => 'approved',
+                'needs_review' => false,
+                'needs_image_review' => false,
+                'needs_category_review' => false,
+                'needs_translation_review' => false,
+                'needs_price_review' => false,
+                'needs_stock_review' => false,
+                'is_active' => true,
+            ])->save();
+        });
+    }
 
     public function test_homepage_returns_a_successful_response(): void
     {
@@ -104,6 +134,25 @@ class ExampleTest extends TestCase
         $this->assertGuest();
     }
 
+    public function test_admin_login_is_rate_limited_after_repeated_failures(): void
+    {
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $this
+                ->post('/admin', [
+                    'email' => 'admin@masterscule.md',
+                    'password' => 'wrong-password',
+                ])
+                ->assertSessionHasErrors('email');
+        }
+
+        $this
+            ->post('/admin', [
+                'email' => 'admin@masterscule.md',
+                'password' => 'wrong-password',
+            ])
+            ->assertTooManyRequests();
+    }
+
     public function test_admin_can_manage_product_cards(): void
     {
         $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
@@ -116,7 +165,7 @@ class ExampleTest extends TestCase
             ->assertOk()
             ->assertSee('Управление товарами')
             ->assertSee('Загрузить главное изображение')
-            ->assertSee('Удалить товар');
+            ->assertDontSee('Удалить товар');
 
         $this
             ->actingAs($admin)
@@ -170,9 +219,9 @@ class ExampleTest extends TestCase
         $this
             ->actingAs($admin)
             ->delete('/admin/products/'.$product->id)
-            ->assertRedirect();
+            ->assertMethodNotAllowed();
 
-        $this->assertDatabaseMissing('products', ['sku' => 'ADMIN-TEST-1']);
+        $this->assertDatabaseHas('products', ['sku' => 'ADMIN-TEST-1']);
     }
 
     public function test_checkout_creates_order_and_decrements_stock(): void
@@ -197,9 +246,16 @@ class ExampleTest extends TestCase
             ]);
 
         $response->assertRedirect();
-        $this->assertStringContainsString('/order/', $response->headers->get('Location'));
+        $location = $response->headers->get('Location');
+        $this->assertStringContainsString('/order/', $location);
+        $this->assertStringContainsString('signature=', $location);
 
         $this->assertDatabaseCount('orders', 1);
+        $order = Order::firstOrFail();
+
+        $this->get('/order/'.$order->order_number)->assertForbidden();
+        $this->get($location)->assertOk()->assertSee($order->order_number);
+
         $this->assertSame($stock - 1, $product->fresh()->stock_quantity);
     }
 
@@ -243,7 +299,7 @@ class ExampleTest extends TestCase
             'services.maib.create_payment_path' => '/v2/checkouts',
             'services.maib.project_id' => 'project-test',
             'services.maib.secret' => 'secret-test',
-            'services.maib.signature_secret' => null,
+            'services.maib.signature_secret' => 'callback-secret-test',
         ]);
 
         $product = Product::where('stock_quantity', '>', 1)->firstOrFail();
@@ -275,21 +331,48 @@ class ExampleTest extends TestCase
         $this->assertSame(1, PaymentTransaction::where('order_id', $order->id)->count());
         $this->assertSame('waiting_for_payment', PaymentTransaction::where('order_id', $order->id)->firstOrFail()->status);
 
+        $waitingPayload = [
+            'checkoutId' => 'checkout-test-123',
+            'status' => 'WaitingForPayment',
+        ];
+
         $this
-            ->postJson('/payment/maib/callback', [
-                'checkoutId' => 'checkout-test-123',
-                'status' => 'WaitingForPayment',
-            ])
+            ->postJson('/payment/maib/callback', $waitingPayload)
+            ->assertForbidden();
+
+        $this
+            ->withHeaders(['X-Maib-Signature' => $this->maibSignature($waitingPayload)])
+            ->postJson('/payment/maib/callback', $waitingPayload)
             ->assertOk()
             ->assertJson(['ok' => true, 'status' => 'waiting_for_payment', 'stock_captured' => false]);
 
         $this->assertSame($stock, $product->fresh()->stock_quantity);
 
+        $wrongAmountPayload = [
+            'checkoutId' => 'checkout-test-123',
+            'status' => 'Completed',
+            'amount' => 100,
+            'currency' => 'MDL',
+        ];
+
         $this
-            ->postJson('/payment/maib/callback', [
-                'checkoutId' => 'checkout-test-123',
-                'status' => 'Completed',
-            ])
+            ->withHeaders(['X-Maib-Signature' => $this->maibSignature($wrongAmountPayload)])
+            ->postJson('/payment/maib/callback', $wrongAmountPayload)
+            ->assertUnprocessable()
+            ->assertJson(['ok' => false, 'status' => 'payment_mismatch', 'stock_captured' => false]);
+
+        $this->assertSame($stock, $product->fresh()->stock_quantity);
+
+        $paidPayload = [
+            'checkoutId' => 'checkout-test-123',
+            'status' => 'Completed',
+            'amount' => (int) round((float) $order->total * 100),
+            'currency' => $order->currency,
+        ];
+
+        $this
+            ->withHeaders(['X-Maib-Signature' => $this->maibSignature($paidPayload)])
+            ->postJson('/payment/maib/callback', $paidPayload)
             ->assertOk()
             ->assertJson(['ok' => true, 'status' => 'completed', 'stock_captured' => true]);
 
@@ -297,14 +380,59 @@ class ExampleTest extends TestCase
         $this->assertNotNull($order->fresh()->stock_deducted_at);
 
         $this
-            ->postJson('/payment/maib/callback', [
-                'checkoutId' => 'checkout-test-123',
-                'status' => 'Completed',
-            ])
+            ->withHeaders(['X-Maib-Signature' => $this->maibSignature($paidPayload)])
+            ->postJson('/payment/maib/callback', $paidPayload)
             ->assertOk();
 
         $this->assertSame($stock - 1, $product->fresh()->stock_quantity);
         $this->assertSame(1, PaymentTransaction::where('order_id', $order->id)->count());
+    }
+
+    public function test_online_card_failure_keeps_cart_and_marks_order_payment_failed(): void
+    {
+        Http::fake([
+            'https://maib.test/*' => Http::response(['message' => 'Rejected'], 500),
+        ]);
+
+        config([
+            'services.maib.base_url' => 'https://maib.test',
+            'services.maib.create_payment_path' => '/v2/checkouts',
+            'services.maib.project_id' => 'project-test',
+            'services.maib.secret' => 'secret-test',
+            'services.maib.signature_secret' => 'callback-secret-test',
+        ]);
+
+        $product = Product::where('stock_quantity', '>', 1)->firstOrFail();
+        $stock = $product->stock_quantity;
+
+        $this
+            ->withSession(['cart' => [$product->id => 1]])
+            ->post('/checkout', [
+                'customer_name' => 'Online Buyer',
+                'customer_email' => 'online@example.com',
+                'customer_phone' => '+373 60 111 333',
+                'shipping_city' => 'Chisinau',
+                'shipping_address' => 'Bd. Test 2',
+                'shipping_postcode' => '2001',
+                'payment_method' => 'online_card',
+                'shipping_method' => 'courier',
+                'terms_accepted' => '1',
+            ])
+            ->assertRedirect(route('checkout.show'))
+            ->assertSessionHasErrors('payment')
+            ->assertSessionHas('cart', [$product->id => 1]);
+
+        $order = Order::firstOrFail();
+
+        $this->assertSame('payment_failed', $order->status);
+        $this->assertSame('failed', $order->payment_status);
+        $this->assertNull($order->stock_deducted_at);
+        $this->assertSame($stock, $product->fresh()->stock_quantity);
+    }
+
+    private function maibSignature(array $payload): string
+    {
+        return hash_hmac('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES), 'callback-secret-test');
     }
 
     public function test_ai_assistant_is_hidden_when_feature_disabled(): void
@@ -537,6 +665,39 @@ class ExampleTest extends TestCase
         Queue::assertPushed(ParseSkuBatchJob::class, fn (ParseSkuBatchJob $job) => $job->batchId === $batch->id);
     }
 
+    public function test_parser_image_processor_rejects_unsafe_remote_image_urls(): void
+    {
+        Http::fake();
+
+        $batch = ProductParserBatch::create([
+            'title' => 'Unsafe image URL',
+            'source_type' => 'single',
+            'status' => 'pending',
+        ]);
+
+        $item = ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'UNSAFE-IMG',
+            'brand' => 'King Tony',
+            'status' => 'ready_for_review',
+        ]);
+
+        $asset = ProductParserImageAsset::create([
+            'parser_item_id' => $item->id,
+            'source_url' => 'http://127.0.0.1/internal.jpg',
+            'source_domain' => '127.0.0.1',
+            'status' => 'found',
+            'is_selected' => true,
+            'is_main' => true,
+        ]);
+
+        app(ProductImageProcessorService::class)->processSelected($item);
+
+        $this->assertSame('failed', $item->fresh()->status);
+        $this->assertSame('failed', $asset->fresh()->status);
+        $this->assertStringContainsString('HTTPS', $asset->fresh()->error_message);
+    }
+
     public function test_parser_creates_inactive_draft_for_new_sku(): void
     {
         $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
@@ -575,6 +736,69 @@ class ExampleTest extends TestCase
         $this->assertEquals(0, $product->price);
         $this->assertSame(0, $product->stock_quantity);
         $this->assertSame($product->id, $item->fresh()->created_product_id);
+    }
+
+    public function test_parser_bulk_action_keeps_incomplete_drafts_unpublished(): void
+    {
+        $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
+        $category = Category::firstOrFail();
+
+        $batch = ProductParserBatch::create([
+            'user_id' => $admin->id,
+            'title' => 'Bulk parser test',
+            'source_type' => 'price_list',
+            'sku_count' => 2,
+            'status' => 'completed',
+        ]);
+
+        $safeItem = ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'PARSER-BULK-1',
+            'brand' => 'King Tony',
+            'category_id' => $category->id,
+            'status' => 'ready_for_review',
+            'confidence_score' => 95,
+            'parsed_price' => 321,
+            'parsed_stock' => 7,
+            'found_title' => 'Bulk parser product',
+            'found_description' => 'Bulk parser description.',
+            'found_specs_json' => ['Brand' => 'King Tony'],
+        ]);
+
+        ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'PARSER-BULK-NEEDS-CAT',
+            'brand' => 'King Tony',
+            'status' => 'needs_category_review',
+            'needs_category_review' => true,
+            'found_title' => 'Needs category product',
+        ]);
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.parser.batches.bulk-action', $batch), [
+                'action' => 'create_safe_drafts',
+                'limit' => 20000,
+            ])
+            ->assertRedirect();
+
+        $draft = Product::where('sku', 'PARSER-BULK-1')->firstOrFail();
+        $this->assertSame('draft', $draft->status);
+        $this->assertNull(Product::where('sku', 'PARSER-BULK-NEEDS-CAT')->first());
+        $this->assertSame($draft->id, $safeItem->fresh()->created_product_id);
+
+        $this
+            ->actingAs($admin)
+            ->post(route('admin.parser.batches.bulk-action', $batch), [
+                'action' => 'publish_drafts',
+                'limit' => 20000,
+            ])
+            ->assertRedirect();
+
+        $draft->refresh();
+        $this->assertSame('draft', $draft->status);
+        $this->assertFalse((bool) $draft->is_active);
+        $this->assertSame('draft_created', $safeItem->fresh()->status);
     }
 
     public function test_price_list_import_creates_draft_and_keeps_existing_sku_safe(): void

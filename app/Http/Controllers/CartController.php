@@ -3,10 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
+use App\Services\Catalog\ProductImageAvailabilityService;
 use Illuminate\Http\Request;
 
 class CartController extends Controller
 {
+    public function __construct(private readonly ProductImageAvailabilityService $images) {}
+
     public function index()
     {
         return view('shop.cart', ['cart' => $this->cart()]);
@@ -16,7 +19,8 @@ class CartController extends Controller
     {
         $quantity = max(1, (int) $request->input('quantity', 1));
 
-        if (! $product->is_active || $product->stock_status !== 'in_stock' || $product->stock_quantity < 1) {
+        $available = Product::whereKey($product->id)->availableForSale()->exists();
+        if (! $available || ! $this->images->isAvailable($product->main_image)) {
             return back()->withErrors(['cart' => app()->isLocale('ru') ? 'Товар недоступен на складе.' : 'Produsul nu este disponibil in stoc.']);
         }
 
@@ -36,7 +40,7 @@ class CartController extends Controller
         if ($quantity === 0) {
             unset($cart[$product->id]);
         } else {
-            if (! $product->is_active || $product->stock_status !== 'in_stock') {
+            if (! Product::whereKey($product->id)->availableForSale()->exists() || ! $this->images->isAvailable($product->main_image)) {
                 unset($cart[$product->id]);
             } else {
                 $cart[$product->id] = min($quantity, $product->stock_quantity);
@@ -64,6 +68,9 @@ class CartController extends Controller
                 $product = Product::with('brand')->availableForSale()->find($productId);
 
                 if (! $product) {
+                    return null;
+                }
+                if (! $this->images->isAvailable($product->main_image)) {
                     return null;
                 }
 

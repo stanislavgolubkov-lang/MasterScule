@@ -10,10 +10,11 @@ use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\ProductParserItem;
 use App\Models\User;
+use App\Services\Catalog\ProductPublicationGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
-use Illuminate\Validation\Rule;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class AdminController extends Controller
 {
@@ -49,7 +50,7 @@ class AdminController extends Controller
         ]);
     }
 
-    public function products()
+    public function products(ProductPublicationGuard $publicationGuard)
     {
         $this->guard();
 
@@ -88,40 +89,63 @@ class AdminController extends Controller
 
         return view('admin.products', [
             'products' => $products,
+            'publicationChecks' => $products->getCollection()->mapWithKeys(fn (Product $product) => [
+                $product->id => $publicationGuard->evaluate($product, true),
+            ]),
             'brands' => Brand::orderBy('name')->get(),
             'categories' => Category::orderBy('sort_order')->orderBy('name_ro')->get(),
         ]);
     }
 
-    public function storeProduct(Request $request)
+    public function storeProduct(Request $request, ProductPublicationGuard $publicationGuard)
     {
         $this->guard();
-        $data = $this->productData($request);
-        $product = Product::create($data);
+        $publishRequested = $request->boolean('is_active');
+        $product = Product::create($this->productData($request) + [
+            'status' => 'draft',
+            'approval_status' => 'pending_review',
+            'needs_review' => true,
+            'is_active' => false,
+        ]);
         $this->syncProductImages($product);
         $this->syncProductCategories($request, $product);
 
-        return back()->with('success', app()->isLocale('ru') ? 'Товар создан.' : 'Produsul a fost creat.');
+        if ($publishRequested) {
+            $result = $publicationGuard->publish($product->refresh(), true);
+            if (! $result['allowed']) {
+                return back()
+                    ->with('warning', app()->isLocale('ru') ? 'Товар сохранён как черновик: публикация заблокирована.' : 'Produsul a fost salvat ca draft: publicarea este blocata.')
+                    ->with('publication_errors', $result['errors']);
+            }
+        }
+
+        return back()->with('success', app()->isLocale('ru') ? 'Товар сохранён.' : 'Produsul a fost salvat.');
     }
 
-    public function updateProduct(Request $request, Product $product)
+    public function updateProduct(Request $request, Product $product, ProductPublicationGuard $publicationGuard)
     {
         $this->guard();
+        $publishRequested = $request->boolean('is_active');
 
-        $product->forceFill($this->productData($request, $product))->save();
+        $product->forceFill($this->productData($request, $product) + [
+            'status' => 'draft',
+            'approval_status' => 'pending_review',
+            'needs_review' => true,
+            'is_active' => false,
+        ])->save();
         $this->syncProductImages($product);
         $this->syncProductCategories($request, $product);
 
-        return back()->with('success', app()->isLocale('ru') ? 'Товар обновлен.' : 'Produsul a fost actualizat.');
-    }
+        if ($publishRequested) {
+            $result = $publicationGuard->publish($product->refresh(), true);
+            if (! $result['allowed']) {
+                return back()
+                    ->with('warning', app()->isLocale('ru') ? 'Изменения сохранены, но товар переведён в черновик.' : 'Modificarile au fost salvate, dar produsul a ramas draft.')
+                    ->with('publication_errors', $result['errors']);
+            }
+        }
 
-    public function destroyProduct(Product $product)
-    {
-        $this->guard();
-        $this->deleteUploadedImage($product->main_image);
-        $product->delete();
-
-        return back()->with('success', app()->isLocale('ru') ? 'Товар удален.' : 'Produsul a fost sters.');
+        return back()->with('success', app()->isLocale('ru') ? 'Товар обновлён.' : 'Produsul a fost actualizat.');
     }
 
     public function orders()
@@ -176,6 +200,7 @@ class AdminController extends Controller
             'category_ids' => ['nullable', 'array'],
             'category_ids.*' => ['integer', 'exists:categories,id'],
             'name' => ['required', 'string', 'max:255'],
+            'name_ru' => ['nullable', 'string', 'max:255'],
             'name_ro' => ['nullable', 'string', 'max:255'],
             'sku' => ['required', 'string', 'max:80', Rule::unique('products', 'sku')->ignore($product)],
             'price' => ['required', 'numeric', 'min:0'],
@@ -185,7 +210,10 @@ class AdminController extends Controller
             'main_image_file' => ['nullable', 'image', 'max:4096'],
             'gallery_text' => ['nullable', 'string'],
             'short_description' => ['nullable', 'string'],
+            'short_description_ru' => ['nullable', 'string'],
+            'short_description_ro' => ['nullable', 'string'],
             'description' => ['nullable', 'string'],
+            'description_ru' => ['nullable', 'string'],
             'description_ro' => ['nullable', 'string'],
             'attributes_text' => ['nullable', 'string'],
             'package_contents_text' => ['nullable', 'string'],
@@ -201,9 +229,15 @@ class AdminController extends Controller
             'is_new' => ['nullable', 'boolean'],
             'is_bestseller' => ['nullable', 'boolean'],
             'is_discounted' => ['nullable', 'boolean'],
+            'needs_image_review' => ['nullable', 'boolean'],
+            'needs_category_review' => ['nullable', 'boolean'],
+            'needs_translation_review' => ['nullable', 'boolean'],
+            'needs_price_review' => ['nullable', 'boolean'],
+            'needs_stock_review' => ['nullable', 'boolean'],
         ]);
 
-        $nameRo = ($data['name_ro'] ?? null) ?: $data['name'];
+        $nameRu = ($data['name_ru'] ?? null) ?: $data['name'];
+        $nameRo = ($data['name_ro'] ?? null) ?: null;
         $mainImage = ($data['main_image'] ?? null) ?: $product?->main_image;
 
         if ($request->hasFile('main_image_file')) {
@@ -219,13 +253,17 @@ class AdminController extends Controller
         return [
             'brand_id' => $data['brand_id'],
             'category_id' => $data['category_id'],
-            'name' => $data['name'],
+            'name' => $nameRu,
+            'name_ru' => $nameRu,
             'name_ro' => $nameRo,
-            'slug' => $this->uniqueProductSlug($nameRo, $data['sku'], $product),
+            'slug' => $product?->slug ?: $this->uniqueProductSlug($nameRo ?: $nameRu, $data['sku'], $product),
             'sku' => $data['sku'],
-            'short_description' => ($data['short_description'] ?? null) ?: null,
-            'description' => ($data['description'] ?? null) ?: (($data['description_ro'] ?? null) ?: null),
-            'description_ro' => ($data['description_ro'] ?? null) ?: (($data['description'] ?? null) ?: null),
+            'short_description' => ($data['short_description_ru'] ?? null) ?: (($data['short_description'] ?? null) ?: null),
+            'short_description_ru' => ($data['short_description_ru'] ?? null) ?: (($data['short_description'] ?? null) ?: null),
+            'short_description_ro' => ($data['short_description_ro'] ?? null) ?: null,
+            'description' => ($data['description_ru'] ?? null) ?: (($data['description'] ?? null) ?: null),
+            'description_ru' => ($data['description_ru'] ?? null) ?: (($data['description'] ?? null) ?: null),
+            'description_ro' => ($data['description_ro'] ?? null) ?: null,
             'price' => $data['price'],
             'old_price' => ($data['old_price'] ?? null) ?: null,
             'currency' => config('store.currency', 'MDL'),
@@ -237,16 +275,20 @@ class AdminController extends Controller
             'package_contents' => $this->lines($data['package_contents_text'] ?? ''),
             'rating' => ($data['rating'] ?? null) ?: 5,
             'reviews_count' => ($data['reviews_count'] ?? null) ?: 0,
-            'is_active' => $request->boolean('is_active'),
             'is_featured' => $request->boolean('is_featured'),
             'is_new' => $request->boolean('is_new'),
             'is_bestseller' => $request->boolean('is_bestseller'),
             'is_discounted' => $request->boolean('is_discounted') || (float) ($data['old_price'] ?? 0) > (float) $data['price'],
+            'needs_image_review' => $request->boolean('needs_image_review') || Str::contains(Str::lower($mainImage), ['placeholder', 'fallback']),
+            'needs_category_review' => $request->boolean('needs_category_review'),
+            'needs_translation_review' => $request->boolean('needs_translation_review'),
+            'needs_price_review' => $request->boolean('needs_price_review'),
+            'needs_stock_review' => $request->boolean('needs_stock_review'),
             'warranty' => ($data['warranty'] ?? null) ?: '24 luni',
             'weight' => ($data['weight'] ?? null) ?: null,
             'dimensions' => ($data['dimensions'] ?? null) ?: null,
-            'meta_title' => ($data['meta_title'] ?? null) ?: $nameRo.' | '.config('store.domain_label'),
-            'meta_description' => ($data['meta_description'] ?? null) ?: Str::limit(($data['short_description'] ?? null) ?: ($data['description_ro'] ?? null) ?: ($data['description'] ?? null) ?: $nameRo, 150),
+            'meta_title' => ($data['meta_title'] ?? null) ?: ($nameRo ?: $nameRu).' | '.config('store.domain_label'),
+            'meta_description' => ($data['meta_description'] ?? null) ?: Str::limit(($data['short_description_ro'] ?? null) ?: ($data['description_ro'] ?? null) ?: ($data['short_description_ru'] ?? null) ?: ($data['description_ru'] ?? null) ?: $nameRo ?: $nameRu, 150),
         ];
     }
 

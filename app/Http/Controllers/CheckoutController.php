@@ -5,11 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\Order;
 use App\Models\PaymentTransaction;
 use App\Models\Product;
+use App\Services\Catalog\ProductImageAvailabilityService;
 use App\Services\MaibHostedCheckout;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class CheckoutController extends Controller
 {
@@ -70,7 +73,7 @@ class CheckoutController extends Controller
                 $product = Product::whereKey($item['product']->id)->lockForUpdate()->firstOrFail();
 
                 if (! $product->is_active || $product->stock_status !== 'in_stock' || $product->stock_quantity < $item['quantity']) {
-                    throw \Illuminate\Validation\ValidationException::withMessages([
+                    throw ValidationException::withMessages([
                         'cart' => (app()->isLocale('ru') ? 'Недостаточно товара на складе: ' : 'Stoc insuficient pentru ').$item['product']->display_name.'.',
                     ]);
                 }
@@ -111,13 +114,20 @@ class CheckoutController extends Controller
                 return redirect()->away($payment['url']);
             }
 
-            $order->forceFill(['payment_status' => 'pending'])->save();
+            $order->forceFill([
+                'payment_status' => 'failed',
+                'status' => 'payment_failed',
+            ])->save();
+
+            return redirect()
+                ->route('checkout.show')
+                ->withErrors(['payment' => app()->isLocale('ru') ? 'Не удалось создать онлайн-оплату. Корзина сохранена, попробуйте еще раз или выберите другой способ оплаты.' : 'Plata online nu a putut fi initializata. Cosul a fost pastrat, incearca din nou sau alege alta metoda de plata.']);
         }
 
         session()->forget('cart');
 
         return redirect()
-            ->route('checkout.thank-you', $order->order_number)
+            ->to($this->signedOrderUrl($order))
             ->with('success', (app()->isLocale('ru') ? 'Заказ создан: ' : 'Comanda a fost creata: ').$order->order_number);
     }
 
@@ -151,15 +161,26 @@ class CheckoutController extends Controller
             $stockCaptured = false;
 
             if ($status === 'completed') {
-                $stockCaptured = $lockedOrder->stock_deducted_at !== null || $this->deductOrderStock($lockedOrder);
+                if (! $this->callbackPaymentDetailsMatch($lockedOrder, $request)) {
+                    if ($lockedOrder->payment_status !== 'paid') {
+                        $lockedOrder->forceFill([
+                            'payment_status' => 'failed',
+                            'status' => 'payment_mismatch',
+                        ])->save();
+                    }
 
-                $lockedOrder->forceFill([
-                    'payment_status' => 'paid',
-                    'status' => $stockCaptured ? 'paid' : 'stock_conflict',
-                    'paid_at' => $lockedOrder->paid_at ?: now(),
-                ])->save();
+                    $transactionStatus = 'payment_mismatch';
+                } else {
+                    $stockCaptured = $lockedOrder->stock_deducted_at !== null || $this->deductOrderStock($lockedOrder);
 
-                $transactionStatus = $stockCaptured ? 'completed' : 'failed';
+                    $lockedOrder->forceFill([
+                        'payment_status' => 'paid',
+                        'status' => $stockCaptured ? 'paid' : 'stock_conflict',
+                        'paid_at' => $lockedOrder->paid_at ?: now(),
+                    ])->save();
+
+                    $transactionStatus = $stockCaptured ? 'completed' : 'failed';
+                }
             } elseif (in_array($status, ['failed', 'cancelled'], true)) {
                 if ($lockedOrder->payment_status !== 'paid') {
                     $lockedOrder->forceFill([
@@ -186,7 +207,9 @@ class CheckoutController extends Controller
             ];
         });
 
-        return response()->json(['ok' => true] + $result);
+        $ok = ($result['status'] ?? null) !== 'payment_mismatch';
+
+        return response()->json(['ok' => $ok] + $result, $ok ? 200 : 422);
     }
 
     private function callbackReference(Request $request): ?string
@@ -201,6 +224,13 @@ class CheckoutController extends Controller
             ?: $request->input('payId')
             ?: $request->input('paymentId')
             ?: $request->input('transactionId');
+    }
+
+    private function signedOrderUrl(Order $order): string
+    {
+        return URL::temporarySignedRoute('checkout.thank-you', now()->addDays(7), [
+            'order' => $order->order_number,
+        ]);
     }
 
     private function callbackStatus(Request $request): string
@@ -237,6 +267,36 @@ class CheckoutController extends Controller
             ?: $request->input('payment_reference')
             ?: $fallback
         );
+    }
+
+    private function callbackPaymentDetailsMatch(Order $order, Request $request): bool
+    {
+        $currency = strtoupper((string) (
+            $request->input('currency')
+            ?: $request->input('paymentCurrency')
+            ?: $request->input('payment.currency')
+            ?: $request->input('result.currency')
+        ));
+
+        if ($currency === '' || $currency !== strtoupper((string) $order->currency)) {
+            return false;
+        }
+
+        $amount = $request->input('amount')
+            ?? $request->input('paymentAmount')
+            ?? $request->input('payment.amount')
+            ?? $request->input('result.amount');
+
+        if ($amount === null || $amount === '') {
+            return false;
+        }
+
+        $normalized = preg_replace('/[^\d,.\-]/', '', (string) $amount) ?: '';
+        $numeric = (float) str_replace(',', '.', $normalized);
+        $orderTotal = (float) $order->total;
+
+        return abs($numeric - $orderTotal) < 0.01
+            || abs(($numeric / 100) - $orderTotal) < 0.01;
     }
 
     private function recordPaymentCallback(Order $order, Request $request, string $providerTransactionId): PaymentTransaction
@@ -313,7 +373,7 @@ class CheckoutController extends Controller
         $product->forceFill([
             'stock_quantity' => $newStock,
             'stock_status' => $newStock > 0 ? 'in_stock' : 'out_of_stock',
-            'is_active' => $newStock > 0,
+            'is_active' => $newStock > 0 ? $product->is_active : false,
         ])->save();
     }
 
@@ -324,6 +384,7 @@ class CheckoutController extends Controller
             ->whereIn('id', $cart->keys())
             ->availableForSale()
             ->get()
+            ->filter(fn (Product $product) => app(ProductImageAvailabilityService::class)->isAvailable($product->main_image))
             ->keyBy('id');
 
         $items = $cart

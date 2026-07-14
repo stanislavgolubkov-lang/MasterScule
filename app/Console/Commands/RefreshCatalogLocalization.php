@@ -12,10 +12,14 @@ class RefreshCatalogLocalization extends Command
 {
     protected $signature = 'masterscule:refresh-catalog-localization {--limit=0}';
 
-    protected $description = 'Rebuild RU and RO product content from the latest imported supplier rows';
+    protected $description = 'Disabled automatic catalog localization';
 
     public function handle(ProductParserContentBuilder $contentBuilder): int
     {
+        $this->error('Automatic catalog localization is disabled. Use translation review in admin.');
+
+        return self::FAILURE;
+
         $limit = max(0, (int) $this->option('limit'));
         $updated = 0;
         $missingSource = 0;
@@ -35,6 +39,7 @@ class RefreshCatalogLocalization extends Command
 
                 if (! $item) {
                     $missingSource++;
+
                     continue;
                 }
 

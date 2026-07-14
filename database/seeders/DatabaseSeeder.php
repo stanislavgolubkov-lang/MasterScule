@@ -29,7 +29,7 @@ class DatabaseSeeder extends Seeder
             'company_name' => config('store.legal_name'),
             'country' => config('store.country'),
             'city' => 'Chișinău',
-            'password' => Hash::make('MasterScule2026!'),
+            'password' => Hash::make($this->seedPassword('SEED_ADMIN_PASSWORD')),
         ]);
         $admin->roles()->attach($adminRole);
 
@@ -42,7 +42,7 @@ class DatabaseSeeder extends Seeder
             'company_name' => 'Popescu Service SRL',
             'country' => config('store.country'),
             'city' => 'Chișinău',
-            'password' => Hash::make('password'),
+            'password' => Hash::make($this->seedPassword('SEED_CUSTOMER_PASSWORD')),
         ]);
         $customer->roles()->attach($userRole);
 
@@ -168,7 +168,12 @@ class DatabaseSeeder extends Seeder
                 'package_contents' => ['Produs principal', 'Ambalaj / cutie', 'Documentatie tehnica'],
                 'rating' => 4.8,
                 'reviews_count' => random_int(11, 45),
-                'is_active' => true,
+                'status' => 'draft',
+                'approval_status' => 'pending_review',
+                'needs_review' => true,
+                'needs_image_review' => true,
+                'needs_translation_review' => true,
+                'is_active' => false,
                 'is_featured' => $featured,
                 'is_bestseller' => $bestseller,
                 'is_new' => $new,
@@ -178,5 +183,20 @@ class DatabaseSeeder extends Seeder
                 'meta_description' => Str::limit($short, 150),
             ];
         }, $items);
+    }
+
+    private function seedPassword(string $key): string
+    {
+        $password = (string) env($key, '');
+
+        if ($password !== '') {
+            return $password;
+        }
+
+        $password = Str::password(32);
+
+        $this->command?->warn($key.' is not set; generated a random one-time password for this seeded account.');
+
+        return $password;
     }
 }

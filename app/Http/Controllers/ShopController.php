@@ -6,6 +6,7 @@ use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Page;
 use App\Models\Product;
+use App\Services\Catalog\ProductImageAvailabilityService;
 use Illuminate\Http\Request;
 
 class ShopController extends Controller
@@ -137,9 +138,10 @@ class ShopController extends Controller
         ]);
     }
 
-    public function product(string $slug)
+    public function product(string $slug, ProductImageAvailabilityService $images)
     {
         $product = Product::with(['brand', 'category', 'categories'])->where('slug', $slug)->availableForSale()->firstOrFail();
+        abort_unless($images->isAvailable($product->main_image), 404);
         $similarCategoryIds = $product->categories
             ->pluck('id')
             ->push($product->category_id)

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Product;
+use App\Services\Catalog\ProductImageAvailabilityService;
 
 if (! function_exists('money')) {
     function money(float|int|string|null $amount, ?string $currency = null): string
@@ -41,6 +42,10 @@ if (! function_exists('productGallery')) {
         $gallery = $product->gallery ?: [];
         array_unshift($gallery, $product->main_image);
 
-        return array_values(array_unique(array_filter($gallery)));
+        return collect($gallery)
+            ->filter(fn (?string $path) => app(ProductImageAvailabilityService::class)->isAvailable($path))
+            ->unique()
+            ->values()
+            ->all();
     }
 }

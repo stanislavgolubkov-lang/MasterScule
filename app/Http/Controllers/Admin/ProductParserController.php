@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\FetchOfficialProductImagesJob;
+use App\Jobs\FetchTrisToolsFallbackDataJob;
+use App\Jobs\FindOfficialProductSourceJob;
 use App\Jobs\ParsePriceListJob;
 use App\Jobs\ParseSingleSkuJob;
 use App\Jobs\ParseSkuBatchJob;
@@ -12,10 +15,10 @@ use App\Models\Category;
 use App\Models\ProductParserBatch;
 use App\Models\ProductParserImageAsset;
 use App\Models\ProductParserItem;
+use App\Services\Catalog\ProductPublicationGuard;
 use App\Services\ProductDraftService;
 use App\Services\ProductParserSettings;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -23,9 +26,7 @@ use ZipArchive;
 
 class ProductParserController extends Controller
 {
-    public function __construct(private ProductParserSettings $settings)
-    {
-    }
+    public function __construct(private ProductParserSettings $settings) {}
 
     public function index()
     {
@@ -262,15 +263,21 @@ class ProductParserController extends Controller
             ->paginate(30)
             ->withQueryString();
 
-        return view('admin.parser.batch', compact('batch', 'items'));
+        $bulkStats = $this->bulkStats($batch);
+
+        return view('admin.parser.batch', compact('batch', 'items', 'bulkStats'));
     }
 
-    public function showItem(ProductParserItem $item)
+    public function showItem(ProductParserItem $item, ProductPublicationGuard $publicationGuard)
     {
         $this->guard('parser.view');
+        $item->load(['batch', 'category', 'detectedCategory', 'sources', 'imageAssets', 'existingProduct.brand', 'createdProduct.brand', 'createdProduct.category']);
 
         return view('admin.parser.item', [
-            'item' => $item->load(['batch', 'category', 'detectedCategory', 'sources', 'imageAssets', 'existingProduct.brand', 'createdProduct']),
+            'item' => $item,
+            'publicationCheck' => $item->createdProduct
+                ? $publicationGuard->evaluate($item->createdProduct, true)
+                : null,
             'categories' => Category::orderBy('sort_order')->orderBy('name_ro')->get(),
         ]);
     }
@@ -420,19 +427,19 @@ class ProductParserController extends Controller
         return back()->with('success', __('ui.parser_category_updated'));
     }
 
-    public function publishDraft(ProductParserItem $item)
+    public function publishDraft(ProductParserItem $item, ProductPublicationGuard $publicationGuard)
     {
         $this->guard('parser.approve');
 
         $product = $item->createdProduct;
         abort_unless($product, 404);
 
-        $product->forceFill([
-            'status' => 'published',
-            'approval_status' => 'approved',
-            'needs_review' => false,
-            'is_active' => true,
-        ])->save();
+        $result = $publicationGuard->publish($product, true);
+        if (! $result['allowed']) {
+            return back()
+                ->with('warning', app()->isLocale('ru') ? 'Публикация заблокирована.' : 'Publicarea este blocata.')
+                ->with('publication_errors', $result['errors']);
+        }
 
         $item->forceFill([
             'status' => 'approved',
@@ -441,6 +448,129 @@ class ProductParserController extends Controller
         $item->batch?->addLog('Admin approved and published draft product', ['sku' => $item->sku, 'product_id' => $product->id]);
 
         return redirect()->route('admin.products', ['q' => $product->sku])->with('success', __('ui.parser_draft_published'));
+    }
+
+    public function bulkBatchAction(
+        Request $request,
+        ProductParserBatch $batch,
+        ProductDraftService $drafts,
+        ProductPublicationGuard $publicationGuard,
+    ) {
+        $this->guard('parser.approve');
+
+        $data = $request->validate([
+            'action' => ['required', Rule::in(['create_safe_drafts', 'publish_drafts', 'update_existing_stock', 'update_existing_price', 'update_existing_price_stock'])],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:20000'],
+        ]);
+
+        if (function_exists('set_time_limit')) {
+            set_time_limit(0);
+        }
+
+        $limit = (int) ($data['limit'] ?? 20000);
+        $processed = 0;
+        $failed = 0;
+
+        if ($data['action'] === 'create_safe_drafts') {
+            $query = $batch->items()
+                ->whereNull('created_product_id')
+                ->whereNull('existing_product_id')
+                ->where('needs_category_review', false)
+                ->whereIn('status', ['ready_for_review', 'dry_run_ready', 'parsed']);
+
+            $query->orderBy('id')->limit($limit)->chunkById(200, function ($items) use ($drafts, &$processed, &$failed) {
+                foreach ($items as $item) {
+                    try {
+                        $drafts->createDraft($item->load(['imageAssets', 'category', 'batch']));
+                        $processed++;
+                    } catch (RuntimeException) {
+                        $failed++;
+                    }
+                }
+            });
+
+            $batch->addLog('Bulk created safe draft products', ['processed' => $processed, 'failed' => $failed]);
+
+            return back()->with('success', $this->bulkMessage('Draft создано', $processed, $failed));
+        }
+
+        if ($data['action'] === 'publish_drafts') {
+            $query = $batch->items()
+                ->whereNotNull('created_product_id')
+                ->where('needs_category_review', false)
+                ->whereHas('createdProduct', fn ($product) => $product->where('status', 'draft'));
+
+            $blockedReasons = [];
+            $query->with('createdProduct')->orderBy('id')->limit($limit)->chunkById(200, function ($items) use ($publicationGuard, &$processed, &$failed, &$blockedReasons) {
+                foreach ($items as $item) {
+                    $product = $item->createdProduct;
+                    if (! $product) {
+                        $failed++;
+
+                        continue;
+                    }
+
+                    $result = $publicationGuard->publish($product, true);
+                    if (! $result['allowed']) {
+                        $failed++;
+                        foreach ($result['error_codes'] as $code) {
+                            $blockedReasons[$code] = ($blockedReasons[$code] ?? 0) + 1;
+                        }
+
+                        continue;
+                    }
+
+                    $item->forceFill([
+                        'status' => 'approved',
+                        'approval_status' => 'approved',
+                    ])->save();
+                    $processed++;
+                }
+            });
+
+            $batch->addLog('Bulk publication completed through guard', [
+                'processed' => $processed,
+                'blocked' => $failed,
+                'blocked_reasons' => $blockedReasons,
+            ]);
+
+            return back()->with('success', $this->bulkMessage('Опубликовано', $processed, $failed));
+        }
+
+        $action = match ($data['action']) {
+            'update_existing_stock' => 'update_stock',
+            'update_existing_price' => 'update_price',
+            default => 'update_price_stock',
+        };
+
+        if (in_array($action, ['update_price', 'update_price_stock'], true) && ! $this->settings->get('update_existing_prices', false)) {
+            return back()->withErrors(['bulk' => 'Updating existing prices is disabled in parser settings.']);
+        }
+
+        if (in_array($action, ['update_stock', 'update_price_stock'], true) && ! $this->settings->get('update_existing_stock', false)) {
+            return back()->withErrors(['bulk' => 'Updating existing stock is disabled in parser settings.']);
+        }
+
+        $batch->items()
+            ->whereNotNull('existing_product_id')
+            ->whereIn('status', ['existing_product_found', 'ready_for_review'])
+            ->with(['imageAssets', 'existingProduct', 'batch'])
+            ->orderBy('id')
+            ->limit($limit)
+            ->chunkById(200, function ($items) use ($drafts, $action, &$processed, &$failed) {
+                foreach ($items as $item) {
+                    try {
+                        $drafts->updateExisting($item, $action);
+                        $processed++;
+                    } catch (RuntimeException) {
+                        $failed++;
+                    }
+                }
+            });
+
+        $batch->addLog('Bulk updated existing products', ['action' => $action, 'processed' => $processed, 'failed' => $failed]);
+
+        return back()->with('success', $this->bulkMessage('Обновлено', $processed, $failed));
     }
 
     public function reject(ProductParserItem $item)
@@ -461,6 +591,93 @@ class ProductParserController extends Controller
         ParseSingleSkuJob::dispatch($item->id);
 
         return redirect()->route('admin.parser.items.show', $item)->with('success', __('ui.parser_retry_started'));
+    }
+
+    public function retryOfficial(ProductParserItem $item)
+    {
+        $this->guard('parser.run');
+
+        $item->forceFill([
+            'status' => 'queued',
+            'error_message' => null,
+            'official_source_url' => null,
+            'official_source_domain' => null,
+            'official_source_confidence' => null,
+            'source_match_confidence' => null,
+            'needs_source_review' => true,
+        ])->save();
+        FindOfficialProductSourceJob::dispatch($item->id);
+
+        return back()->with('success', 'Official source search queued.');
+    }
+
+    public function retryOfficialImages(ProductParserItem $item)
+    {
+        $this->guard('parser.run');
+
+        $item->forceFill(['status' => 'queued', 'error_message' => null, 'needs_image_review' => true])->save();
+        FetchOfficialProductImagesJob::dispatch($item->id);
+
+        return back()->with('success', 'Official image search queued.');
+    }
+
+    public function useFallback(ProductParserItem $item)
+    {
+        $this->guard('parser.run');
+
+        $item->forceFill(['status' => 'queued', 'error_message' => null, 'needs_source_review' => true])->save();
+        FetchTrisToolsFallbackDataJob::dispatch($item->id);
+
+        return back()->with('success', 'TrisTools fallback search queued.');
+    }
+
+    public function rejectFallback(ProductParserItem $item)
+    {
+        $this->guard('parser.approve');
+
+        $item->forceFill([
+            'fallback_source_url' => null,
+            'fallback_source_domain' => null,
+            'fallback_source_used' => false,
+            'needs_source_review' => ! filled($item->official_source_url),
+        ])->save();
+        $item->sources()->where('source_type', 'fallback_reference')->delete();
+
+        return back()->with('success', 'Fallback source rejected.');
+    }
+
+    public function approveQuality(ProductParserItem $item, string $type)
+    {
+        $this->guard('parser.approve');
+        abort_unless(in_array($type, ['source', 'images', 'translation'], true), 404);
+
+        $updates = match ($type) {
+            'source' => ['needs_source_review' => false, 'source_reviewed_at' => now()],
+            'images' => ['needs_image_review' => false, 'image_reviewed_at' => now()],
+            'translation' => [
+                'needs_translation_review' => false,
+                'needs_content_review' => false,
+                'translation_reviewed_at' => now(),
+            ],
+        };
+        $item->forceFill($updates)->save();
+        if ($type === 'images') {
+            $item->imageAssets()->where('is_selected', true)->update(['needs_review' => false]);
+        }
+
+        if ($product = $item->createdProduct) {
+            $productUpdates = match ($type) {
+                'source' => ['needs_source_review' => false, 'source_reviewed_at' => now()],
+                'images' => ['needs_image_review' => false],
+                'translation' => [
+                    'needs_translation_review' => false,
+                    'needs_content_review' => false,
+                ],
+            };
+            $product->forceFill($productUpdates)->save();
+        }
+
+        return back()->with('success', ucfirst($type).' review approved.');
     }
 
     public function cancelBatch(ProductParserBatch $batch)
@@ -489,7 +706,7 @@ class ProductParserController extends Controller
 
         $data = $request->validate([
             'enabled' => ['nullable', 'boolean'],
-            'max_sku_per_batch' => ['required', 'integer', 'min:1', 'max:3000'],
+            'max_sku_per_batch' => ['required', 'integer', 'min:1', 'max:20000'],
             'max_file_size_kb' => ['required', 'integer', 'min:512', 'max:51200'],
             'max_images_per_product' => ['required', 'integer', 'min:1', 'max:4'],
             'min_confidence_score' => ['required', 'integer', 'min:0', 'max:100'],
@@ -502,6 +719,12 @@ class ProductParserController extends Controller
             'create_drafts_automatically' => ['nullable', 'boolean'],
             'update_existing_prices' => ['nullable', 'boolean'],
             'update_existing_stock' => ['nullable', 'boolean'],
+            'official_sources_enabled' => ['nullable', 'boolean'],
+            'tristools_fallback_enabled' => ['nullable', 'boolean'],
+            'allow_marketplace_sources' => ['nullable', 'boolean'],
+            'min_official_confidence' => ['required', 'integer', 'min:70', 'max:100'],
+            'min_fallback_confidence' => ['required', 'integer', 'min:70', 'max:100'],
+            'required_images_for_ready' => ['required', 'integer', 'min:1', 'max:4'],
             'allowed_domains' => ['nullable', 'string'],
             'blocked_domains' => ['nullable', 'string'],
             'watermark_enabled' => ['nullable', 'boolean'],
@@ -526,6 +749,16 @@ class ProductParserController extends Controller
             'create_drafts_automatically' => $request->boolean('create_drafts_automatically'),
             'update_existing_prices' => $request->boolean('update_existing_prices'),
             'update_existing_stock' => $request->boolean('update_existing_stock'),
+            'official_sources_enabled' => $request->boolean('official_sources_enabled'),
+            'tristools_fallback_enabled' => $request->boolean('tristools_fallback_enabled'),
+            'tristools_fallback_only' => true,
+            'allow_marketplace_sources' => $request->boolean('allow_marketplace_sources'),
+            'min_official_confidence' => (int) $data['min_official_confidence'],
+            'min_fallback_confidence' => (int) $data['min_fallback_confidence'],
+            'required_images_for_ready' => (int) $data['required_images_for_ready'],
+            'tristools' => array_replace($this->settings->get('tristools', []), [
+                'enabled' => $request->boolean('tristools_fallback_enabled'),
+            ]),
             'allowed_domains' => $this->lines($data['allowed_domains'] ?? ''),
             'blocked_domains' => $this->lines($data['blocked_domains'] ?? ''),
             'watermark' => [
@@ -594,6 +827,40 @@ class ProductParserController extends Controller
         ];
     }
 
+    private function bulkStats(ProductParserBatch $batch): array
+    {
+        return [
+            'safe_new' => $batch->items()
+                ->whereNull('created_product_id')
+                ->whereNull('existing_product_id')
+                ->where('needs_category_review', false)
+                ->whereIn('status', ['ready_for_review', 'dry_run_ready', 'parsed'])
+                ->count(),
+            'drafts' => $batch->items()
+                ->whereNotNull('created_product_id')
+                ->where('needs_category_review', false)
+                ->whereHas('createdProduct', fn ($product) => $product->where('status', 'draft'))
+                ->count(),
+            'existing' => $batch->items()
+                ->whereNotNull('existing_product_id')
+                ->whereIn('status', ['existing_product_found', 'ready_for_review'])
+                ->count(),
+            'exceptions' => $batch->items()
+                ->where(function ($query) {
+                    $query->where('needs_category_review', true)
+                        ->orWhereIn('status', ['failed', 'not_found']);
+                })
+                ->count(),
+        ];
+    }
+
+    private function bulkMessage(string $label, int $processed, int $failed): string
+    {
+        return $failed > 0
+            ? "{$label}: {$processed}. Ошибок: {$failed}."
+            : "{$label}: {$processed}.";
+    }
+
     private function skuFileMimeMap(): array
     {
         return [
@@ -654,6 +921,7 @@ class ProductParserController extends Controller
 
             if (! $headers && in_array('sku', array_map('strtolower', $line), true)) {
                 $headers = array_map('strtolower', $line);
+
                 continue;
             }
 
@@ -669,7 +937,7 @@ class ProductParserController extends Controller
 
     private function rowsFromXlsx(string $path): array
     {
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
 
         if ($zip->open($path) !== true) {
             return [];
@@ -698,6 +966,7 @@ class ProductParserController extends Controller
             $values = array_map('trim', $values);
             if (! $headers && in_array('sku', array_map('strtolower', $values), true)) {
                 $headers = array_map('strtolower', $values);
+
                 continue;
             }
 

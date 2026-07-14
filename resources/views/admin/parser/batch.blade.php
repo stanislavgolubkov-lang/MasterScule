@@ -1,29 +1,83 @@
 @extends('layouts.admin')
 
 @section('content')
-@php($ru = app()->isLocale('ru'))
-@php($activeFilter = request('status') ?: (request('needs_category') ? 'needs_category' : (request('no_images') ? 'no_images' : '')))
+@php
+    $ru = app()->isLocale('ru');
+    $activeFilter = request('status') ?: (request('needs_category') ? 'needs_category' : (request('no_images') ? 'no_images' : ''));
+    $productRows = $batch->product_rows ?: $batch->sku_count;
+    $draftPlan = $batch->planned_drafts ?: $batch->created_drafts;
+    $autoRefresh = in_array($batch->status, ['pending', 'running', 'processing'], true);
+    $canStartImport = in_array($batch->status, ['dry_run_completed', 'cancelled'], true);
+@endphp
+
 <section class="shell page-title">
     <p>{{ __('ui.admin') }} / <a href="{{ route('admin.parser.index') }}">{{ __('ui.parser_products') }}</a></p>
     <h1>{{ $batch->file_name ?: $batch->title }}</h1>
-    <span>{{ __('ui.status') }}: {{ $batch->status }} / {{ $ru ? 'товарных строк' : 'randuri produse' }}: {{ $batch->product_rows ?: $batch->sku_count }}</span>
+    <span>{{ __('ui.status') }}: {{ $batch->status }} / {{ $ru ? 'товарных строк' : 'randuri produse' }}: {{ $productRows }}</span>
 </section>
 
-<section class="shell stats parser-stats">
-    <div><strong>{{ $batch->total_rows }}</strong><span>{{ $ru ? 'строк всего' : 'randuri total' }}</span></div>
-    <div><strong>{{ $batch->product_rows ?: $batch->sku_count }}</strong><span>{{ $ru ? 'товаров' : 'produse' }}</span></div>
-    <div><strong>{{ $batch->service_rows }}</strong><span>{{ $ru ? 'служебных строк' : 'randuri serviciu' }}</span></div>
-    <div><strong>{{ $batch->new_sku_count }}</strong><span>{{ $ru ? 'новых SKU' : 'SKU noi' }}</span></div>
-    <div><strong>{{ $batch->existing_sku_count ?: $batch->updated_existing }}</strong><span>{{ $ru ? 'существующих SKU' : 'SKU existente' }}</span></div>
-    <div><strong>{{ $batch->planned_drafts ?: $batch->created_drafts }}</strong><span>{{ $ru ? 'план draft / создано' : 'plan draft / create' }}</span></div>
-    <div><strong>{{ $batch->error_rows }}</strong><span>{{ $ru ? 'ошибок' : 'erori' }}</span></div>
+<section class="shell panel parser-card parser-batch-summary">
+    <div class="parser-batch-state">
+        <span>{{ $ru ? 'Состояние импорта' : 'Stare import' }}</span>
+        <strong>{{ $batch->status }}</strong>
+        <small>{{ $autoRefresh ? ($ru ? 'Обработка идет, данные обновляются автоматически' : 'Procesarea ruleaza, datele se actualizeaza automat') : $batch->updated_at->format('d.m.Y H:i') }}</small>
+    </div>
+    <div class="parser-batch-metrics">
+        <div><strong>{{ $batch->total_rows }}</strong><span>{{ $ru ? 'строк всего' : 'randuri total' }}</span></div>
+        <div><strong>{{ $productRows }}</strong><span>{{ $ru ? 'товаров' : 'produse' }}</span></div>
+        <div><strong>{{ $batch->new_sku_count }}</strong><span>{{ $ru ? 'новых SKU' : 'SKU noi' }}</span></div>
+        <div><strong>{{ $batch->existing_sku_count ?: $batch->updated_existing }}</strong><span>{{ $ru ? 'существующих' : 'existente' }}</span></div>
+        <div><strong>{{ $draftPlan }}</strong><span>{{ $ru ? 'draft' : 'drafturi' }}</span></div>
+        <div><strong>{{ $batch->error_rows }}</strong><span>{{ $ru ? 'ошибок' : 'erori' }}</span></div>
+    </div>
 </section>
 
-@if($batch->status === 'dry_run_completed')
-<section class="shell panel parser-warning">
+@if(!$canStartImport)
+<section class="shell parser-bulk-panel">
+    <div class="admin-panel-head">
+        <span>{{ $ru ? 'Быстрый путь для больших прайсов' : 'Flux rapid pentru liste mari' }}</span>
+        <h2>{{ $ru ? 'Массовая обработка без просмотра каждого товара' : 'Procesare in masa fara verificare pe fiecare produs' }}</h2>
+    </div>
+    <div class="parser-bulk-grid">
+        <form method="post" action="{{ route('admin.parser.batches.bulk-action', $batch) }}">
+            @csrf
+            <input type="hidden" name="action" value="create_safe_drafts">
+            <strong>{{ $bulkStats['safe_new'] }}</strong>
+            <span>{{ $ru ? 'новых строк готовы к draft' : 'randuri noi gata pentru draft' }}</span>
+            <label>{{ $ru ? 'Лимит' : 'Limita' }}<input type="number" name="limit" value="20000" min="1" max="20000"></label>
+            <button class="btn small" @disabled($bulkStats['safe_new'] === 0)>{{ $ru ? 'Создать draft массово' : 'Creeaza drafturi in masa' }}</button>
+        </form>
+        <form method="post" action="{{ route('admin.parser.batches.bulk-action', $batch) }}">
+            @csrf
+            <input type="hidden" name="action" value="publish_drafts">
+            <strong>{{ $bulkStats['drafts'] }}</strong>
+            <span>{{ $ru ? 'draft готовы к публикации' : 'drafturi gata de publicare' }}</span>
+            <label>{{ $ru ? 'Лимит' : 'Limita' }}<input type="number" name="limit" value="20000" min="1" max="20000"></label>
+            <button class="btn small" @disabled($bulkStats['drafts'] === 0)>{{ $ru ? 'Опубликовать массово' : 'Publica in masa' }}</button>
+        </form>
+        <form method="post" action="{{ route('admin.parser.batches.bulk-action', $batch) }}">
+            @csrf
+            <input type="hidden" name="action" value="update_existing_price_stock">
+            <strong>{{ $bulkStats['existing'] }}</strong>
+            <span>{{ $ru ? 'существующих SKU можно обновить' : 'SKU existente pot fi actualizate' }}</span>
+            <label>{{ $ru ? 'Лимит' : 'Limita' }}<input type="number" name="limit" value="20000" min="1" max="20000"></label>
+            <button class="btn outline small" @disabled($bulkStats['existing'] === 0)>{{ $ru ? 'Обновить цену и остаток' : 'Actualizeaza pret si stoc' }}</button>
+        </form>
+        <a class="parser-bulk-exceptions" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'needs_category' => 1]) }}">
+            <strong>{{ $bulkStats['exceptions'] }}</strong>
+            <span>{{ $ru ? 'исключений на ручную проверку' : 'exceptii pentru verificare manuala' }}</span>
+        </a>
+    </div>
+</section>
+@endif
+
+@if($canStartImport)
+<section class="shell panel parser-warning parser-import-ready">
     <div>
-        <strong>{{ $ru ? 'Dry-run завершен' : 'Dry-run finalizat' }}</strong>
-        <span>{{ $ru ? 'Товары еще не созданы. Проверьте отчет, затем запустите подготовку черновиков.' : 'Produsele nu au fost create. Verifica raportul, apoi porneste pregatirea drafturilor.' }}</span>
+        <strong>{{ $batch->status === 'cancelled' ? ($ru ? 'Импорт остановлен' : 'Import oprit') : ($ru ? 'Dry-run завершен' : 'Dry-run finalizat') }}</strong>
+        <span>{{ $batch->status === 'cancelled'
+            ? ($ru ? 'Найденные изображения и созданные черновики сохранены. Повторный запуск проверит прайс заново и продолжит подготовку.' : 'Imaginile gasite si drafturile create sunt pastrate. Repornirea verifica din nou lista si continua pregatirea.')
+            : ($ru ? 'Товары и изображения еще не создавались. Следующий этап найдет фотографии, обработает их и подготовит черновики.' : 'Produsele si imaginile nu au fost create. Urmatoarea etapa cauta fotografii, le proceseaza si pregateste drafturile.') }}</span>
     </div>
     <form method="post" action="{{ route('admin.parser.batches.run-import', $batch) }}" class="parser-run-form">
         @csrf
@@ -31,12 +85,12 @@
         <label>{{ $ru ? 'Тестовый лимит' : 'Limita test' }}
             <input type="number" name="row_limit" min="1" max="5000" placeholder="{{ $ru ? 'пусто = весь прайс' : 'gol = tot fisierul' }}">
         </label>
-        <button class="btn" type="submit">{{ $ru ? 'Создать черновики' : 'Creeaza drafturi' }}</button>
+        <button class="btn" type="submit">{{ $batch->status === 'cancelled' ? ($ru ? 'Продолжить поиск изображений' : 'Continua cautarea imaginilor') : ($ru ? 'Запустить импорт и поиск изображений' : 'Porneste importul si cautarea imaginilor') }}</button>
     </form>
 </section>
 @endif
 
-<section class="shell parser-toolbar panel">
+<section class="shell parser-toolbar panel parser-card">
     <div class="parser-filters">
         <a class="{{ $activeFilter === '' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', $batch) }}">{{ __('ui.all') }}</a>
         <a class="{{ $activeFilter === 'ready_for_review' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'ready_for_review']) }}">{{ __('ui.parser_ready') }}</a>
@@ -47,12 +101,14 @@
         <a class="{{ $activeFilter === 'failed' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'failed']) }}">{{ __('ui.parser_failed') }}</a>
     </div>
     <div class="parser-actions">
-        <form method="post" action="{{ route('admin.parser.batches.cancel', $batch) }}">@csrf<button class="btn outline small">{{ __('ui.parser_cancel_batch') }}</button></form>
+        @if($autoRefresh)
+            <form method="post" action="{{ route('admin.parser.batches.cancel', $batch) }}" onsubmit="return confirm('{{ $ru ? 'Остановить текущую обработку?' : 'Opriti procesarea curenta?' }}')">@csrf<button class="btn outline small">{{ __('ui.parser_cancel_batch') }}</button></form>
+        @endif
         <form method="post" action="{{ route('admin.parser.batches.destroy', $batch) }}" onsubmit="return confirm('{{ __('ui.parser_delete_confirm') }}')">@csrf @method('DELETE')<button class="delete">{{ __('ui.parser_delete_report') }}</button></form>
     </div>
 </section>
 
-<section class="shell panel">
+<section class="shell panel parser-card parser-table-panel">
     <div class="parser-table-wrap">
         <table class="parser-table">
             <thead>
@@ -97,11 +153,21 @@
 </section>
 
 @if($batch->log_json)
-<section class="shell panel parser-log">
-    <h2>{{ __('ui.parser_logs') }}</h2>
-    @foreach(array_reverse($batch->log_json) as $log)
-        <p><strong>{{ $log['at'] ?? '' }}</strong> {{ $log['message'] ?? '' }} @if(!empty($log['context']))<small>{{ json_encode($log['context'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}</small>@endif</p>
-    @endforeach
+<section class="shell">
+    <details class="panel parser-card parser-log parser-collapsible">
+        <summary>
+            <span>{{ __('ui.parser_logs') }}</span>
+            <strong>{{ $ru ? 'Технический журнал' : 'Jurnal tehnic' }}</strong>
+        </summary>
+        @foreach(array_reverse($batch->log_json) as $log)
+            <p><strong>{{ $log['at'] ?? '' }}</strong> {{ $log['message'] ?? '' }} @if(!empty($log['context']))<small>{{ json_encode($log['context'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}</small>@endif</p>
+        @endforeach
+    </details>
 </section>
+@endif
+@if($autoRefresh)
+<script>
+    window.setTimeout(() => window.location.reload(), 3000);
+</script>
 @endif
 @endsection

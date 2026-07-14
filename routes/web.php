@@ -25,9 +25,9 @@ Route::get('/brands', [ShopController::class, 'brands'])->name('brands');
 Route::get('/brand/{slug}', [ShopController::class, 'brand'])->name('brand.show');
 
 Route::get('/login', [AuthController::class, 'loginForm'])->name('login');
-Route::post('/login', [AuthController::class, 'login'])->name('login.store');
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1')->name('login.store');
 Route::get('/admin', [AuthController::class, 'adminLoginForm'])->name('admin.dashboard');
-Route::post('/admin', [AuthController::class, 'adminLogin'])->name('admin.login.store');
+Route::post('/admin', [AuthController::class, 'adminLogin'])->middleware('throttle:5,1')->name('admin.login.store');
 Route::get('/register', [AuthController::class, 'registerForm'])->name('register');
 Route::post('/register', [AuthController::class, 'register'])->name('register.store');
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
@@ -39,7 +39,7 @@ Route::delete('/cart/remove/{product}', [CartController::class, 'remove'])->name
 
 Route::get('/checkout', [CheckoutController::class, 'show'])->name('checkout.show');
 Route::post('/checkout', [CheckoutController::class, 'store'])->name('checkout.store');
-Route::get('/order/{order:order_number}', [CheckoutController::class, 'thankYou'])->name('checkout.thank-you');
+Route::get('/order/{order:order_number}', [CheckoutController::class, 'thankYou'])->middleware('signed')->name('checkout.thank-you');
 Route::post('/payment/maib/callback', [CheckoutController::class, 'maibCallback'])->name('payment.maib.callback');
 
 Route::middleware('auth')->group(function () {
@@ -50,7 +50,6 @@ Route::middleware('admin.only')->group(function () {
     Route::get('/admin/products', [AdminController::class, 'products'])->name('admin.products');
     Route::post('/admin/products', [AdminController::class, 'storeProduct'])->name('admin.products.store');
     Route::patch('/admin/products/{product}', [AdminController::class, 'updateProduct'])->name('admin.products.update');
-    Route::delete('/admin/products/{product}', [AdminController::class, 'destroyProduct'])->name('admin.products.destroy');
     Route::get('/admin/orders', [AdminController::class, 'orders'])->name('admin.orders');
     Route::patch('/admin/orders/{order}', [AdminController::class, 'updateOrder'])->name('admin.orders.update');
     Route::get('/admin/payments', [AdminController::class, 'payments'])->name('admin.payments');
@@ -65,6 +64,7 @@ Route::middleware('admin.only')->group(function () {
     Route::post('/admin/parser/settings', [ProductParserController::class, 'updateSettings'])->name('admin.parser.settings.update');
     Route::get('/admin/parser/batches/{batch}', [ProductParserController::class, 'showBatch'])->name('admin.parser.batches.show');
     Route::post('/admin/parser/batches/{batch}/run-import', [ProductParserController::class, 'runPriceListImport'])->name('admin.parser.batches.run-import');
+    Route::post('/admin/parser/batches/{batch}/bulk-action', [ProductParserController::class, 'bulkBatchAction'])->name('admin.parser.batches.bulk-action');
     Route::post('/admin/parser/batches/{batch}/cancel', [ProductParserController::class, 'cancelBatch'])->name('admin.parser.batches.cancel');
     Route::delete('/admin/parser/batches/{batch}', [ProductParserController::class, 'destroyBatch'])->name('admin.parser.batches.destroy');
     Route::get('/admin/parser/items/{item}', [ProductParserController::class, 'showItem'])->name('admin.parser.items.show');
@@ -76,6 +76,11 @@ Route::middleware('admin.only')->group(function () {
     Route::post('/admin/parser/items/{item}/update-existing', [ProductParserController::class, 'updateExisting'])->name('admin.parser.items.update-existing');
     Route::post('/admin/parser/items/{item}/reject', [ProductParserController::class, 'reject'])->name('admin.parser.items.reject');
     Route::post('/admin/parser/items/{item}/retry', [ProductParserController::class, 'retry'])->name('admin.parser.items.retry');
+    Route::post('/admin/parser/items/{item}/retry-official', [ProductParserController::class, 'retryOfficial'])->name('admin.parser.items.retry-official');
+    Route::post('/admin/parser/items/{item}/retry-official-images', [ProductParserController::class, 'retryOfficialImages'])->name('admin.parser.items.retry-official-images');
+    Route::post('/admin/parser/items/{item}/use-fallback', [ProductParserController::class, 'useFallback'])->name('admin.parser.items.use-fallback');
+    Route::post('/admin/parser/items/{item}/reject-fallback', [ProductParserController::class, 'rejectFallback'])->name('admin.parser.items.reject-fallback');
+    Route::post('/admin/parser/items/{item}/approve-quality/{type}', [ProductParserController::class, 'approveQuality'])->name('admin.parser.items.approve-quality');
 });
 
 if (config('features.ai_assistant')) {

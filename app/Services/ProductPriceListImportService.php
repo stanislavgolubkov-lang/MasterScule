@@ -20,8 +20,8 @@ class ProductPriceListImportService
         private ProductImageCollectorService $imageCollector,
         private ProductImageProcessorService $imageProcessor,
         private ProductDraftService $drafts,
-    ) {
-    }
+        private ProductParserSettings $settings,
+    ) {}
 
     public function dryRun(ProductParserBatch $batch): void
     {
@@ -68,6 +68,10 @@ class ProductPriceListImportService
         ProductParserItem::where('batch_id', $batch->id)->delete();
 
         foreach ($parsed['rows'] as $row) {
+            if (! $dryRun && $batch->fresh()->status === 'cancelled') {
+                break;
+            }
+
             $stats['parsed_rows']++;
 
             try {
@@ -75,11 +79,13 @@ class ProductPriceListImportService
                     $this->applyContext($context, $row);
                     $stats['service_rows']++;
                     $stats['skipped_rows']++;
+
                     continue;
                 }
 
                 if (! $this->isProductRow($row)) {
                     $stats['skipped_rows']++;
+
                     continue;
                 }
 
@@ -96,6 +102,7 @@ class ProductPriceListImportService
                     $this->skippedItem($batch, $row, $sku, 'Duplicate SKU inside price list.', $brand, $normalizedSku, $context);
                     $stats['duplicate_sku_count']++;
                     $stats['skipped_rows']++;
+
                     continue;
                 }
 
@@ -112,7 +119,7 @@ class ProductPriceListImportService
                 $needsStockReview = $stock === null;
                 $existing = $this->findExistingProduct($sku, $brand, $existingProducts);
                 $category = $this->categoryDetector->detect($sku, $name, $brand, $group, $subgroup, $vehicleApplication);
-                $content = $this->contentBuilder->build($sku, $name, $brand, $group);
+                $content = $this->contentBuilder->build($sku, $name, $brand, $group, $category);
 
                 if ($needsPriceReview) {
                     $stats['rows_without_price']++;
@@ -162,7 +169,10 @@ class ProductPriceListImportService
                     'needs_category_review' => $category['needs_review'],
                     'needs_stock_review' => $needsStockReview,
                     'needs_price_review' => $needsPriceReview,
-                    'needs_translation_review' => false,
+                    'needs_translation_review' => (bool) ($content['needs_translation_review'] ?? true),
+                    'needs_content_review' => (bool) ($content['needs_content_review'] ?? true),
+                    'generated_content' => (bool) ($content['generated_content'] ?? true),
+                    'translation_source_type' => $content['translation_source_type'] ?? 'generated_pending_review',
                     'needs_image_review' => ! $dryRun,
                     'approval_status' => 'pending_review',
                     'name_ru' => $content['name_ru'],
@@ -193,6 +203,9 @@ class ProductPriceListImportService
                 }
 
                 if ($existing) {
+                    $isParserDraft = $existing->status === 'draft'
+                        && (int) $existing->source_import_batch_id === (int) $batch->id;
+
                     if (($options['search_images'] ?? true) === true && ($options['add_photos_to_existing'] ?? true) === true) {
                         $this->enrichImages($item, $brand);
                         $item->refresh();
@@ -203,11 +216,20 @@ class ProductPriceListImportService
                         }
 
                         $item->forceFill([
-                            'needs_image_review' => $item->imageAssets()->count() < 3,
+                            'needs_image_review' => $item->imageAssets()->count() < $this->requiredImages(),
                             'status' => 'existing_product_found',
                         ])->save();
                     }
+
+                    if ($isParserDraft) {
+                        $this->drafts->refreshParserDraft($item->fresh(['imageAssets', 'category', 'batch']), $existing);
+                        $stats['created_drafts']++;
+
+                        continue;
+                    }
+
                     $batch->addLog('Existing product found. No automatic update was made.', ['sku' => $sku, 'product_id' => $existing->id]);
+
                     continue;
                 }
 
@@ -216,7 +238,7 @@ class ProductPriceListImportService
                 }
 
                 $item->refresh();
-                $needsImageReview = $item->imageAssets()->count() < 3;
+                $needsImageReview = $item->imageAssets()->count() < $this->requiredImages();
                 $item->forceFill([
                     'needs_image_review' => $needsImageReview,
                     'status' => $item->needs_category_review ? 'needs_category_review' : 'ready_for_review',
@@ -249,6 +271,8 @@ class ProductPriceListImportService
             'dry_run' => $dryRun,
         ];
 
+        $cancelled = $batch->fresh()->status === 'cancelled';
+
         $batch->forceFill([
             'sku_count' => $stats['product_rows'],
             'total_rows' => $parsed['total_rows'],
@@ -267,12 +291,17 @@ class ProductPriceListImportService
             'planned_drafts' => $stats['planned_drafts'],
             'error_rows' => $stats['error_rows'],
             'dry_run_report_json' => $report,
-            'status' => $dryRun
-                ? ($stats['error_rows'] > 0 ? 'completed_with_errors' : 'dry_run_completed')
-                : ($stats['error_rows'] > 0 ? 'completed_with_errors' : 'completed'),
+            'status' => $cancelled
+                ? 'cancelled'
+                : ($dryRun
+                    ? ($stats['error_rows'] > 0 ? 'completed_with_errors' : 'dry_run_completed')
+                    : ($stats['error_rows'] > 0 ? 'completed_with_errors' : 'completed')),
             'finished_at' => now(),
         ])->save();
-        $batch->addLog($dryRun ? 'Price list dry-run completed' : 'Price list import completed', $report);
+        $batch->addLog(
+            $cancelled ? 'Price list import cancelled' : ($dryRun ? 'Price list dry-run completed' : 'Price list import completed'),
+            $report
+        );
     }
 
     private function emptyStats(): array
@@ -321,7 +350,7 @@ class ProductPriceListImportService
     private function enrichImages(ProductParserItem $item, ?string $brand): void
     {
         try {
-            $result = $this->search->search($item->sku, $brand, 'auto');
+            $result = $this->search->searchForParser($item->sku, $brand, 'auto', false);
 
             foreach ($result['sources'] ?? [] as $source) {
                 ProductParserSource::create([
@@ -338,13 +367,52 @@ class ProductPriceListImportService
 
             $images = array_values(array_filter($result['images'] ?? []));
             $this->imageCollector->collect($item, $images);
+            $content = $this->contentBuilder->mergeOfficialContent(
+                [
+                    'name_ru' => $item->name_ru,
+                    'name_ro' => $item->name_ro,
+                    'short_description_ru' => $item->short_description_ru,
+                    'short_description_ro' => $item->short_description_ro,
+                    'description_ru' => $item->description_ru,
+                    'description_ro' => $item->description_ro,
+                    'needs_translation_review' => $item->needs_translation_review,
+                    'needs_content_review' => $item->needs_content_review,
+                    'generated_content' => $item->generated_content,
+                ],
+                $result['title'] ?? null,
+                $result['description'] ?? null,
+                $item->sku,
+                $brand,
+            );
             $item->forceFill([
+                'found_title' => $result['title'] ?? $item->found_title,
+                'found_description' => $result['description'] ?? $item->found_description,
+                'found_specs_json' => array_merge($item->found_specs_json ?: [], $result['specs'] ?? []),
                 'found_images_json' => $images,
                 'selected_images_json' => collect($images)->take(4)->values()->all(),
                 'source_urls_json' => $result['source_urls'] ?? [],
                 'tristools_url' => collect($result['sources'] ?? [])->firstWhere('domain', 'tristool.md')['url'] ?? (($result['source_urls'][0] ?? null)),
                 'tristools_match_confidence' => $result['confidence'] ?? null,
-                'needs_image_review' => count($images) < 3,
+                'needs_image_review' => count($images) < $this->requiredImages(),
+                'official_source_url' => $result['official_source_url'] ?? null,
+                'official_source_domain' => $result['official_source_domain'] ?? null,
+                'official_source_confidence' => $result['official_source_confidence'] ?? null,
+                'fallback_source_url' => $result['fallback_source_url'] ?? null,
+                'fallback_source_domain' => $result['fallback_source_domain'] ?? null,
+                'fallback_source_used' => (bool) ($result['fallback_source_used'] ?? false),
+                'source_match_confidence' => $result['source_match_confidence'] ?? ($result['confidence'] ?? 0),
+                'needs_source_review' => (bool) ($result['needs_source_review'] ?? true),
+                'content_source_type' => $result['content_source_type'] ?? null,
+                'image_source_type' => $result['image_source_type'] ?? null,
+                'name_ru' => $content['name_ru'],
+                'name_ro' => $content['name_ro'],
+                'short_description_ru' => $content['short_description_ru'],
+                'short_description_ro' => $content['short_description_ro'],
+                'description_ru' => $content['description_ru'],
+                'description_ro' => $content['description_ro'],
+                'needs_translation_review' => (bool) $content['needs_translation_review'],
+                'needs_content_review' => (bool) $content['needs_content_review'],
+                'generated_content' => (bool) $content['generated_content'],
             ])->save();
         } catch (Throwable $e) {
             $item->forceFill([
@@ -353,6 +421,11 @@ class ProductPriceListImportService
             ])->save();
             $item->batch?->addLog('Image search failed', ['sku' => $item->sku, 'error' => $e->getMessage()]);
         }
+    }
+
+    private function requiredImages(): int
+    {
+        return max(1, min(4, (int) $this->settings->get('required_images_for_ready', 3)));
     }
 
     private function skippedItem(ProductParserBatch $batch, array $row, ?string $sku, string $reason, ?string $brand = null, ?string $normalizedSku = null, array $context = []): void
@@ -427,16 +500,19 @@ class ProductPriceListImportService
     {
         $index = [];
 
-        Product::with('brand:id,name')->select(['id', 'sku', 'brand_id'])->get()->each(function (Product $product) use (&$index) {
-            $normalizedSku = $this->normalizeSku($product->sku);
-            if ($normalizedSku === '') {
-                return;
-            }
+        Product::with('brand:id,name')
+            ->select(['id', 'sku', 'brand_id', 'status', 'source_import_batch_id'])
+            ->get()
+            ->each(function (Product $product) use (&$index) {
+                $normalizedSku = $this->normalizeSku($product->sku);
+                if ($normalizedSku === '') {
+                    return;
+                }
 
-            $brandKey = $this->brandKey($product->brand?->name);
-            $index[$brandKey.'|'.$normalizedSku] = $product;
-            $index['*|'.$normalizedSku] ??= $product;
-        });
+                $brandKey = $this->brandKey($product->brand?->name);
+                $index[$brandKey.'|'.$normalizedSku] = $product;
+                $index['*|'.$normalizedSku] ??= $product;
+            });
 
         return $index;
     }

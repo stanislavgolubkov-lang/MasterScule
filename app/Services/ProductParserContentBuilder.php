@@ -2,112 +2,131 @@
 
 namespace App\Services;
 
-use App\Support\ProductLocalizer;
-use Illuminate\Support\Str;
-
 class ProductParserContentBuilder
 {
-    public function build(string $sku, string $sourceName, ?string $brand = null, ?string $group = null): array
+    public function build(string $sku, string $sourceName, ?string $brand = null, ?string $group = null, array $category = []): array
     {
         $sourceName = $this->clean($sourceName);
-        $brand = trim((string) $brand);
-        $nameRu = ProductLocalizer::russianName($sourceName, $brand, $sku);
-        $nameRo = $this->romanianName($sourceName, $brand, $sku);
-        $shortRu = "{$nameRu} — технический товар для профессионального использования в автосервисе, мастерской или гараже.";
-        $shortRo = "{$nameRo} este un produs tehnic pentru utilizare profesionala in service auto, atelier sau garaj.";
-        $scopeRu = $group ? ' Раздел прайс-листа: '.$this->clean($group).'.' : '';
-        $scopeRo = $group ? ' Grupa din lista de preturi: '.$this->romanianText($this->clean($group)).'.' : '';
+        $fallback = trim(implode(' ', array_filter([$brand, $sku])));
+        $sourceName = $sourceName !== '' ? $sourceName : $fallback;
+        $isCyrillic = $this->containsCyrillic($sourceName);
+        $brandLabel = $this->brandLabel($brand);
+        $labels = $this->categoryLabels((string) ($category['category_slug'] ?? ''));
+        $categoryRu = $labels['ru'] ?: $this->clean((string) ($category['category_name_ru'] ?? '')) ?: 'Профессиональный инструмент';
+        $categoryRo = $labels['ro'] ?: $this->clean((string) ($category['category_name_ro'] ?? '')) ?: 'Instrument profesional';
+        $nameRu = $isCyrillic ? $sourceName : trim($categoryRu.' '.$brandLabel.' '.$sku);
+        $nameRo = $isCyrillic || ! $this->looksRomanian($sourceName)
+            ? trim($categoryRo.' '.$brandLabel.' '.$sku)
+            : $sourceName;
+        $shortRu = trim($nameRu.'. Бренд '.$brandLabel.', артикул '.$sku.'.');
+        $shortRo = trim($nameRo.'. Brand '.$brandLabel.', cod '.$sku.'.');
+        $descriptionRu = $nameRu.' — товар бренда '.$brandLabel.' из категории «'.$categoryRu.'». '
+            .'Артикул производителя: '.$sku.'. Подходит для профессионального использования в мастерской и автосервисе. '
+            .'Перед применением проверьте характеристики и совместимость с вашей задачей.';
+        $descriptionRo = $nameRo.' este un produs '.$brandLabel.' din categoria „'.$categoryRo.'”. '
+            .'Cod producator: '.$sku.'. Este destinat utilizarii profesionale in atelier si service auto. '
+            .'Inainte de utilizare, verificati caracteristicile si compatibilitatea cu lucrarea planificata.';
 
         return [
             'name_ru' => $nameRu,
             'name_ro' => $nameRo,
-            'short_description_ru' => Str::limit($shortRu, 240, ''),
-            'short_description_ro' => Str::limit($shortRo, 240, ''),
-            'description_ru' => $shortRu.' Артикул: '.$sku.'.'.$scopeRu,
-            'description_ro' => $shortRo.' Cod produs: '.$sku.'.'.$scopeRo,
+            'short_description_ru' => $shortRu,
+            'short_description_ro' => $shortRo,
+            'description_ru' => $descriptionRu,
+            'description_ro' => $descriptionRo,
+            'needs_translation_review' => true,
+            'needs_content_review' => true,
+            'generated_content' => true,
+            'translation_source_type' => 'generated_pending_review',
         ];
     }
 
     public function mergeOfficialContent(array $content, ?string $officialTitle, ?string $officialDescription, string $sku, ?string $brand = null): array
     {
-        $officialTitle = $this->clean((string) $officialTitle);
-        $officialDescription = $this->clean((string) $officialDescription);
+        $title = $this->clean((string) $officialTitle);
+        $description = $this->clean((string) $officialDescription);
+        $usedOfficialTranslation = false;
 
-        if ($officialTitle !== '' && ! Str::contains(Str::lower($officialTitle), ['search', 'official product page'])) {
-            $content['name_ru'] = ProductLocalizer::russianName($officialTitle, (string) $brand, $sku);
-            $content['name_ro'] = $this->romanianName($officialTitle, (string) $brand, $sku);
+        if ($title !== '') {
+            if ($this->containsCyrillic($title)) {
+                $content['name_ru'] = $title;
+                $usedOfficialTranslation = true;
+            } elseif ($this->looksRomanian($title)) {
+                $content['name_ro'] = $title;
+                $usedOfficialTranslation = true;
+            }
         }
-        if ($officialDescription !== '') {
-            $content['description_ru'] = $this->russianText($officialDescription).' Артикул: '.$sku.'.';
-            $content['description_ro'] = $this->romanianText($officialDescription).' Cod produs: '.$sku.'.';
-            $content['short_description_ru'] = Str::limit($content['description_ru'], 240, '');
-            $content['short_description_ro'] = Str::limit($content['description_ro'], 240, '');
+
+        if ($description !== '') {
+            if ($this->containsCyrillic($description)) {
+                $content['description_ru'] = $description;
+                $content['short_description_ru'] = mb_strimwidth($description, 0, 240, '');
+                $usedOfficialTranslation = true;
+            } elseif ($this->looksRomanian($description)) {
+                $content['description_ro'] = $description;
+                $content['short_description_ro'] = mb_strimwidth($description, 0, 240, '');
+                $usedOfficialTranslation = true;
+            }
+        }
+
+        $content['needs_translation_review'] = ! filled($content['name_ru'] ?? null)
+            || ! filled($content['name_ro'] ?? null)
+            || ! filled($content['description_ru'] ?? null)
+            || ! filled($content['description_ro'] ?? null)
+            || $this->containsCyrillic((string) ($content['name_ro'] ?? '').' '.(string) ($content['description_ro'] ?? ''));
+
+        if ($usedOfficialTranslation) {
+            $content['generated_content'] = false;
+            $content['needs_content_review'] = $description === '';
         }
 
         return $content;
     }
 
-    private function romanianName(string $name, string $brand, string $sku): string
+    private function containsCyrillic(string $value): bool
     {
-        return ProductLocalizer::name(Str::ucfirst($this->romanianText($name)), $brand, $sku);
+        return $value !== '' && preg_match('/\p{Cyrillic}/u', $value) === 1;
     }
 
-    private function romanianText(string $text): string
+    private function looksRomanian(string $value): bool
     {
-        return $this->replaceTechnicalTerms($text, [
-            'пневматический гайковерт' => 'cheie pneumatica de impact',
-            'пневматический инструмент' => 'instrument pneumatic',
-            'аккумуляторный инструмент' => 'instrument cu acumulator',
-            'динамометрический ключ' => 'cheie dinamometrica',
-            'торцевая головка' => 'cheie tubulara',
-            'набор инструментов' => 'set de scule',
-            'набор' => 'set',
-            'отвертка' => 'surubelnita',
-            'трещотка' => 'clichet',
-            'съемник' => 'extractor',
-            'домкрат' => 'cric',
-            'тележка' => 'carucior',
-            'шкаф' => 'dulap',
-            'ящик' => 'cutie',
-            'компрессор' => 'compresor',
-            'шланг' => 'furtun',
-            'гидравлический' => 'hidraulic',
-            'головка' => 'cheie tubulara',
-            'ключ' => 'cheie',
-            'клещи' => 'cleste',
-            'молоток' => 'ciocan',
-            'сверло' => 'burghiu',
-            'диск' => 'disc',
-            'для' => 'pentru',
-        ]);
+        return preg_match('/[ăâîșşțţ]/iu', $value) === 1
+            || preg_match('/\b(pentru|produs|instrument|scule|utilizare|atelier|profesional)\b/iu', $value) === 1;
     }
 
-    private function russianText(string $text): string
+    private function brandLabel(?string $brand): string
     {
-        if (preg_match('/\p{Cyrillic}/u', $text)) {
-            return $this->clean($text);
+        $brand = $this->clean((string) $brand);
+        $normalized = mb_strtolower($brand, 'UTF-8');
+
+        if (str_contains($normalized, 'mighty') || preg_match('/(^|\W)m7(\W|$)/iu', $brand) === 1) {
+            return 'M7';
         }
 
-        return $this->replaceTechnicalTerms($text, [
-            'air impact wrench' => 'пневматический гайковерт',
-            'impact wrench' => 'ударный гайковерт',
-            'torque wrench' => 'динамометрический ключ',
-            'socket set' => 'набор торцевых головок',
-            'tool set' => 'набор инструментов',
-            'screwdriver' => 'отвертка',
-            'puller' => 'съемник',
-            'hydraulic jack' => 'гидравлический домкрат',
-            'cordless' => 'аккумуляторный',
-            'pneumatic' => 'пневматический',
-        ]);
+        return $brand !== '' ? $brand : 'MasterScule';
     }
 
-    private function replaceTechnicalTerms(string $text, array $dictionary): string
+    private function categoryLabels(string $slug): array
     {
-        $result = Str::lower($this->clean($text));
-        uksort($dictionary, fn ($a, $b) => mb_strlen($b) <=> mb_strlen($a));
-
-        return trim(preg_replace('/\s+/u', ' ', str_ireplace(array_keys($dictionary), array_values($dictionary), $result)) ?: $text);
+        return match ($slug) {
+            'furtunuri-cuple-accesorii' => ['ru' => 'Пневматическая муфта или аксессуар', 'ro' => 'Cupla sau accesoriu pneumatic'],
+            'consumabile-pentru-scule-pneumatice' => ['ru' => 'Расходный материал для пневмоинструмента', 'ro' => 'Consumabil pentru scule pneumatice'],
+            'polizoare-si-slefuitoare-pneumatice' => ['ru' => 'Пневматическая шлифовальная машина', 'ro' => 'Masina pneumatica de slefuit'],
+            'pistoale-suflat-si-sablare' => ['ru' => 'Пневматический пистолет', 'ro' => 'Pistol pneumatic'],
+            'pistoale-pentru-silicon-si-gresare' => ['ru' => 'Пневматический пистолет для смазки', 'ro' => 'Pistol pneumatic pentru gresare'],
+            'chei-pneumatice' => ['ru' => 'Пневматический гайковерт', 'ro' => 'Cheie pneumatica'],
+            'clichete-pneumatice' => ['ru' => 'Пневматическая трещотка', 'ro' => 'Clichet pneumatic'],
+            'ciocane-pneumatice' => ['ru' => 'Пневматический молоток', 'ro' => 'Ciocan pneumatic'],
+            'burghie-pneumatice' => ['ru' => 'Пневматическая дрель', 'ro' => 'Masina pneumatica de gaurit'],
+            'surubelnite-pneumatice' => ['ru' => 'Пневматическая отвертка', 'ro' => 'Surubelnita pneumatica'],
+            'foarfeci-ferastraie-si-debitare-pneumatice' => ['ru' => 'Пневматический режущий инструмент', 'ro' => 'Instrument pneumatic de taiere'],
+            'nituitoare-capsatoare-si-cuie-pneumatice' => ['ru' => 'Пневматический заклепочник', 'ro' => 'Nituitor pneumatic'],
+            'extractoare-si-prese' => ['ru' => 'Автомобильный съемник', 'ro' => 'Extractor auto'],
+            'scule-pentru-roti-vulcanizare' => ['ru' => 'Инструмент для колес и шиномонтажа', 'ro' => 'Instrument pentru roti si vulcanizare'],
+            'accesorii-pneumatice' => ['ru' => 'Аксессуар для пневмоинструмента', 'ro' => 'Accesoriu pentru scule pneumatice'],
+            'scule-pneumatice' => ['ru' => 'Пневматический инструмент', 'ro' => 'Instrument pneumatic'],
+            default => ['ru' => '', 'ro' => ''],
+        };
     }
 
     private function clean(string $value): string

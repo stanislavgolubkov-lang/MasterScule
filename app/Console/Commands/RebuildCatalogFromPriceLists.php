@@ -25,13 +25,17 @@ class RebuildCatalogFromPriceLists extends Command
         {paths* : Supplier XLS/XLSX/CSV files}
         {--execute : Confirm deletion of all current products and product media}';
 
-    protected $description = 'Safely purge only catalog products/media and recreate the catalog from supplier price lists';
+    protected $description = 'Disabled destructive catalog rebuild';
 
     public function handle(
         ProductPriceListImportService $importer,
         ProductDraftService $drafts,
         ProductCatalogClassifier $classifier,
     ): int {
+        $this->error('Catalog rebuild is disabled because it deletes existing products and media. Use the non-destructive admin price-list importer.');
+
+        return self::FAILURE;
+
         if (! $this->option('execute')) {
             $this->error('Destructive rebuild requires --execute.');
 
@@ -246,6 +250,7 @@ class RebuildCatalogFromPriceLists extends Command
                     $primary = Category::whereKey($snapshot['primary'])->exists() ? (int) $snapshot['primary'] : ($validIds[0] ?? $product->category_id);
                     $product->forceFill(['category_id' => $primary])->save();
                     $product->syncCategoryLinks($validIds, $primary, 'catalog_rebuild_snapshot');
+
                     continue;
                 }
 

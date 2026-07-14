@@ -2,19 +2,22 @@
 
 namespace App\Models;
 
-use App\Support\ProductLocalizer;
 use Illuminate\Database\Eloquent\Model;
 
 class Product extends Model
 {
     protected $fillable = [
-        'brand_id', 'category_id', 'name', 'name_ro', 'slug', 'sku', 'short_description', 'description',
-        'description_ro', 'price', 'old_price', 'currency', 'stock_quantity', 'stock_status', 'status',
+        'brand_id', 'category_id', 'name', 'name_ru', 'name_ro', 'slug', 'sku', 'short_description',
+        'short_description_ru', 'short_description_ro', 'description', 'description_ru', 'description_ro',
+        'price', 'old_price', 'currency', 'stock_quantity', 'stock_status', 'status',
         'parser_confidence', 'parser_source_urls', 'main_image', 'gallery', 'attributes', 'package_contents',
         'rating', 'reviews_count', 'is_active', 'is_featured', 'is_bestseller', 'is_new', 'is_discounted',
         'warranty', 'weight', 'dimensions', 'approval_status', 'needs_review', 'needs_stock_review',
-        'needs_image_review', 'source_import_batch_id', 'source_parser_item_id', 'vehicle_application',
+        'needs_image_review', 'needs_category_review', 'needs_translation_review', 'needs_price_review',
+        'source_import_batch_id', 'source_parser_item_id', 'vehicle_application',
         'meta_title', 'meta_description',
+        'source_url', 'source_domain', 'source_type', 'fallback_source_used',
+        'needs_source_review', 'needs_content_review', 'generated_content', 'source_reviewed_at',
     ];
 
     protected $casts = [
@@ -33,6 +36,16 @@ class Product extends Model
         'needs_review' => 'boolean',
         'needs_stock_review' => 'boolean',
         'needs_image_review' => 'boolean',
+        'needs_category_review' => 'boolean',
+        'needs_translation_review' => 'boolean',
+        'needs_price_review' => 'boolean',
+        'source_import_batch_id' => 'integer',
+        'source_parser_item_id' => 'integer',
+        'fallback_source_used' => 'boolean',
+        'needs_source_review' => 'boolean',
+        'needs_content_review' => 'boolean',
+        'generated_content' => 'boolean',
+        'source_reviewed_at' => 'datetime',
     ];
 
     public function brand()
@@ -61,6 +74,17 @@ class Product extends Model
     {
         return $query
             ->where('is_active', true)
+            ->where('status', 'published')
+            ->where('approval_status', 'approved')
+            ->where('needs_review', false)
+            ->where('needs_image_review', false)
+            ->where('needs_category_review', false)
+            ->where('needs_translation_review', false)
+            ->where('needs_price_review', false)
+            ->whereNotNull('main_image')
+            ->where('main_image', '!=', '')
+            ->where('main_image', 'not like', '%placeholder%')
+            ->where('main_image', 'not like', '%fallback%')
             ->where('stock_status', 'in_stock')
             ->where('stock_quantity', '>', 0);
     }
@@ -112,19 +136,19 @@ class Product extends Model
     public function getDisplayNameAttribute(): string
     {
         if (app()->isLocale('ru')) {
-            return ProductLocalizer::russianName($this->name ?: $this->name_ro, $this->brand?->name ?? '', $this->sku);
+            return $this->name_ru ?: $this->name ?: $this->name_ro ?: $this->sku;
         }
 
-        return $this->name_ro ?: ProductLocalizer::name($this->name, $this->brand?->name ?? '', $this->sku);
+        return $this->name_ro ?: $this->name_ru ?: $this->name ?: $this->sku;
     }
 
     public function getDisplayDescriptionAttribute(): ?string
     {
         if (app()->isLocale('ru')) {
-            return ProductLocalizer::russianDescription($this->description ?: $this->description_ro, $this->display_name, $this->brand?->name ?? '', $this->sku);
+            return $this->description_ru ?: $this->description ?: $this->short_description_ru ?: $this->short_description;
         }
 
-        return $this->description_ro ?: $this->description;
+        return $this->description_ro ?: $this->short_description_ro;
     }
 
     public function getDisplayAttributesAttribute(): array

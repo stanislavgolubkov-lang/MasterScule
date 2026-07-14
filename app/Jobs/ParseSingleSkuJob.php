@@ -16,8 +16,9 @@ class ParseSingleSkuJob implements ShouldQueue
         public int $itemId,
         public bool $processImages = false,
         public bool $createDraft = false,
-    ) {
-    }
+        public bool $officialOnly = false,
+        public bool $forceFallback = false,
+    ) {}
 
     public function handle(ProductParserService $parser, ProductDraftService $drafts): void
     {
@@ -27,7 +28,7 @@ class ParseSingleSkuJob implements ShouldQueue
             return;
         }
 
-        $parser->parseItem($item, $this->processImages);
+        $parser->parseItem($item, $this->processImages, $this->officialOnly, $this->forceFallback);
 
         $item->refresh();
 

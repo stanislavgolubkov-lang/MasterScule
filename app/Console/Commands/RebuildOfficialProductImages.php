@@ -35,7 +35,7 @@ class RebuildOfficialProductImages extends Command
         {--shards=1 : Total number of independent shards}
         {--quiet-output : Do not print each product result}';
 
-    protected $description = 'Delete legacy product media and rebuild it from exact-SKU official manufacturer sources only';
+    protected $description = 'Disabled destructive product image rebuild';
 
     public function handle(
         ProductSearchService $search,
@@ -43,6 +43,10 @@ class RebuildOfficialProductImages extends Command
         ProductImageProcessorService $processor,
         ProductParserContentBuilder $contentBuilder,
     ): int {
+        $this->error('Destructive image rebuild is disabled. Use masterscule:audit-product-images or the admin parser review flow.');
+
+        return self::FAILURE;
+
         if ($this->option('purge')) {
             if (! $this->option('force')) {
                 $this->error('The --purge operation requires --force.');

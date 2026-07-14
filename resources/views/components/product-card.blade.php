@@ -1,10 +1,9 @@
 @php
     $productImage = trim((string) $product->main_image);
-    $missingProductImage = $productImage === '' || \Illuminate\Support\Str::contains(
-        \Illuminate\Support\Str::lower($productImage),
-        ['placeholder', 'product-placeholder']
-    );
+    $imageAvailable = app(\App\Services\Catalog\ProductImageAvailabilityService::class)->isAvailable($productImage);
+    $missingProductImage = ! $imageAvailable;
 @endphp
+@if($imageAvailable)
 <article class="product-card {{ $missingProductImage ? 'product-card-no-photo' : '' }}">
     <div class="product-image">
         @if(config('features.wishlist'))
@@ -42,3 +41,4 @@
         </div>
     </div>
 </article>
+@endif

@@ -7,6 +7,7 @@ use App\Models\PaymentTransaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\URL;
 use Throwable;
 
 class MaibHostedCheckout
@@ -35,8 +36,8 @@ class MaibHostedCheckout
                 'email' => $order->customer_email,
                 'phone' => $order->customer_phone,
             ],
-            'successUrl' => route('checkout.thank-you', $order->order_number),
-            'failUrl' => route('checkout.thank-you', $order->order_number),
+            'successUrl' => $this->signedOrderUrl($order),
+            'failUrl' => $this->signedOrderUrl($order),
             'callbackUrl' => route('payment.maib.callback'),
         ];
 
@@ -107,7 +108,7 @@ class MaibHostedCheckout
         $secret = config('services.maib.signature_secret');
 
         if (! filled($secret)) {
-            return ! (app()->environment('production') && $this->isConfigured());
+            return false;
         }
 
         $signature = $request->header('X-Maib-Signature')
@@ -128,6 +129,13 @@ class MaibHostedCheckout
     private function endpoint(): string
     {
         return rtrim((string) config('services.maib.base_url'), '/').'/'.ltrim((string) config('services.maib.create_payment_path'), '/');
+    }
+
+    private function signedOrderUrl(Order $order): string
+    {
+        return URL::temporarySignedRoute('checkout.thank-you', now()->addDays(7), [
+            'order' => $order->order_number,
+        ]);
     }
 
     private function referenceFromResponse(array $data): ?string

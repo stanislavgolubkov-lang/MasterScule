@@ -5,17 +5,18 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\ProductParserBatch;
-use App\Models\ProductParserImageAsset;
 use App\Models\ProductParserItem;
 use App\Models\ProductParserSource;
-use App\Services\ProductImageCollectorService;
-use App\Services\ProductImageProcessorService;
+use App\Services\Catalog\ProductPublicationGuard;
 use App\Services\ProductCatalogClassifier;
 use App\Services\ProductFallbackImageService;
+use App\Services\ProductImageCollectorService;
+use App\Services\ProductImageProcessorService;
 use App\Services\ProductPriceListImportService;
 use App\Services\ProductSearchService;
 use App\Support\ProductLocalizer;
 use Illuminate\Foundation\Inspiring;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -27,6 +28,10 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}', function () {
+    $this->error('Direct TrisTools catalog import is disabled. Use the admin parser enrichment workflow.');
+
+    return 1;
+
     $targets = [
         [
             'brand_name' => 'King Tony',
@@ -50,6 +55,7 @@ Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}',
 
         if ($current >= $target['limit']) {
             $this->info("{$target['brand_name']}: already has {$current} products, target is {$target['limit']}.");
+
             continue;
         }
 
@@ -68,6 +74,7 @@ Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}',
             if (! $response->successful()) {
                 $this->warn("Page {$page} failed with HTTP {$response->status()}.");
                 $page++;
+
                 continue;
             }
 
@@ -75,6 +82,7 @@ Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}',
 
             if ($cards === []) {
                 $page++;
+
                 continue;
             }
 
@@ -86,6 +94,7 @@ Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}',
                 $sku = trim($card['sku']);
                 if ($sku === '' || isset($seen[$sku]) || Product::where('sku', $sku)->exists()) {
                     $seen[$sku] = true;
+
                     continue;
                 }
 
@@ -123,7 +132,12 @@ Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}',
                     'package_contents' => packageForTrisToolTitle($title),
                     'rating' => 4.5 + ((crc32($sku) % 5) / 10),
                     'reviews_count' => 6 + (crc32($sku) % 48),
-                    'is_active' => true,
+                    'status' => 'draft',
+                    'approval_status' => 'pending_review',
+                    'needs_review' => true,
+                    'needs_image_review' => true,
+                    'needs_translation_review' => true,
+                    'is_active' => false,
                     'is_featured' => $current < 16,
                     'is_bestseller' => $current % 6 === 0,
                     'is_new' => $current % 5 === 0,
@@ -153,10 +167,15 @@ Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}',
     }
 
     $this->info("Done. Imported {$totalImported} new products.");
-})->purpose('Import King Tony and M7 products from TrisTool.md');
+})->purpose('Disabled: direct TrisTools catalog import');
 
-Artisan::command('masterscule:repair-tristool-mdl-prices {--dry-run} {--limit=0}', function () {
-    $dryRun = (bool) $this->option('dry-run');
+Artisan::command('masterscule:repair-tristool-mdl-prices {--apply} {--force} {--limit=0}', function () {
+    $dryRun = ! (bool) $this->option('apply');
+    if (! $dryRun && ! $this->option('force')) {
+        $this->error('Price changes require both --apply and --force.');
+
+        return 1;
+    }
     $limit = max(0, (int) $this->option('limit'));
     $query = Product::where('main_image', 'like', '%/tristool/%')
         ->whereNull('source_parser_item_id')
@@ -177,6 +196,7 @@ Artisan::command('masterscule:repair-tristool-mdl-prices {--dry-run} {--limit=0}
         if (! $card) {
             $notFound++;
             $this->warn("{$product->sku}: price not found on TrisTool.");
+
             continue;
         }
 
@@ -216,6 +236,10 @@ Artisan::command('masterscule:repair-tristool-mdl-prices {--dry-run} {--limit=0}
 })->purpose('Repair legacy TrisTool imports that stored RON-converted values as MDL');
 
 Artisan::command('masterscule:localize-products', function () {
+    $this->error('Automatic bulk localization is disabled. Review RU/RO text in admin instead.');
+
+    return 1;
+
     $updated = 0;
 
     Product::with('brand')->chunkById(100, function ($products) use (&$updated) {
@@ -265,6 +289,7 @@ Artisan::command('masterscule:audit-product-categories {--apply} {--limit=0}', f
 
         if (! $primary) {
             $stats['missing_primary_category']++;
+
             continue;
         }
 
@@ -306,7 +331,7 @@ Artisan::command('masterscule:audit-product-categories {--apply} {--limit=0}', f
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 })->purpose('Audit and optionally reassign products into primary and additional catalog categories');
 
-Artisan::command('masterscule:audit-product-images {--apply} {--limit=0} {--min=3} {--quiet-output} {--fallback-only}', function (
+Artisan::command('masterscule:enrich-product-images {--apply} {--limit=0} {--min=3} {--quiet-output} {--fallback-only}', function (
     ProductSearchService $search,
     ProductImageCollectorService $collector,
     ProductImageProcessorService $processor,
@@ -871,6 +896,7 @@ Artisan::command('masterscule:parser-price-dry-run {paths*}', function () {
     foreach ($this->argument('paths') as $path) {
         if (! is_file($path)) {
             $this->error("File not found: {$path}");
+
             continue;
         }
 
@@ -924,6 +950,7 @@ Artisan::command('masterscule:parser-price-test-import {paths*} {--limit=20} {--
     foreach ($this->argument('paths') as $path) {
         if (! is_file($path)) {
             $this->error("File not found: {$path}");
+
             continue;
         }
 
@@ -975,6 +1002,7 @@ Artisan::command('masterscule:parser-price-import {paths*} {--no-images}', funct
     foreach ($this->argument('paths') as $path) {
         if (! is_file($path)) {
             $this->error("File not found: {$path}");
+
             continue;
         }
 
@@ -1020,9 +1048,14 @@ Artisan::command('masterscule:parser-price-import {paths*} {--no-images}', funct
     }
 })->purpose('Import complete supplier price lists without row limits');
 
-Artisan::command('masterscule:sync-price-list-prices {--batch=*} {--dry-run}', function () {
+Artisan::command('masterscule:sync-price-list-prices {--batch=*} {--apply} {--force}', function () {
     $batchIds = array_values(array_filter(array_map('intval', (array) $this->option('batch'))));
-    $dryRun = (bool) $this->option('dry-run');
+    $dryRun = ! (bool) $this->option('apply');
+    if (! $dryRun && ! $this->option('force')) {
+        $this->error('Price changes require both --apply and --force.');
+
+        return 1;
+    }
     $items = ProductParserItem::query()
         ->with(['createdProduct', 'existingProduct'])
         ->whereNotNull('parsed_price')
@@ -1060,6 +1093,7 @@ Artisan::command('masterscule:sync-price-list-prices {--batch=*} {--dry-run}', f
 
         if ($price === null) {
             $missingPrices++;
+
             continue;
         }
 
@@ -1069,6 +1103,7 @@ Artisan::command('masterscule:sync-price-list-prices {--batch=*} {--dry-run}', f
 
         if (! $product) {
             $missingProducts++;
+
             continue;
         }
 
@@ -1104,11 +1139,50 @@ Artisan::command('masterscule:sync-price-list-prices {--batch=*} {--dry-run}', f
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 })->purpose('Synchronize product prices exactly from imported retail price-list rows');
 
-Artisan::command('masterscule:publish-parser-drafts {--limit=0} {--skip-images} {--quiet-output}', function (
+Artisan::command('masterscule:publish-parser-drafts {--limit=0} {--publish} {--force-reviewed}', function (
+    ProductPublicationGuard $publicationGuard,
     ProductSearchService $search,
     ProductImageCollectorService $collector,
     ProductImageProcessorService $processor
 ) {
+    $limit = max(0, (int) $this->option('limit'));
+    $publish = (bool) $this->option('publish');
+    $forceReviewed = (bool) $this->option('force-reviewed');
+    $query = Product::with(['brand', 'category'])->where('status', 'draft')->orderBy('id');
+
+    if ($limit > 0) {
+        $query->limit($limit);
+    }
+
+    $stats = ['checked' => 0, 'ready' => 0, 'blocked' => 0, 'published' => 0, 'blocked_reasons' => []];
+
+    foreach ($query->get() as $product) {
+        $stats['checked']++;
+        $result = $publicationGuard->evaluate($product, $forceReviewed);
+
+        if (! $result['allowed']) {
+            $stats['blocked']++;
+            foreach ($result['error_codes'] as $code) {
+                $stats['blocked_reasons'][$code] = ($stats['blocked_reasons'][$code] ?? 0) + 1;
+            }
+
+            continue;
+        }
+
+        $stats['ready']++;
+        if ($publish) {
+            $publicationGuard->publish($product, $forceReviewed);
+            $stats['published']++;
+        }
+    }
+
+    $this->info($publish
+        ? 'Publication completed. Only guard-approved products were published.'
+        : 'Dry-run only. No products were published. Use --publish to publish allowed products.');
+    $this->info(json_encode($stats, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+
+    return 0;
+
     $limit = max(0, (int) $this->option('limit'));
     $skipImages = (bool) $this->option('skip-images');
     $quietOutput = (bool) $this->option('quiet-output');
@@ -1261,10 +1335,10 @@ Artisan::command('masterscule:publish-parser-drafts {--limit=0} {--skip-images} 
         $product->forceFill([
             'description' => $description,
             'description_ro' => $descriptionRo,
-            'status' => 'published',
-            'approval_status' => 'approved',
-            'is_active' => true,
-            'needs_review' => false,
+            'status' => 'draft',
+            'approval_status' => 'pending_review',
+            'is_active' => false,
+            'needs_review' => true,
             'needs_image_review' => ! ($product->fresh()->main_image && ! str_contains((string) $product->fresh()->main_image, 'placeholder')),
         ])->save();
 
@@ -1285,250 +1359,250 @@ Artisan::command('masterscule:publish-parser-drafts {--limit=0} {--skip-images} 
     }
 
     $this->info(json_encode($stats, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
-})->purpose('Enrich parser drafts with images/descriptions and publish them after explicit approval');
+})->purpose('Dry-run parser draft publication and publish guard-approved products with --publish');
 
 if (! function_exists('ensureTrisToolBrand')) {
-function ensureTrisToolBrand(string $name, string $slug): Brand
-{
-    $logo = $slug === 'king-tony' ? '/images/brand/king-tony.png' : '/images/brand/m7.png';
+    function ensureTrisToolBrand(string $name, string $slug): Brand
+    {
+        $logo = $slug === 'king-tony' ? '/images/brand/king-tony.png' : '/images/brand/m7.png';
 
-    return Brand::firstOrCreate(
-        ['slug' => $slug],
-        [
-            'name' => $name,
-            'description' => 'Brand profesional de scule si echipamente pentru service auto.',
-            'logo' => $logo,
-            'is_featured' => true,
-            'is_active' => true,
-        ]
-    );
-}
-
-function parseTrisToolCards(string $html): array
-{
-    preg_match_all(
-        '/<a class="cl-item[\s\S]*?href="(?<href>[^"]+)"[\s\S]*?<img[^>]+src="(?<img>[^"]+)"[\s\S]*?<h6[^>]*>(?<title>[\s\S]*?)<\/h6>[\s\S]*?<span class="article"[^>]*>(?<sku>[\s\S]*?)<\/span>[\s\S]*?<span class="item-price"[^>]*>[\s\S]*?(?<price>[0-9 ]+,[0-9]{2}) MDL/i',
-        $html,
-        $matches,
-        PREG_SET_ORDER
-    );
-
-    return array_map(fn ($match) => [
-        'href' => $match['href'],
-        'image' => $match['img'],
-        'title' => html_entity_decode(strip_tags($match['title']), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
-        'sku' => html_entity_decode(strip_tags($match['sku']), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
-        'price' => $match['price'],
-    ], $matches);
-}
-
-function cleanTrisToolTitle(string $title): string
-{
-    return trim((string) preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($title), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
-}
-
-function normalizeProductName(string $title, string $brandName): string
-{
-    $brand = str_contains($brandName, 'M7') ? 'M7' : 'King Tony';
-    $name = trim($title);
-
-    if (! Str::contains(Str::lower($name), Str::lower($brand))) {
-        $name .= ' '.$brand;
+        return Brand::firstOrCreate(
+            ['slug' => $slug],
+            [
+                'name' => $name,
+                'description' => 'Brand profesional de scule si echipamente pentru service auto.',
+                'logo' => $logo,
+                'is_featured' => true,
+                'is_active' => true,
+            ]
+        );
     }
 
-    return Str::limit($name, 130, '');
-}
+    function parseTrisToolCards(string $html): array
+    {
+        preg_match_all(
+            '/<a class="cl-item[\s\S]*?href="(?<href>[^"]+)"[\s\S]*?<img[^>]+src="(?<img>[^"]+)"[\s\S]*?<h6[^>]*>(?<title>[\s\S]*?)<\/h6>[\s\S]*?<span class="article"[^>]*>(?<sku>[\s\S]*?)<\/span>[\s\S]*?<span class="item-price"[^>]*>[\s\S]*?(?<price>[0-9 ]+,[0-9]{2}) MDL/i',
+            $html,
+            $matches,
+            PREG_SET_ORDER
+        );
 
-function uniqueProductSlug(string $title, string $sku): string
-{
-    $base = Str::slug(Str::limit($title, 70, '').'-'.$sku);
-
-    if ($base === '') {
-        $base = Str::slug('produs-'.$sku);
+        return array_map(fn ($match) => [
+            'href' => $match['href'],
+            'image' => $match['img'],
+            'title' => html_entity_decode(strip_tags($match['title']), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+            'sku' => html_entity_decode(strip_tags($match['sku']), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+            'price' => $match['price'],
+        ], $matches);
     }
 
-    $slug = $base;
-    $index = 2;
-
-    while (Product::where('slug', $slug)->exists()) {
-        $slug = $base.'-'.$index++;
+    function cleanTrisToolTitle(string $title): string
+    {
+        return trim((string) preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($title), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
     }
 
-    return $slug;
-}
+    function normalizeProductName(string $title, string $brandName): string
+    {
+        $brand = str_contains($brandName, 'M7') ? 'M7' : 'King Tony';
+        $name = trim($title);
 
-function parseMdlPrice(string $price): float
-{
-    $mdl = (float) str_replace([' ', ','], ['', '.'], $price);
-
-    return round($mdl, 2);
-}
-
-function categoryForTrisToolTitle(string $title, string $brandSlug): Category
-{
-    $lower = mb_strtolower($title, 'UTF-8');
-    $slug = match (true) {
-        str_contains($lower, 'компресс') => 'compresoare',
-        str_contains($lower, 'динамометр') => 'chei-dinamometrice',
-        str_contains($lower, 'домкрат') || str_contains($lower, 'подъем') || str_contains($lower, 'подъём') || str_contains($lower, 'стойка') => 'cricuri-si-ridicare',
-        str_contains($lower, 'тележ') || str_contains($lower, 'шкаф') || str_contains($lower, 'держател') || str_contains($lower, 'органайзер') => 'dulapuri-si-organizare',
-        str_contains($lower, 'пневмат') || str_contains($lower, 'гайков') || str_contains($lower, 'шлиф') || str_contains($lower, 'дрель') || str_contains($lower, 'пила') || $brandSlug === 'm7-mighty-seven' => 'scule-pneumatice',
-        str_contains($lower, 'голов') || str_contains($lower, 'насад') || str_contains($lower, 'бит') || str_contains($lower, 'трещ') || str_contains($lower, 'вороток') || str_contains($lower, 'удлин') => 'tubulare-si-clichete',
-        str_contains($lower, 'набор') || str_contains($lower, 'комплект') || str_contains($lower, 'кейс') => 'seturi-de-scule',
-        default => 'chei-si-surubelnite',
-    };
-
-    return Category::where('slug', $slug)->first() ?? Category::firstOrFail();
-}
-
-function downloadTrisToolImage(string $source, string $sku, string $brandSlug): string
-{
-    $extension = strtolower(pathinfo(parse_url($source, PHP_URL_PATH) ?: '', PATHINFO_EXTENSION) ?: 'jpg');
-    $extension = in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true) ? $extension : 'jpg';
-    $filename = Str::slug($brandSlug.'-'.$sku).'.'.$extension;
-    $relative = '/images/products/tristool/'.$brandSlug.'/'.$filename;
-    $path = public_path(ltrim($relative, '/'));
-
-    File::ensureDirectoryExists(dirname($path));
-
-    if (! File::exists($path)) {
-        $response = tristoolHttp()->timeout(30)->retry(2, 500)->get(tristoolAssetUrl($source));
-
-        if ($response->successful() && $response->body() !== '') {
-            File::put($path, $response->body());
+        if (! Str::contains(Str::lower($name), Str::lower($brand))) {
+            $name .= ' '.$brand;
         }
+
+        return Str::limit($name, 130, '');
     }
 
-    return File::exists($path) ? $relative : '/images/products/product-placeholder-toolbox.svg';
-}
+    function uniqueProductSlug(string $title, string $sku): string
+    {
+        $base = Str::slug(Str::limit($title, 70, '').'-'.$sku);
 
-function findTrisToolCardBySku(string $sku): ?array
-{
-    $searchUrl = 'https://tristool.md/ru/search?searchword='.rawurlencode($sku);
-    $response = tristoolHttp()->withHeaders([
-        'User-Agent' => 'MasterScule.md price repair/1.0',
-        'Accept' => 'text/html,application/xhtml+xml',
-    ])->timeout(20)->retry(1, 350)->get($searchUrl);
+        if ($base === '') {
+            $base = Str::slug('produs-'.$sku);
+        }
 
-    if (! $response->successful()) {
-        return null;
+        $slug = $base;
+        $index = 2;
+
+        while (Product::where('slug', $slug)->exists()) {
+            $slug = $base.'-'.$index++;
+        }
+
+        return $slug;
     }
 
-    $needle = normalizeTrisToolSku($sku);
+    function parseMdlPrice(string $price): float
+    {
+        $mdl = (float) str_replace([' ', ','], ['', '.'], $price);
 
-    return collect(parseTrisToolCards($response->body()))
-        ->map(fn ($card) => $card + ['sku_score' => tristoolSkuScore($needle, normalizeTrisToolSku($card['sku']))])
-        ->filter(fn ($card) => $card['sku_score'] > 0)
-        ->sortByDesc('sku_score')
-        ->first();
-}
-
-function normalizeTrisToolSku(string $sku): string
-{
-    return Str::lower(preg_replace('/[^a-z0-9]/i', '', $sku));
-}
-
-function tristoolSkuScore(string $needle, string $found): int
-{
-    if ($needle === '' || $found === '') {
-        return 0;
+        return round($mdl, 2);
     }
 
-    if ($needle === $found) {
-        return 100;
+    function categoryForTrisToolTitle(string $title, string $brandSlug): Category
+    {
+        $lower = mb_strtolower($title, 'UTF-8');
+        $slug = match (true) {
+            str_contains($lower, 'компресс') => 'compresoare',
+            str_contains($lower, 'динамометр') => 'chei-dinamometrice',
+            str_contains($lower, 'домкрат') || str_contains($lower, 'подъем') || str_contains($lower, 'подъём') || str_contains($lower, 'стойка') => 'cricuri-si-ridicare',
+            str_contains($lower, 'тележ') || str_contains($lower, 'шкаф') || str_contains($lower, 'держател') || str_contains($lower, 'органайзер') => 'dulapuri-si-organizare',
+            str_contains($lower, 'пневмат') || str_contains($lower, 'гайков') || str_contains($lower, 'шлиф') || str_contains($lower, 'дрель') || str_contains($lower, 'пила') || $brandSlug === 'm7-mighty-seven' => 'scule-pneumatice',
+            str_contains($lower, 'голов') || str_contains($lower, 'насад') || str_contains($lower, 'бит') || str_contains($lower, 'трещ') || str_contains($lower, 'вороток') || str_contains($lower, 'удлин') => 'tubulare-si-clichete',
+            str_contains($lower, 'набор') || str_contains($lower, 'комплект') || str_contains($lower, 'кейс') => 'seturi-de-scule',
+            default => 'chei-si-surubelnite',
+        };
+
+        return Category::where('slug', $slug)->first() ?? Category::firstOrFail();
     }
 
-    if ('sc'.$needle === $found) {
-        return 94;
+    function downloadTrisToolImage(string $source, string $sku, string $brandSlug): string
+    {
+        $extension = strtolower(pathinfo(parse_url($source, PHP_URL_PATH) ?: '', PATHINFO_EXTENSION) ?: 'jpg');
+        $extension = in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true) ? $extension : 'jpg';
+        $filename = Str::slug($brandSlug.'-'.$sku).'.'.$extension;
+        $relative = '/images/products/tristool/'.$brandSlug.'/'.$filename;
+        $path = public_path(ltrim($relative, '/'));
+
+        File::ensureDirectoryExists(dirname($path));
+
+        if (! File::exists($path)) {
+            $response = tristoolHttp()->timeout(30)->retry(2, 500)->get(tristoolAssetUrl($source));
+
+            if ($response->successful() && $response->body() !== '') {
+                File::put($path, $response->body());
+            }
+        }
+
+        return File::exists($path) ? $relative : '/images/products/product-placeholder-toolbox.svg';
     }
 
-    if (Str::endsWith($found, $needle)) {
-        return 88;
+    function findTrisToolCardBySku(string $sku): ?array
+    {
+        $searchUrl = 'https://tristool.md/ru/search?searchword='.rawurlencode($sku);
+        $response = tristoolHttp()->withHeaders([
+            'User-Agent' => 'MasterScule.md price repair/1.0',
+            'Accept' => 'text/html,application/xhtml+xml',
+        ])->timeout(20)->retry(1, 350)->get($searchUrl);
+
+        if (! $response->successful()) {
+            return null;
+        }
+
+        $needle = normalizeTrisToolSku($sku);
+
+        return collect(parseTrisToolCards($response->body()))
+            ->map(fn ($card) => $card + ['sku_score' => tristoolSkuScore($needle, normalizeTrisToolSku($card['sku']))])
+            ->filter(fn ($card) => $card['sku_score'] > 0)
+            ->sortByDesc('sku_score')
+            ->first();
     }
 
-    return Str::contains($found, $needle) ? 82 : 0;
-}
-
-function tristoolHttp(): \Illuminate\Http\Client\PendingRequest
-{
-    return Http::withOptions([
-        'proxy' => '',
-        'verify' => false,
-    ]);
-}
-
-function tristoolAssetUrl(string $source): string
-{
-    $url = Str::startsWith($source, ['http://', 'https://']) ? $source : 'https://tristool.md/'.ltrim($source, '/');
-    $parts = parse_url($url);
-
-    if (! isset($parts['scheme'], $parts['host'])) {
-        return $url;
+    function normalizeTrisToolSku(string $sku): string
+    {
+        return Str::lower(preg_replace('/[^a-z0-9]/i', '', $sku));
     }
 
-    $path = implode('/', array_map('rawurlencode', explode('/', $parts['path'] ?? '')));
+    function tristoolSkuScore(string $needle, string $found): int
+    {
+        if ($needle === '' || $found === '') {
+            return 0;
+        }
 
-    return $parts['scheme'].'://'.$parts['host'].$path.(isset($parts['query']) ? '?'.$parts['query'] : '');
-}
+        if ($needle === $found) {
+            return 100;
+        }
 
-function shortProductDescription(string $title, string $brandName): string
-{
-    $brand = str_contains($brandName, 'M7') ? 'M7 / Mighty Seven' : 'King Tony';
+        if ('sc'.$needle === $found) {
+            return 94;
+        }
 
-    return "{$brand}: produs profesional pentru service auto, atelier si garaj. Model: {$title}.";
-}
+        if (Str::endsWith($found, $needle)) {
+            return 88;
+        }
 
-function fullProductDescription(string $title, string $brandName, string $sku): string
-{
-    $brand = str_contains($brandName, 'M7') ? 'M7 / Mighty Seven' : 'King Tony';
-
-    return "Produs {$brand}, cod {$sku}, adaugat in catalogul MasterScule.md pentru service-uri auto, ateliere si clienti care cauta scule fiabile. Cardul include denumire, cod produs, pret in MDL, imagine, stoc disponibil, garantie si caracteristici tehnice de baza. Potrivit pentru utilizare profesionala si pentru garaje bine echipate.";
-}
-
-function attributesForTrisToolTitle(string $title, string $sku, string $brandName): array
-{
-    $attributes = [
-        'Brand' => str_contains($brandName, 'M7') ? 'M7 / Mighty Seven' : 'King Tony',
-        'Cod produs' => $sku,
-        'Utilizare' => 'Service auto / atelier / garaj',
-        'Garantie' => '24 luni',
-    ];
-
-    if (preg_match('/([0-9]+)\s*(?:Nm|Нм)/iu', $title, $match)) {
-        $attributes['Cuplu maxim'] = $match[1].' Nm';
+        return Str::contains($found, $needle) ? 82 : 0;
     }
 
-    if (preg_match('/([0-9]+)\s*(?:предмет|piese|шт|pcs)/iu', $title, $match)) {
-        $attributes['Numar piese'] = $match[1];
+    function tristoolHttp(): PendingRequest
+    {
+        return Http::withOptions([
+            'proxy' => '',
+            'verify' => false,
+        ]);
     }
 
-    if (preg_match('/(1\/4|3\/8|1\/2|3\/4|1")/u', $title, $match)) {
-        $attributes['Antrenare'] = $match[1];
+    function tristoolAssetUrl(string $source): string
+    {
+        $url = Str::startsWith($source, ['http://', 'https://']) ? $source : 'https://tristool.md/'.ltrim($source, '/');
+        $parts = parse_url($url);
+
+        if (! isset($parts['scheme'], $parts['host'])) {
+            return $url;
+        }
+
+        $path = implode('/', array_map('rawurlencode', explode('/', $parts['path'] ?? '')));
+
+        return $parts['scheme'].'://'.$parts['host'].$path.(isset($parts['query']) ? '?'.$parts['query'] : '');
     }
 
-    if (preg_match('/([0-9]+)\s*(?:мм|mm)/iu', $title, $match)) {
-        $attributes['Dimensiune'] = $match[1].' mm';
+    function shortProductDescription(string $title, string $brandName): string
+    {
+        $brand = str_contains($brandName, 'M7') ? 'M7 / Mighty Seven' : 'King Tony';
+
+        return "{$brand}: produs profesional pentru service auto, atelier si garaj. Model: {$title}.";
     }
 
-    if (preg_match('/([0-9]+)\s*(?:V|В)/u', $title, $match)) {
-        $attributes['Tensiune'] = $match[1].' V';
+    function fullProductDescription(string $title, string $brandName, string $sku): string
+    {
+        $brand = str_contains($brandName, 'M7') ? 'M7 / Mighty Seven' : 'King Tony';
+
+        return "Produs {$brand}, cod {$sku}, adaugat in catalogul MasterScule.md pentru service-uri auto, ateliere si clienti care cauta scule fiabile. Cardul include denumire, cod produs, pret in MDL, imagine, stoc disponibil, garantie si caracteristici tehnice de baza. Potrivit pentru utilizare profesionala si pentru garaje bine echipate.";
     }
 
-    return $attributes;
-}
+    function attributesForTrisToolTitle(string $title, string $sku, string $brandName): array
+    {
+        $attributes = [
+            'Brand' => str_contains($brandName, 'M7') ? 'M7 / Mighty Seven' : 'King Tony',
+            'Cod produs' => $sku,
+            'Utilizare' => 'Service auto / atelier / garaj',
+            'Garantie' => '24 luni',
+        ];
 
-function packageForTrisToolTitle(string $title): array
-{
-    $lower = mb_strtolower($title, 'UTF-8');
+        if (preg_match('/([0-9]+)\s*(?:Nm|Нм)/iu', $title, $match)) {
+            $attributes['Cuplu maxim'] = $match[1].' Nm';
+        }
 
-    if (str_contains($lower, 'набор') || str_contains($lower, 'комплект')) {
-        return ['Set scule', 'Cutie / organizator', 'Documentatie tehnica'];
+        if (preg_match('/([0-9]+)\s*(?:предмет|piese|шт|pcs)/iu', $title, $match)) {
+            $attributes['Numar piese'] = $match[1];
+        }
+
+        if (preg_match('/(1\/4|3\/8|1\/2|3\/4|1")/u', $title, $match)) {
+            $attributes['Antrenare'] = $match[1];
+        }
+
+        if (preg_match('/([0-9]+)\s*(?:мм|mm)/iu', $title, $match)) {
+            $attributes['Dimensiune'] = $match[1].' mm';
+        }
+
+        if (preg_match('/([0-9]+)\s*(?:V|В)/u', $title, $match)) {
+            $attributes['Tensiune'] = $match[1].' V';
+        }
+
+        return $attributes;
     }
 
-    if (str_contains($lower, 'аккумулятор') || str_contains($lower, '18в') || str_contains($lower, '18 v')) {
-        return ['Scula principala', 'Ambalaj', 'Documentatie tehnica'];
-    }
+    function packageForTrisToolTitle(string $title): array
+    {
+        $lower = mb_strtolower($title, 'UTF-8');
 
-    return ['Produs principal', 'Ambalaj', 'Documentatie tehnica'];
-}
+        if (str_contains($lower, 'набор') || str_contains($lower, 'комплект')) {
+            return ['Set scule', 'Cutie / organizator', 'Documentatie tehnica'];
+        }
+
+        if (str_contains($lower, 'аккумулятор') || str_contains($lower, '18в') || str_contains($lower, '18 v')) {
+            return ['Scula principala', 'Ambalaj', 'Documentatie tehnica'];
+        }
+
+        return ['Produs principal', 'Ambalaj', 'Documentatie tehnica'];
+    }
 }

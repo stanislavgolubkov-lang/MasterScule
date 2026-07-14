@@ -8,36 +8,54 @@ use Illuminate\Support\Str;
 
 class ProductCategoryDetector
 {
-    public function __construct(private ProductParserSettings $settings)
-    {
-    }
+    public function __construct(private ProductParserSettings $settings) {}
 
     public function detect(string $sku, string $name, ?string $brand = null, ?string $group = null, ?string $subgroup = null, ?string $vehicleApplication = null): array
     {
         $rules = $this->settings->get('category_rules', config('product_parser.category_rules', []));
-        $text = $this->normalize(implode(' ', array_filter([$sku, $name, $brand, $group, $subgroup, $vehicleApplication])));
+        $productText = $this->normalize(implode(' ', array_filter([$sku, $name, $brand, $subgroup, $vehicleApplication])));
+        $groupText = $this->normalize((string) $group);
         $scores = [];
         $notes = [];
 
         foreach (($rules['group_mapping'] ?? []) as $needle => $slug) {
-            if ($this->contains($text, $needle)) {
-                $scores[$slug] = ($scores[$slug] ?? 0) + 55;
+            if ($this->contains($groupText, $needle)) {
+                $scores[$slug] = ($scores[$slug] ?? 0) + 18;
                 $notes[] = "group: {$needle} -> {$slug}";
+                break;
             }
         }
 
         foreach (($rules['sku_prefixes'] ?? []) as $pattern => $slug) {
             if ($this->skuMatches($sku, $pattern)) {
-                $scores[$slug] = ($scores[$slug] ?? 0) + 40;
+                $scores[$slug] = ($scores[$slug] ?? 0) + 45;
                 $notes[] = "sku: {$pattern} -> {$slug}";
+            }
+        }
+
+        foreach ($this->subgroupRules() as $needle => $slug) {
+            if ($this->contains((string) $subgroup, $needle)) {
+                $scores[$slug] = ($scores[$slug] ?? 0) + 95;
+                $notes[] = "subgroup: {$needle} -> {$slug}";
+                break;
             }
         }
 
         foreach (($rules['keywords'] ?? []) as $slug => $keywords) {
             foreach ($keywords as $keyword) {
-                if ($this->contains($text, $keyword)) {
-                    $scores[$slug] = ($scores[$slug] ?? 0) + 22;
+                if ($this->contains($productText, $keyword)) {
+                    $scores[$slug] = ($scores[$slug] ?? 0) + 55;
                     $notes[] = "keyword: {$keyword} -> {$slug}";
+                }
+            }
+        }
+
+        foreach ($this->utf8SemanticRules() as $slug => $keywords) {
+            foreach ($keywords as $keyword) {
+                if ($this->contains($productText, $keyword)) {
+                    $scores[$slug] = ($scores[$slug] ?? 0) + 120;
+                    $notes[] = "product: {$keyword} -> {$slug}";
+                    break;
                 }
             }
         }
@@ -51,7 +69,7 @@ class ProductCategoryDetector
         }
 
         if ($brand && Str::contains(Str::lower($brand), ['m7', 'mighty seven'])) {
-            $scores['scule-pneumatice'] = ($scores['scule-pneumatice'] ?? 0) + 25;
+            $scores['scule-pneumatice'] = ($scores['scule-pneumatice'] ?? 0) + 10;
             $notes[] = 'brand: M7 gives pneumatic hint';
         }
 
@@ -80,6 +98,9 @@ class ProductCategoryDetector
             'category_id' => $score >= $min ? $category?->id : null,
             'detected_category_id' => $category?->id,
             'detected_category_path' => $category ? $this->path($category) : null,
+            'category_slug' => $category?->slug,
+            'category_name_ru' => $category?->name,
+            'category_name_ro' => $category?->name_ro,
             'confidence' => $score,
             'method' => $notes ? 'rules' : 'none',
             'notes' => $notes,
@@ -94,9 +115,77 @@ class ProductCategoryDetector
 
         return Product::with(['category', 'brand'])
             ->where('sku', '!=', $sku)
+            ->whereNull('source_import_batch_id')
             ->where('sku', 'like', $family.'%')
             ->when($brand, fn ($query) => $query->whereHas('brand', fn ($brandQuery) => $brandQuery->where('name', 'like', '%'.$brand.'%')))
             ->first();
+    }
+
+    private function subgroupRules(): array
+    {
+        return [
+            'гайковёрты' => 'chei-pneumatice',
+            'гайковерты' => 'chei-pneumatice',
+            'дрели пневматические' => 'burghie-pneumatice',
+            'заклёпочники' => 'nituitoare-capsatoare-si-cuie-pneumatice',
+            'заклепочники' => 'nituitoare-capsatoare-si-cuie-pneumatice',
+            'измерительный инструмент' => 'chei-dinamometrice',
+            'молотки пневматические' => 'ciocane-pneumatice',
+            'отвёртки пневматические' => 'surubelnite-pneumatice',
+            'отвертки пневматические' => 'surubelnite-pneumatice',
+            'продувочные пистолеты' => 'pistoale-suflat-si-sablare',
+            'режущий инструмент' => 'foarfeci-ferastraie-si-debitare-pneumatice',
+            'спец. одежда' => 'echipament-protectie',
+            'шланги и разъёмы' => 'furtunuri-cuple-accesorii',
+            'шланги и разъемы' => 'furtunuri-cuple-accesorii',
+            'шлифмашинки ленточные' => 'polizoare-si-slefuitoare-pneumatice',
+            'шлифмашинки орбитальные' => 'polizoare-si-slefuitoare-pneumatice',
+        ];
+    }
+
+    private function utf8SemanticRules(): array
+    {
+        return [
+            'furtunuri-cuple-accesorii' => ['смазочная муфта', 'быстросъём', 'быстросъем', 'быстроразъём europe', 'быстроразъем europe', 'быстроразъём композит', 'быстроразъем композит', 'пневмошланг', 'воздушный шланг', 'воздушным шлангом', 'катушка с воздушным', 'шланг полиуретановый', 'ниппель', 'фитинг', 'фильтр-редуктор', 'наконечник europe'],
+            'consumabile-pentru-scule-pneumatice' => ['точильный камень', 'точильных камней', 'зачистной диск', 'диск зачистной', 'круг отрезной', 'диск наждачный', 'диск полировочный', 'лента абразивная', 'лента образивная', 'сменная подошва', 'набор зубил', 'набор напильников', 'пила сменная', 'пилы сменные', 'патрон зажимной', 'патрон быстро-зажимной', 'сверло с титановым', 'прицел с пузырьковым уровнем', 'быстроразъём для фиксатора', 'фиксатор для зубил'],
+            'polizoare-si-slefuitoare-pneumatice' => ['шлифовальная машин', 'шлифмашинка', 'пневмошлиф', 'турбинка', 'полировальная машин', 'полировочная машин', 'углошлифовальная', 'зачистная машина', 'удаления ржавчины', 'фрезер', 'фрейзер'],
+            'pistoale-suflat-si-sablare' => ['пистолет моечный', 'пистолет очиститель', 'пистолет продувочный', 'пескоструй', 'подкачки шин', 'пенообразователь', 'tornador', 'распылитель'],
+            'pistoale-pentru-silicon-si-gresare' => ['пистолет для смазки', 'шприц смазочный', 'пистолет для силикона'],
+            'chei-pneumatice' => ['пневмогайковерт', 'пневмогайковёрт', 'гайковёрт', 'гайковерт'],
+            'clichete-pneumatice' => ['пневмотрещот'],
+            'ciocane-pneumatice' => ['пневмомолот', 'молоток пневматический'],
+            'burghie-pneumatice' => ['пневмодрель', 'дрель пневматическая', 'дрель для сверления', 'дрель прямой ручкой'],
+            'surubelnite-pneumatice' => ['пневмоотверт', 'пневмоотвёрт', 'отвёртка пневмат', 'отвертка пневмат'],
+            'foarfeci-ferastraie-si-debitare-pneumatice' => ['пневмопила', 'пневмоножовка', 'ножовка пневм', 'сабельная пила', 'машинка отрезная', 'ножницы пневматические'],
+            'nituitoare-capsatoare-si-cuie-pneumatice' => ['пневмозаклепочник', 'пневмозаклёпочник', 'пневмагидравлический заклёпочник', 'пневмагидравлический заклепочник'],
+            'chei-dinamometrice' => ['динамометрический ключ'],
+            'extractoare-si-prese' => ['съемник', 'съёмник', 'шаровых опор'],
+            'scule-pentru-roti-vulcanizare' => ['вентиль шин', 'ремонт шин', 'шиномонтаж'],
+            'dispozitive-pneumatice-service' => ['прокачки тормоз', 'прокачки привода тормоз', 'извлечения технических жидкостей', 'вакуумный экстрактор', 'пневматический домкрат'],
+            'manusi' => ['перчатки'],
+            'accesorii-universale' => ['сумка для инструментов', 'накидка защитная'],
+        ];
+    }
+
+    private function semanticRules(): array
+    {
+        return [
+            'furtunuri-cuple-accesorii' => ['смазочная муфта', 'быстросъем', 'быстросъём', 'пневмошланг', 'воздушный шланг', 'ниппель', 'фитинг'],
+            'consumabile-pentru-scule-pneumatice' => ['точильных камней', 'зачистной диск', 'диск зачистной', 'иглы для пневмо', 'щетка для пневмо', 'щётка для пневмо'],
+            'polizoare-si-slefuitoare-pneumatice' => ['шлифовальная машин', 'пневмошлиф', 'турбинка', 'полировальная машин', 'удаления ржавчины', 'фрезер', 'фрейзер'],
+            'pistoale-suflat-si-sablare' => ['пистолет моечный', 'пистолет очиститель', 'пескоструй', 'подкачки шин', 'продувочный пистолет', 'пенообразователь', 'tornador', 'распылитель'],
+            'pistoale-pentru-silicon-si-gresare' => ['пистолет для смазки', 'шприц смазочный', 'пистолет для силикона'],
+            'chei-pneumatice' => ['пневмогайковерт', 'гайковерт пневматический'],
+            'clichete-pneumatice' => ['пневмотрещот'],
+            'ciocane-pneumatice' => ['пневмомолот', 'молоток пневматический'],
+            'burghie-pneumatice' => ['пневмодрель', 'дрель пневматическая'],
+            'surubelnite-pneumatice' => ['пневмоотверт', 'пневмоотвёрт'],
+            'foarfeci-ferastraie-si-debitare-pneumatice' => ['пневмопила', 'пневмоножовка', 'ножницы пневматические'],
+            'nituitoare-capsatoare-si-cuie-pneumatice' => ['пневмозаклепочник', 'пневмозаклёпочник', 'заклепочник пневматический'],
+            'extractoare-si-prese' => ['съемник', 'съёмник', 'шаровых опор'],
+            'scule-pentru-roti-vulcanizare' => ['вентиль шин', 'ремонт шин', 'шиномонтаж'],
+            'dispozitive-pneumatice-service' => ['прокачки тормоз', 'вакуумный экстрактор', 'пневматический домкрат'],
+        ];
     }
 
     private function path(Category $category): string

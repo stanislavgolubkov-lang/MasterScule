@@ -12,6 +12,7 @@ class ProductParserImageAsset extends Model
         'source_domain',
         'original_path',
         'processed_path',
+        'preview_path',
         'thumb_path',
         'width',
         'height',

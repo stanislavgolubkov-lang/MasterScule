@@ -17,7 +17,9 @@
             ['label' => __('ui.orders'), 'route' => 'admin.orders'],
             ['label' => __('ui.admin_payments'), 'route' => 'admin.payments'],
             ['label' => __('ui.users'), 'route' => 'admin.users'],
-            ['label' => __('ui.parser_products'), 'route' => 'admin.parser.index'],
+        ];
+        $parserNav = [
+            ['label' => app()->isLocale('ru') ? 'Импорт' : 'Import', 'route' => 'admin.parser.index'],
             ['label' => __('ui.parser_drafts'), 'route' => 'admin.parser.drafts'],
             ['label' => __('ui.parser_category_rules'), 'route' => 'admin.parser.rules'],
         ];
@@ -36,6 +38,16 @@
                         {{ $item['label'] }}
                     </a>
                 @endforeach
+                <details class="admin-nav-group" @if(request()->routeIs('admin.parser.*')) open @endif>
+                    <summary class="{{ request()->routeIs('admin.parser.*') ? 'active' : '' }}">{{ __('ui.parser_products') }}</summary>
+                    <div>
+                        @foreach($parserNav as $item)
+                            <a class="{{ request()->routeIs($item['route']) ? 'active' : '' }}" href="{{ route($item['route']) }}">
+                                {{ $item['label'] }}
+                            </a>
+                        @endforeach
+                    </div>
+                </details>
             </nav>
 
             <a class="admin-store-link" href="{{ route('home') }}">{{ __('ui.back_to_home') }}</a>
@@ -61,6 +73,19 @@
 
             @if (session('success'))
                 <div class="notice">{{ session('success') }}</div>
+            @endif
+            @if (session('warning'))
+                <div class="notice error">{{ session('warning') }}</div>
+            @endif
+            @if (session('publication_errors'))
+                <div class="notice error publication-errors">
+                    <strong>{{ app()->isLocale('ru') ? 'Товар нельзя опубликовать:' : 'Produsul nu poate fi publicat:' }}</strong>
+                    <ul>
+                        @foreach(session('publication_errors') as $publicationError)
+                            <li>{{ $publicationError }}</li>
+                        @endforeach
+                    </ul>
+                </div>
             @endif
             @if ($errors->any())
                 <div class="notice error">{{ $errors->first() }}</div>
