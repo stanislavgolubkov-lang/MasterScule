@@ -15,10 +15,11 @@ class ProductPublicationGuard
         private readonly ProductImageQualityGuard $imageQuality,
     ) {}
 
-    public function evaluate(Product $product, bool $approveGeneralReview = false): array
+    public function evaluate(Product $product, bool $approveGeneralReview = false, array $approvedReviewFlags = []): array
     {
         $errors = [];
         $warnings = [];
+        $approvedReviewFlags = array_fill_keys($approvedReviewFlags, true);
 
         $add = static function (string $code, string $message) use (&$errors): void {
             $errors[$code] = $message;
@@ -71,15 +72,15 @@ class ProductPublicationGuard
         ];
 
         foreach ($flags as $field => [$ru, $ro]) {
-            if ((bool) $product->{$field}) {
+            if ((bool) $product->{$field} && ! isset($approvedReviewFlags[$field])) {
                 $add($field, $this->message($ru, $ro));
             }
         }
 
-        if ((bool) $product->needs_content_review) {
+        if ((bool) $product->needs_content_review && ! isset($approvedReviewFlags['needs_content_review'])) {
             $add('needs_content_review', 'Product content requires review.');
         }
-        if ((bool) $product->needs_source_review) {
+        if ((bool) $product->needs_source_review && ! isset($approvedReviewFlags['needs_source_review'])) {
             $add('needs_source_review', 'Product source requires review.');
         }
 
@@ -143,20 +144,28 @@ class ProductPublicationGuard
         ];
     }
 
-    public function publish(Product $product, bool $approveGeneralReview = true): array
+    public function publish(Product $product, bool $approveGeneralReview = true, array $approvedReviewFlags = []): array
     {
-        $result = $this->evaluate($product, $approveGeneralReview);
+        $result = $this->evaluate($product, $approveGeneralReview, $approvedReviewFlags);
 
         if (! $result['allowed']) {
             return $result;
         }
 
-        $product->forceFill([
+        $approvedFlags = array_fill_keys(array_intersect($approvedReviewFlags, [
+            'needs_category_review',
+            'needs_translation_review',
+            'needs_content_review',
+            'needs_price_review',
+            'needs_stock_review',
+        ]), false);
+
+        $product->forceFill(array_merge($approvedFlags, [
             'status' => 'published',
             'approval_status' => 'approved',
             'needs_review' => false,
             'is_active' => true,
-        ])->save();
+        ]))->save();
 
         return $result;
     }

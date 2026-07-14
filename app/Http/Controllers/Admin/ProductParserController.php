@@ -26,6 +26,13 @@ use ZipArchive;
 
 class ProductParserController extends Controller
 {
+    private const PUBLICATION_APPROVAL_FLAGS = [
+        'needs_translation_review',
+        'needs_content_review',
+        'needs_price_review',
+        'needs_stock_review',
+    ];
+
     public function __construct(private ProductParserSettings $settings) {}
 
     public function index()
@@ -434,7 +441,7 @@ class ProductParserController extends Controller
         $product = $item->createdProduct;
         abort_unless($product, 404);
 
-        $result = $publicationGuard->publish($product, true);
+        $result = $publicationGuard->publish($product, true, self::PUBLICATION_APPROVAL_FLAGS);
         if (! $result['allowed']) {
             return back()
                 ->with('warning', app()->isLocale('ru') ? 'Публикация заблокирована.' : 'Publicarea este blocata.')
@@ -444,6 +451,10 @@ class ProductParserController extends Controller
         $item->forceFill([
             'status' => 'approved',
             'approval_status' => 'approved',
+            'needs_translation_review' => false,
+            'needs_content_review' => false,
+            'needs_price_review' => false,
+            'needs_stock_review' => false,
         ])->save();
         $item->batch?->addLog('Admin approved and published draft product', ['sku' => $item->sku, 'product_id' => $product->id]);
 
@@ -501,7 +512,8 @@ class ProductParserController extends Controller
                 ->whereHas('createdProduct', fn ($product) => $product->where('status', 'draft'));
 
             $blockedReasons = [];
-            $query->with('createdProduct')->orderBy('id')->limit($limit)->chunkById(200, function ($items) use ($publicationGuard, &$processed, &$failed, &$blockedReasons) {
+            $blockedMessages = [];
+            $query->with('createdProduct')->orderBy('id')->limit($limit)->chunkById(200, function ($items) use ($publicationGuard, &$processed, &$failed, &$blockedReasons, &$blockedMessages) {
                 foreach ($items as $item) {
                     $product = $item->createdProduct;
                     if (! $product) {
@@ -510,11 +522,12 @@ class ProductParserController extends Controller
                         continue;
                     }
 
-                    $result = $publicationGuard->publish($product, true);
+                    $result = $publicationGuard->publish($product, true, self::PUBLICATION_APPROVAL_FLAGS);
                     if (! $result['allowed']) {
                         $failed++;
-                        foreach ($result['error_codes'] as $code) {
+                        foreach ($result['error_codes'] as $index => $code) {
                             $blockedReasons[$code] = ($blockedReasons[$code] ?? 0) + 1;
+                            $blockedMessages[$code] ??= $result['errors'][$index] ?? $code;
                         }
 
                         continue;
@@ -523,6 +536,10 @@ class ProductParserController extends Controller
                     $item->forceFill([
                         'status' => 'approved',
                         'approval_status' => 'approved',
+                        'needs_translation_review' => false,
+                        'needs_content_review' => false,
+                        'needs_price_review' => false,
+                        'needs_stock_review' => false,
                     ])->save();
                     $processed++;
                 }
@@ -534,7 +551,17 @@ class ProductParserController extends Controller
                 'blocked_reasons' => $blockedReasons,
             ]);
 
-            return back()->with('success', $this->bulkMessage('Опубликовано', $processed, $failed));
+            $response = back()->with('success', "Опубликовано: {$processed}. Заблокировано: {$failed}.");
+            if ($failed > 0) {
+                arsort($blockedReasons);
+                $publicationErrors = collect($blockedReasons)
+                    ->map(fn (int $count, string $code) => "{$count} товаров: ".($blockedMessages[$code] ?? $code))
+                    ->values()
+                    ->all();
+                $response->with('publication_errors', $publicationErrors);
+            }
+
+            return $response;
         }
 
         $action = match ($data['action']) {

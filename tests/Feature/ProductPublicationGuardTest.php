@@ -73,6 +73,30 @@ class ProductPublicationGuardTest extends TestCase
         $this->assertGuardBlocked($product, 'needs_translation_review');
     }
 
+    public function test_explicit_publication_can_approve_content_translation_price_and_stock_flags(): void
+    {
+        $product = $this->validProduct([
+            'needs_content_review' => true,
+            'needs_translation_review' => true,
+            'needs_price_review' => true,
+            'needs_stock_review' => true,
+        ]);
+
+        $result = app(ProductPublicationGuard::class)->publish($product, true, [
+            'needs_content_review',
+            'needs_translation_review',
+            'needs_price_review',
+            'needs_stock_review',
+        ]);
+
+        $this->assertTrue($result['allowed']);
+        $this->assertSame('published', $product->fresh()->status);
+        $this->assertFalse((bool) $product->fresh()->needs_content_review);
+        $this->assertFalse((bool) $product->fresh()->needs_translation_review);
+        $this->assertFalse((bool) $product->fresh()->needs_price_review);
+        $this->assertFalse((bool) $product->fresh()->needs_stock_review);
+    }
+
     public function test_fallback_parser_product_without_source_approval_cannot_be_published(): void
     {
         $product = $this->validProduct([

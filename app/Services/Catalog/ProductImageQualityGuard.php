@@ -37,7 +37,7 @@ class ProductImageQualityGuard
                 if (! $asset->processed_path || ! $this->availability->inspect($asset->processed_path)['available']) {
                     $errors['image_processed_missing'] = 'Processed image file is missing.';
                 }
-                if (! $asset->thumb_path || ! $this->availability->inspect($asset->thumb_path)['available']) {
+                if ($asset->is_main && (! $asset->thumb_path || ! $this->availability->inspect($asset->thumb_path)['available'])) {
                     $errors['image_thumb_missing'] = 'Image thumbnail is missing.';
                 }
                 if (! $asset->preview_path || ! $this->availability->inspect($asset->preview_path)['available']) {

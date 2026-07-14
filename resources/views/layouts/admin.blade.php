@@ -79,7 +79,7 @@
             @endif
             @if (session('publication_errors'))
                 <div class="notice error publication-errors">
-                    <strong>{{ app()->isLocale('ru') ? 'Товар нельзя опубликовать:' : 'Produsul nu poate fi publicat:' }}</strong>
+                    <strong>{{ app()->isLocale('ru') ? 'Причины блокировки публикации:' : 'Motivele blocarii publicarii:' }}</strong>
                     <ul>
                         @foreach(session('publication_errors') as $publicationError)
                             <li>{{ $publicationError }}</li>

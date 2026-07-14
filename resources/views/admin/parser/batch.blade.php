@@ -51,7 +51,7 @@
             @csrf
             <input type="hidden" name="action" value="publish_drafts">
             <strong>{{ $bulkStats['drafts'] }}</strong>
-            <span>{{ $ru ? 'draft готовы к публикации' : 'drafturi gata de publicare' }}</span>
+            <span>{{ $ru ? 'черновиков на проверку и публикацию' : 'drafturi pentru verificare si publicare' }}</span>
             <label>{{ $ru ? 'Лимит' : 'Limita' }}<input type="number" name="limit" value="20000" min="1" max="20000"></label>
             <button class="btn small" @disabled($bulkStats['drafts'] === 0)>{{ $ru ? 'Опубликовать массово' : 'Publica in masa' }}</button>
         </form>
