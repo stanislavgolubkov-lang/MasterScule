@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Product;
+use App\Services\Catalog\ProductImageAvailabilityService;
 use App\Services\Catalog\ProductPublicationGuard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -41,6 +42,18 @@ class ProductPublicationGuardTest extends TestCase
         $product = $this->validProduct(['main_image' => '/images/products/product-placeholder.svg']);
 
         $this->assertGuardBlocked($product, 'invalid_image_placeholder');
+    }
+
+    public function test_processed_fallback_directory_is_not_treated_as_placeholder(): void
+    {
+        UploadedFile::fake()->image('fallback.webp', 40, 40)
+            ->storeAs('products/fallback/test-brand/test-sku', 'main.webp', 'public');
+
+        $result = app(ProductImageAvailabilityService::class)
+            ->inspect('/storage/products/fallback/test-brand/test-sku/main.webp');
+
+        $this->assertTrue($result['available']);
+        $this->assertSame('available', $result['code']);
     }
 
     public function test_product_without_category_cannot_be_published(): void

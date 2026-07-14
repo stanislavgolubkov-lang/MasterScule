@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Services\ProductSearchService;
+use App\Services\ProductSources\Adapters\MightySevenOfficialAdapter;
 use App\Services\ProductSources\ProductSourceRegistry;
 use App\Services\TrisToolsEnrichmentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -68,6 +69,33 @@ class ProductSourcePipelineTest extends TestCase
         $this->assertTrue($result['fallback_source_used']);
         $this->assertTrue($result['needs_source_review']);
         $this->assertSame('fallback_reference', $result['content_source_type']);
+    }
+
+    public function test_mighty_seven_adapter_accepts_grouped_set_sku(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake([
+            '*getprodut_list_search*' => Http::response(['data' => '<a href="/product/2801"><div class="pic"><img src="/upload/product/qb9211.png"></div><h3>Grinder Stone Set</h3><p>QB-9211A/B[SET]</p></a>']),
+        ]);
+
+        $result = app(MightySevenOfficialAdapter::class)->searchBySku('QB-9211A', 'M7 / Mighty Seven');
+
+        $this->assertTrue($result->found);
+        $this->assertSame('https://www.mighty-seven.com/product/2801', $result->url);
+        $this->assertSame('https://www.mighty-seven.com/upload/product/qb9211.png', $result->payload['api_image']);
+    }
+
+    public function test_mighty_seven_adapter_accepts_packaging_suffix(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake([
+            '*getprodut_list_search*' => Http::response(['data' => '<a href="/product/3001"><div class="pic"><img src="/upload/product/db1850.png"></div><h3>18V Battery</h3><p>DB-1850P</p></a>']),
+        ]);
+
+        $result = app(MightySevenOfficialAdapter::class)->searchBySku('DB-1850', 'M7 / Mighty Seven');
+
+        $this->assertTrue($result->found);
+        $this->assertSame('https://www.mighty-seven.com/product/3001', $result->url);
     }
 
     public function test_fallback_is_called_when_no_official_adapter_supports_brand(): void

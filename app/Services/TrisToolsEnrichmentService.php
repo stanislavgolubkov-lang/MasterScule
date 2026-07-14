@@ -12,18 +12,20 @@ class TrisToolsEnrichmentService
 {
     private static float $lastRequestAt = 0.0;
 
+    public function __construct(private readonly ProductParserSettings $settings) {}
+
     public function enrich(string $sku, ?string $brand = null): array
     {
-        if (! config('product_parser.tristools.enabled', false)) {
+        if (! $this->settings->get('tristools.enabled', false)) {
             return $this->emptyResult('disabled');
         }
 
-        $baseUrl = rtrim((string) config('product_parser.tristools.base_url'), '/');
+        $baseUrl = rtrim((string) $this->settings->get('tristools.base_url', 'https://tristool.md'), '/');
         if (! $this->safeBaseUrl($baseUrl)) {
             return $this->emptyResult('invalid_base_url');
         }
 
-        $query = trim(implode(' ', array_filter([$brand, $sku])));
+        $query = trim($sku);
         $searchUrl = $baseUrl.'/ru/search?searchword='.rawurlencode($query);
         $html = $this->get($searchUrl);
         if ($html === null) {
@@ -48,17 +50,17 @@ class TrisToolsEnrichmentService
             return $this->emptyResult('not_found');
         }
 
-        $minimum = (int) config('product_parser.tristools.minimum_confidence', 70);
+        $minimum = (int) $this->settings->get('tristools.minimum_confidence', 70);
         if ($candidate['confidence'] < $minimum) {
             return $this->emptyResult('low_confidence', $candidate);
         }
 
         $page = $this->productPage($candidate['url'], $baseUrl);
-        $images = collect([$candidate['image']])
-            ->merge($page['images'] ?? [])
+        $images = collect($page['images'] ?? [])
+            ->push($candidate['image'])
             ->filter()
             ->unique()
-            ->take((int) config('product_parser.max_images_per_product', 4))
+            ->take((int) $this->settings->get('max_images_per_product', 4))
             ->values()
             ->all();
 
@@ -91,7 +93,9 @@ class TrisToolsEnrichmentService
         $cards = [];
 
         foreach ($xpath->query("//*[contains(concat(' ', normalize-space(@class), ' '), ' cl-item ')]") ?: [] as $node) {
-            $link = $xpath->query('.//a[@href]', $node)?->item(0);
+            $link = $node instanceof \DOMElement && Str::lower($node->tagName) === 'a'
+                ? $node
+                : $xpath->query('.//a[@href]', $node)?->item(0);
             $image = $xpath->query('.//img[@src or @data-src]', $node)?->item(0);
             $title = $this->text($xpath->query('.//h6', $node)?->item(0));
             $sku = $this->text($xpath->query(".//*[contains(concat(' ', normalize-space(@class), ' '), ' article ')]", $node)?->item(0));
@@ -141,10 +145,12 @@ class TrisToolsEnrichmentService
             }
         }
 
-        $images = [];
+        $images = array_filter([
+            $this->absoluteUrl($baseUrl, (string) $meta('og:image')),
+        ]);
         foreach ($xpath->query('//img[@src or @data-src]') ?: [] as $image) {
             $candidate = $this->absoluteUrl($baseUrl, $image->getAttribute('data-src') ?: $image->getAttribute('src'));
-            if ($candidate && $this->sameHost($baseUrl, $candidate) && ! Str::contains(Str::lower($candidate), ['logo', 'icon', 'placeholder'])) {
+            if ($candidate && $this->sameHost($baseUrl, $candidate) && ! Str::contains(Str::lower($candidate), ['logo', 'icon', 'placeholder', '/manufacturer/'])) {
                 $images[] = $candidate;
             }
         }
@@ -160,7 +166,7 @@ class TrisToolsEnrichmentService
 
     private function get(string $url): ?string
     {
-        $rateLimit = max(0, (int) config('product_parser.tristools.rate_limit_ms', 1000));
+        $rateLimit = max(0, (int) $this->settings->get('tristools.rate_limit_ms', 1000));
         $elapsedMs = (microtime(true) - self::$lastRequestAt) * 1000;
         if ($elapsedMs < $rateLimit) {
             usleep((int) (($rateLimit - $elapsedMs) * 1000));
@@ -169,7 +175,7 @@ class TrisToolsEnrichmentService
         try {
             $response = Http::withOptions(['proxy' => ''])
                 ->withHeaders(['User-Agent' => 'MasterSculeAdminParser/1.0', 'Accept' => 'text/html'])
-                ->timeout((int) config('product_parser.tristools.timeout', 15))
+                ->timeout((int) $this->settings->get('tristools.timeout', 15))
                 ->get($url);
             self::$lastRequestAt = microtime(true);
 

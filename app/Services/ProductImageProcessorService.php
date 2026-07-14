@@ -13,7 +13,7 @@ use Throwable;
 
 class ProductImageProcessorService
 {
-    private const MAX_REMOTE_IMAGE_BYTES = 8388608;
+    private const MAX_REMOTE_IMAGE_BYTES = 16777216;
 
     private const ALLOWED_REMOTE_IMAGE_DOMAINS = [
         'kingtony.com',
@@ -139,7 +139,7 @@ class ProductImageProcessorService
 
         $this->assertSafeRemoteImageUrl($sourceUrl);
 
-        $response = $this->externalHttp()->timeout(20)->retry(1, 350)->get($sourceUrl);
+        $response = $this->externalHttp()->timeout(25)->retry(1, 500)->get($sourceUrl);
 
         if (! $response->successful() || $response->body() === '') {
             throw new \RuntimeException('Remote image download failed.');

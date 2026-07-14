@@ -9,7 +9,7 @@ class ProductImageAvailabilityService
 {
     private const PLACEHOLDER_MARKERS = [
         'placeholder',
-        'fallback',
+        'fallback-placeholder',
         'generated-placeholder',
         'no-image',
         'no_image',

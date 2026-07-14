@@ -33,7 +33,12 @@ class ProductParserService
             $result = match (true) {
                 $forceFallback => $this->search->searchFallbackForParser($item->sku, $item->brand),
                 $officialOnly => $this->search->searchOfficialForParser($item->sku, $item->brand),
-                default => $this->search->searchForParser($item->sku, $item->brand, $options['language'] ?? 'auto'),
+                default => $this->search->searchForParser(
+                    $item->sku,
+                    $item->brand,
+                    $options['language'] ?? 'auto',
+                    preferLocal: ! filled($item->created_product_id),
+                ),
             };
             ProductParserSource::where('parser_item_id', $item->id)->delete();
 
