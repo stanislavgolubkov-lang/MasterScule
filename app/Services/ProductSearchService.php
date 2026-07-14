@@ -18,7 +18,7 @@ class ProductSearchService
         private readonly ProductSourceDiscoveryService $sourceDiscovery,
     ) {}
 
-    public function searchForParser(string $sku, ?string $brand = null, string $language = 'auto', bool $preferLocal = true): array
+    public function searchForParser(string $sku, ?string $brand = null, string $language = 'auto', bool $preferLocal = true, ?string $name = null): array
     {
         $sku = trim($sku);
         $brand = $brand && $brand !== 'auto' ? trim($brand) : null;
@@ -27,7 +27,7 @@ class ProductSearchService
             return $this->fromExistingProduct($existing);
         }
 
-        return $this->sourceDiscovery->search($sku, $brand);
+        return $this->sourceDiscovery->search($sku, $brand, $name);
     }
 
     public function searchFallbackForParser(string $sku, ?string $brand = null): array

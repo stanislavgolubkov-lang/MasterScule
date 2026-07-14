@@ -22,6 +22,7 @@ class ProductSourceDiscoveryService
         private readonly HoegertOfficialAdapter $hoegert,
         private readonly TorinOfficialAdapter $torin,
         private readonly TongrunOfficialAdapter $tongrun,
+        private readonly ReviewedCatalogSourceService $reviewedCatalog,
         private readonly TrisToolsFallbackAdapter $fallback,
     ) {}
 
@@ -52,7 +53,15 @@ class ProductSourceDiscoveryService
             && $official['confidence'] >= (int) $this->settings->get('min_official_confidence', 90)
             && $official['images'] !== []
             && filled($official['description']);
-        if ($officialComplete || ! $allowFallback || ! $this->fallbackEnabled()) {
+        if ($officialComplete || ! $allowFallback) {
+            return $official ?: $this->emptyResult();
+        }
+
+        if (! $forceFallback && ($catalog = $this->reviewedCatalog->find($sku, $brand, $name))) {
+            return $this->mergeReviewedCatalog($official, $catalog);
+        }
+
+        if (! $this->fallbackEnabled()) {
             return $official ?: $this->emptyResult();
         }
 
@@ -121,6 +130,29 @@ class ProductSourceDiscoveryService
     private function officialAdapters(): array
     {
         return [$this->kingTony, $this->mightySeven, $this->jtc, $this->hoegert, $this->torin, $this->tongrun];
+    }
+
+    private function mergeReviewedCatalog(?array $official, array $catalog): array
+    {
+        if (! $official) {
+            return $catalog;
+        }
+
+        $official['images'] = array_values(array_unique(array_merge($official['images'], $catalog['images'])));
+        $official['sources'] = array_merge($official['sources'], $catalog['sources']);
+        $official['source_urls'] = array_values(array_unique(array_merge($official['source_urls'], $catalog['source_urls'])));
+        $official['confidence'] = max((int) $official['confidence'], (int) $catalog['confidence']);
+        $official['source_match_confidence'] = $official['confidence'];
+        $official['official_source_url'] = $official['official_source_url'] ?: $catalog['official_source_url'];
+        $official['official_source_domain'] = $official['official_source_domain'] ?: $catalog['official_source_domain'];
+        $official['official_source_confidence'] = max(
+            (int) ($official['official_source_confidence'] ?? 0),
+            (int) $catalog['official_source_confidence'],
+        );
+        $official['needs_source_review'] = false;
+        $official['image_source_type'] = 'official_manufacturer_catalog';
+
+        return $official;
     }
 
     private function fallbackEnabled(): bool

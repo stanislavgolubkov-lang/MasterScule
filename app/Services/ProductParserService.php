@@ -13,7 +13,7 @@ class ProductParserService
     public function __construct(
         private ProductSearchService $search,
         private ProductImageCollectorService $imageCollector,
-        private ProductImageProcessorService $imageProcessor,
+        private ProductParserItemPreparationService $preparation,
         private ProductParserContentBuilder $contentBuilder,
     ) {}
 
@@ -38,6 +38,7 @@ class ProductParserService
                     $item->brand,
                     $options['language'] ?? 'auto',
                     preferLocal: ! filled($item->created_product_id),
+                    name: $item->raw_name,
                 ),
             };
             ProductParserSource::where('parser_item_id', $item->id)->delete();
@@ -76,7 +77,10 @@ class ProductParserService
                 $item->brand,
             );
             $images = $result['images'] ?? [];
-            $this->imageCollector->collect($item, $images);
+            $imageSourceDomain = $result['fallback_source_used'] ?? false
+                ? ($result['fallback_source_domain'] ?? null)
+                : ($result['official_source_domain'] ?? null);
+            $this->imageCollector->collect($item, $images, $imageSourceDomain);
 
             $batch?->addLog('Source discovery completed', [
                 'sku' => $item->sku,
@@ -96,7 +100,7 @@ class ProductParserService
                 'found_description' => $result['description'] ?? null,
                 'found_specs_json' => $result['specs'] ?? [],
                 'found_images_json' => $images,
-                'selected_images_json' => collect($images)->take((int) ($options['image_limit'] ?? 4))->values()->all(),
+                'selected_images_json' => collect($images)->take(1)->values()->all(),
                 'source_urls_json' => $result['source_urls'] ?? [],
                 'existing_product_id' => $result['existing_product_id'] ?? null,
                 'error_message' => collect($result['warnings'] ?? [])->implode(' '),
@@ -113,6 +117,7 @@ class ProductParserService
                 'content_source_type' => $result['content_source_type'] ?? null,
                 'image_source_type' => $result['image_source_type'] ?? null,
                 'translation_source_type' => $result['translation_source_type'] ?? 'generated_pending_review',
+                'needs_image_review' => true,
                 'name_ru' => $content['name_ru'],
                 'name_ro' => $content['name_ro'],
                 'short_description_ru' => $content['short_description_ru'],
@@ -138,8 +143,8 @@ class ProductParserService
                 'images' => count($images),
             ]);
 
-            if ($processImages && ($result['found'] ?? false) && $images) {
-                $this->imageProcessor->processSelected($item->fresh(['imageAssets', 'batch']));
+            if (($result['found'] ?? false) && $images) {
+                $this->preparation->prepare($item->fresh(['imageAssets', 'batch']), $processImages);
             }
         } catch (Throwable $e) {
             $item->forceFill([

@@ -18,9 +18,8 @@ class ProductPriceListImportService
         private ProductParserContentBuilder $contentBuilder,
         private ProductSearchService $search,
         private ProductImageCollectorService $imageCollector,
-        private ProductImageProcessorService $imageProcessor,
+        private ProductParserItemPreparationService $preparation,
         private ProductDraftService $drafts,
-        private ProductParserSettings $settings,
     ) {}
 
     public function dryRun(ProductParserBatch $batch): void
@@ -210,13 +209,13 @@ class ProductPriceListImportService
                         $this->enrichImages($item, $brand);
                         $item->refresh();
 
-                        if (($options['process_images'] ?? true) === true && $item->imageAssets()->where('is_selected', true)->exists()) {
-                            $this->imageProcessor->processSelected($item->fresh(['imageAssets', 'batch']));
-                            $item->refresh();
-                        }
+                        $this->preparation->prepare(
+                            $item->fresh(['imageAssets', 'batch']),
+                            ($options['process_images'] ?? true) === true,
+                        );
+                        $item->refresh();
 
                         $item->forceFill([
-                            'needs_image_review' => $item->imageAssets()->count() < $this->requiredImages(),
                             'status' => 'existing_product_found',
                         ])->save();
                     }
@@ -238,14 +237,15 @@ class ProductPriceListImportService
                 }
 
                 $item->refresh();
-                $needsImageReview = $item->imageAssets()->count() < $this->requiredImages();
                 $item->forceFill([
-                    'needs_image_review' => $needsImageReview,
                     'status' => $item->needs_category_review ? 'needs_category_review' : 'ready_for_review',
                 ])->save();
 
-                if (($options['process_images'] ?? true) === true && $item->imageAssets()->where('is_selected', true)->exists()) {
-                    $this->imageProcessor->processSelected($item->fresh(['imageAssets', 'batch']));
+                if (($options['search_images'] ?? true) === true) {
+                    $this->preparation->prepare(
+                        $item->fresh(['imageAssets', 'batch']),
+                        ($options['process_images'] ?? true) === true,
+                    );
                     $item->refresh();
                 }
 
@@ -350,7 +350,7 @@ class ProductPriceListImportService
     private function enrichImages(ProductParserItem $item, ?string $brand): void
     {
         try {
-            $result = $this->search->searchForParser($item->sku, $brand, 'auto', false);
+            $result = $this->search->searchForParser($item->sku, $brand, 'auto', false, $item->raw_name);
 
             foreach ($result['sources'] ?? [] as $source) {
                 ProductParserSource::create([
@@ -366,7 +366,10 @@ class ProductPriceListImportService
             }
 
             $images = array_values(array_filter($result['images'] ?? []));
-            $this->imageCollector->collect($item, $images);
+            $imageSourceDomain = $result['fallback_source_used'] ?? false
+                ? ($result['fallback_source_domain'] ?? null)
+                : ($result['official_source_domain'] ?? null);
+            $this->imageCollector->collect($item, $images, $imageSourceDomain);
             $content = $this->contentBuilder->mergeOfficialContent(
                 [
                     'name_ru' => $item->name_ru,
@@ -389,11 +392,11 @@ class ProductPriceListImportService
                 'found_description' => $result['description'] ?? $item->found_description,
                 'found_specs_json' => array_merge($item->found_specs_json ?: [], $result['specs'] ?? []),
                 'found_images_json' => $images,
-                'selected_images_json' => collect($images)->take(4)->values()->all(),
+                'selected_images_json' => collect($images)->take(1)->values()->all(),
                 'source_urls_json' => $result['source_urls'] ?? [],
                 'tristools_url' => collect($result['sources'] ?? [])->firstWhere('domain', 'tristool.md')['url'] ?? (($result['source_urls'][0] ?? null)),
                 'tristools_match_confidence' => $result['confidence'] ?? null,
-                'needs_image_review' => count($images) < $this->requiredImages(),
+                'needs_image_review' => true,
                 'official_source_url' => $result['official_source_url'] ?? null,
                 'official_source_domain' => $result['official_source_domain'] ?? null,
                 'official_source_confidence' => $result['official_source_confidence'] ?? null,
@@ -421,11 +424,6 @@ class ProductPriceListImportService
             ])->save();
             $item->batch?->addLog('Image search failed', ['sku' => $item->sku, 'error' => $e->getMessage()]);
         }
-    }
-
-    private function requiredImages(): int
-    {
-        return max(1, min(4, (int) $this->settings->get('required_images_for_ready', 3)));
     }
 
     private function skippedItem(ProductParserBatch $batch, array $row, ?string $sku, string $reason, ?string $brand = null, ?string $normalizedSku = null, array $context = []): void

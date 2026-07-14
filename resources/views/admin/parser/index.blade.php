@@ -266,6 +266,7 @@
             <div class="parser-check-grid">
                 <label><input type="checkbox" name="official_sources_enabled" value="1" @checked($settings['official_sources_enabled'] ?? true)> {{ $ru ? 'Официальные источники включены' : 'Surse oficiale active' }}</label>
                 <label><input type="checkbox" name="tristools_fallback_enabled" value="1" @checked($settings['tristools_fallback_enabled'] ?? false)> {{ $ru ? 'Разрешить TrisTools только как fallback' : 'Permite TrisTools doar ca fallback' }}</label>
+                <label><input type="checkbox" name="auto_approve_exact_fallback" value="1" @checked($settings['auto_approve_exact_fallback'] ?? true)> {{ $ru ? 'Автопроверка точного fallback по SKU' : 'Aproba automat fallback exact dupa SKU' }}</label>
                 <label><input type="checkbox" name="allow_marketplace_sources" value="1" @checked($settings['allow_marketplace_sources'] ?? false)> {{ $ru ? 'Разрешить marketplace-источники' : 'Permite surse marketplace' }}</label>
                 <label><input type="checkbox" name="search_images" value="1" @checked($settings['search_images'] ?? true)> {{ $ru ? 'Искать изображения' : 'Cauta imagini' }}</label>
                 <label><input type="checkbox" name="translate_descriptions" value="1" @checked($settings['translate_descriptions'] ?? true)> {{ $ru ? 'Готовить RU/RO описания' : 'Pregateste descrieri RU/RO' }}</label>
@@ -276,7 +277,7 @@
             <div class="admin-three-cols">
                 <label>{{ $ru ? 'Минимум official confidence' : 'Incredere oficiala minima' }}<input type="number" name="min_official_confidence" value="{{ $settings['min_official_confidence'] ?? 90 }}" min="70" max="100"></label>
                 <label>{{ $ru ? 'Минимум fallback confidence' : 'Incredere fallback minima' }}<input type="number" name="min_fallback_confidence" value="{{ $settings['min_fallback_confidence'] ?? 80 }}" min="70" max="100"></label>
-                <label>{{ $ru ? 'Фото для ready' : 'Imagini pentru ready' }}<input type="number" name="required_images_for_ready" value="{{ $settings['required_images_for_ready'] ?? 3 }}" min="1" max="4"></label>
+                <label>{{ $ru ? 'Фото для ready' : 'Imagini pentru ready' }}<input type="number" name="required_images_for_ready" value="{{ $settings['required_images_for_ready'] ?? 1 }}" min="1" max="4"></label>
             </div>
             <label>{{ __('ui.parser_allowed_domains') }}<textarea name="allowed_domains">{{ implode("\n", $settings['allowed_domains'] ?? []) }}</textarea></label>
             <label>{{ __('ui.parser_blocked_domains') }}<textarea name="blocked_domains">{{ implode("\n", $settings['blocked_domains'] ?? []) }}</textarea></label>
