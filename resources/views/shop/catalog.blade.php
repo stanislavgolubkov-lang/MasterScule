@@ -13,29 +13,63 @@
     $viewMode = $viewMode ?? 'grid';
     $drawerCategories = $subcategories->isNotEmpty() ? $subcategories : $catalogTree;
     $sidebarCurrentLabel = $activeCategory->display_name ?? __('ui.all_categories');
+    $editorialCatalogType = match(optional($activeCategory)->slug) {
+        'echipamente-pentru-service' => 'service',
+        'instrument-manual' => 'garage',
+        default => null,
+    };
+
+    $catalogEditorialHero = $editorialCatalogType ? [
+        'tone' => $editorialCatalogType,
+        'breadcrumbs' => [
+            ['label' => __('ui.home'), 'url' => route('home')],
+            ['label' => __('ui.catalog'), 'url' => route('catalog')],
+            ['label' => $activeCategory->display_name],
+        ],
+        'kicker' => __("ui.{$editorialCatalogType}_hero_kicker"),
+        'title' => $activeCategory->display_name,
+        'text' => __("ui.{$editorialCatalogType}_hero_text"),
+        'image' => "/images/{$editorialCatalogType}-hero.webp",
+        'image_alt' => __("ui.{$editorialCatalogType}_image_alt"),
+        'badge_title' => __("ui.{$editorialCatalogType}_badge_title"),
+        'badge_text' => __("ui.{$editorialCatalogType}_badge_text"),
+        'actions' => [
+            ['label' => __("ui.{$editorialCatalogType}_action_sections"), 'url' => '#catalog-content'],
+            ['label' => __('ui.contact_us'), 'url' => route('page', 'contacts')],
+        ],
+        'points' => [
+            __("ui.{$editorialCatalogType}_point_one"),
+            __("ui.{$editorialCatalogType}_point_two"),
+            __("ui.{$editorialCatalogType}_point_three"),
+        ],
+    ] : null;
 @endphp
 
-<section class="shell page-title catalog-title">
-    <p class="catalog-breadcrumbs">
-        <a href="{{ route('home') }}">{{ __('ui.home') }}</a>
-        <span>/</span>
-        <a href="{{ route('catalog') }}">{{ __('ui.catalog') }}</a>
-        @foreach(($breadcrumbs ?? []) as $breadcrumb)
+@if($catalogEditorialHero)
+    @include('shop.partials.editorial-hero', ['hero' => $catalogEditorialHero])
+@else
+    <section class="shell page-title catalog-title">
+        <p class="catalog-breadcrumbs">
+            <a href="{{ route('home') }}">{{ __('ui.home') }}</a>
             <span>/</span>
-            <a href="{{ route('catalog', $breadcrumb->slug) }}">{{ $breadcrumb->display_name }}</a>
-        @endforeach
-    </p>
-    <h1>{{ $activeCategory->display_name ?? $activeBrand->name ?? __('ui.catalog_products') }}</h1>
-    <span>
-        @if(! $activeCategory && ! isset($activeBrand))
-            {{ __('ui.catalog_intro') }}
-        @elseif($showProducts ?? true)
-            {{ __('ui.products_count', ['count' => $products->total()]) }}
-        @else
-            {{ __('ui.catalog_intro') }}
-        @endif
-    </span>
-</section>
+            <a href="{{ route('catalog') }}">{{ __('ui.catalog') }}</a>
+            @foreach(($breadcrumbs ?? []) as $breadcrumb)
+                <span>/</span>
+                <a href="{{ route('catalog', $breadcrumb->slug) }}">{{ $breadcrumb->display_name }}</a>
+            @endforeach
+        </p>
+        <h1>{{ $activeCategory->display_name ?? $activeBrand->name ?? __('ui.catalog_products') }}</h1>
+        <span>
+            @if(! $activeCategory && ! isset($activeBrand))
+                {{ __('ui.catalog_intro') }}
+            @elseif($showProducts ?? true)
+                {{ __('ui.products_count', ['count' => $products->total()]) }}
+            @else
+                {{ __('ui.catalog_intro') }}
+            @endif
+        </span>
+    </section>
+@endif
 
 @if($showProducts ?? true)
     <div id="mobile-filters" class="filter-drawer" hidden>
@@ -60,7 +94,7 @@
     </div>
 @endif
 
-<section class="shell catalog-layout {{ $showSide ? '' : 'catalog-layout-wide' }}">
+<section id="catalog-content" class="shell catalog-layout {{ $showSide ? '' : 'catalog-layout-wide' }} {{ $catalogEditorialHero ? 'catalog-editorial-layout' : '' }}">
     @if($showSide)
         <aside class="catalog-rail">
             @if($catalogTree->isNotEmpty())
@@ -193,6 +227,7 @@
             <div class="catalog-toolbar">
                 <button type="button" class="filter-drawer-button" data-open="mobile-filters">{{ __('ui.filters') }}</button>
                 <form class="sort-row" method="get">
+                    @if(request('task'))<input type="hidden" name="task" value="{{ request('task') }}">@endif
                     @if(request('q'))<input type="hidden" name="q" value="{{ request('q') }}">@endif
                     @foreach($selectedBrands as $brandSlug)<input type="hidden" name="brand[]" value="{{ $brandSlug }}">@endforeach
                     @if(request('price_min'))<input type="hidden" name="price_min" value="{{ request('price_min') }}">@endif

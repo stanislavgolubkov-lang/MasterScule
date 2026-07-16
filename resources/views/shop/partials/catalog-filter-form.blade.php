@@ -1,10 +1,15 @@
 @php
     $selectedBrands = $selectedBrands ?? [];
     $viewMode = $viewMode ?? 'grid';
-    $resetUrl = $activeCategory ? route('catalog', $activeCategory->slug) : route('catalog');
+    $resetParameters = array_filter([
+        'category' => $activeCategory?->slug,
+        'task' => request('task'),
+    ]);
+    $resetUrl = route('catalog', $resetParameters);
 @endphp
 
 <form method="get" class="catalog-filter-form">
+    @if(request('task'))<input type="hidden" name="task" value="{{ request('task') }}">@endif
     @if(request('q'))<input type="hidden" name="q" value="{{ request('q') }}">@endif
     @if(request('sort'))<input type="hidden" name="sort" value="{{ request('sort') }}">@endif
     @if($viewMode)<input type="hidden" name="view" value="{{ $viewMode }}">@endif

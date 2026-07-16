@@ -15,6 +15,126 @@ class ShopController extends Controller
     private const NEW_PRODUCTS_PER_PAGE = 50;
     private const RELATED_PRODUCTS_LIMIT = 20;
 
+    private const TASK_CATALOG_RULES = [
+        'garage' => [
+            'categories' => ['instrument-manual'],
+        ],
+        'service' => [
+            'categories' => [
+                'echipamente-pentru-service',
+                'scule-speciale-auto',
+                'scule-pneumatice',
+                'instrumente-cu-acumulator',
+                'instrumente-de-masurare',
+            ],
+            'relevance_keywords' => ['сервисная установка', 'технических жидкостей', 'прокачки', 'домкрат', 'подъемник', 'подъёмник', 'пресс', 'гидравл', 'cric', 'ridicare', 'hidraulic'],
+        ],
+        'tires' => [
+            'categories' => [
+                'vulcanizare',
+                'scule-pentru-roti-vulcanizare',
+                'chei-pneumatice',
+                'cricuri-hidraulice',
+                'scule-pentru-suspensie',
+            ],
+            'keywords' => ['шиномонтаж', 'подкачки шин', 'шины', 'anvelope', 'vulcanizare', 'wheel service', 'tire'],
+            'relevance_keywords' => ['подкачки шин', 'шиномонтаж', 'гайковерт', 'гайковёрт', 'anvelope', 'vulcanizare', 'tire'],
+        ],
+        'pneumatic' => [
+            'categories' => ['scule-pneumatice'],
+            'relevance_keywords' => ['гайковерт', 'гайковёрт', 'impact wrench'],
+        ],
+        'brakes' => [
+            'categories' => [
+                'scule-pentru-frane',
+                'scule-pentru-suspensie',
+                'extractoare-si-prese',
+                'dispozitive-pneumatice-service',
+            ],
+            'keywords' => ['тормоз', 'суппорт', 'подвеск', 'frane', 'suspensie', 'brake'],
+        ],
+        'engine' => [
+            'categories' => [
+                'grup-motor',
+                'scule-pentru-motor',
+                'scule-pentru-filtre-ulei',
+                'diagnoza-auto',
+                'macarale-standuri-suporti-motor',
+            ],
+            'keywords' => ['двигател', 'грм', 'распредвал', 'коленвал', 'motor', 'engine', 'timing'],
+        ],
+        'auto-repair' => [
+            'categories' => [
+                'grup-motor',
+                'scule-pentru-motor',
+                'scule-pentru-filtre-ulei',
+                'scule-pentru-frane',
+                'scule-pentru-suspensie',
+                'extractoare-si-prese',
+                'diagnoza-auto',
+                'dispozitive-pneumatice-service',
+            ],
+            'keywords' => ['двигател', 'тормоз', 'суппорт', 'подвеск', 'motor', 'engine', 'frane', 'suspensie', 'brake'],
+        ],
+        'electric' => [
+            'categories' => ['instrumente-electromontaj'],
+        ],
+        'workshop' => [
+            'categories' => ['mobilier-pentru-service', 'dulapuri-si-organizare'],
+            'keywords' => [
+                'Тележк',
+                'тележк',
+                'Шкаф',
+                'шкаф',
+                'Верстак',
+                'верстак',
+                'Органайзер',
+                'органайзер',
+                'Ящик для инструмент',
+                'ящик для инструмент',
+                'Стол для сервис',
+                'стол для сервис',
+                'Держатель инструмент',
+                'держатель инструмент',
+                'Поддон магнит',
+                'поддон магнит',
+                'carucior',
+                'dulap',
+                'organizator',
+                'banc de lucru',
+                'tool chest',
+                'workbench',
+            ],
+        ],
+    ];
+
+    private const EMPTY_CATEGORY_FALLBACKS = [
+        'pistoale-pneumatice-si-impact' => ['chei-pneumatice'],
+        'pistoale-pentru-silicon-si-gresare' => ['scule-pneumatice'],
+        'accesorii-pneumatice' => ['furtunuri-cuple-accesorii', 'consumabile-pentru-scule-pneumatice'],
+        'alte-scule-pneumatice' => ['scule-pneumatice'],
+        'compresoare' => ['scule-pneumatice'],
+        'extractoare-si-scule-speciale' => ['extractoare-si-prese'],
+        'clesti-si-instrumente-taiere' => ['instrument-manual'],
+        'electroinstrumente' => ['instrumente-cu-acumulator'],
+        'masini-gaurit-insurubat' => ['instrumente-cu-acumulator'],
+        'polizoare' => ['instrumente-cu-acumulator'],
+        'accesorii-scule-electrice' => ['instrumente-cu-acumulator', 'accesorii-si-consumabile'],
+        'pistoale-impact-cu-acumulator' => ['instrumente-cu-acumulator'],
+        'chei-cu-acumulator' => ['instrumente-cu-acumulator'],
+        'baterii-incarcatoare' => ['instrumente-cu-acumulator'],
+        'testere-electrice-si-indicatoare' => ['instrumente-electromontaj'],
+        'clesti-electrician-si-cabluri' => ['instrumente-electromontaj'],
+        'lipire-si-consumabile' => ['instrumente-electromontaj'],
+        'multimetre-testere' => ['instrumente-de-masurare'],
+        'instrumente-control-verificare' => ['instrumente-de-masurare'],
+        'discuri-perii-abrazive' => ['accesorii-si-consumabile'],
+        'burghie-freze' => ['accesorii-si-consumabile'],
+        'cutite-lame-rezerve' => ['accesorii-si-consumabile'],
+        'scule-vehicule-grele' => ['scule-speciale-auto'],
+        'diagnoza-auto' => ['scule-speciale-auto'],
+    ];
+
     private const MAIN_CATALOG_SLUGS = [
         'mobilier-pentru-service',
         'scule-speciale-auto',
@@ -51,12 +171,58 @@ class ShopController extends Controller
             ? Category::with(['parent.parent', 'childrenRecursive'])->where('slug', $category)->firstOrFail()
             : null;
         $categoryIds = $activeCategory?->descendantsAndSelfIds();
+        $requestedTask = $request->string('task')->toString();
+        $taskKey = array_key_exists($requestedTask, self::TASK_CATALOG_RULES)
+            ? $requestedTask
+            : $this->defaultTaskForCategory($activeCategory?->slug);
+        $taskRule = $taskKey ? self::TASK_CATALOG_RULES[$taskKey] : null;
+
+        if ($taskKey && $requestedTask !== $taskKey) {
+            $request->query->set('task', $taskKey);
+        }
+
+        $taskCategoryIds = $taskRule
+            ? $this->categoryIdsForSlugs($taskRule['categories'] ?? [])
+            : [];
+        $catalogCategoryIds = $categoryIds;
+
+        if ($activeCategory && ! $taskRule && ! $this->categoryHasAvailableProducts($categoryIds)) {
+            $catalogCategoryIds = $this->fallbackCategoryIds($activeCategory);
+        }
+
         $showProducts = $this->shouldShowProducts($request, $activeCategory);
 
         $products = Product::with(['brand', 'category', 'categories'])
             ->availableForSale()
             ->when(! $showProducts, fn ($query) => $query->whereRaw('1 = 0'))
-            ->when($activeCategory, fn ($query) => $query->inCatalogCategories($categoryIds))
+            ->when($activeCategory && ! $taskRule, fn ($query) => $query->inCatalogCategories($catalogCategoryIds))
+            ->when($taskRule, function ($query) use ($taskRule, $taskCategoryIds) {
+                $query->where(function ($taskQuery) use ($taskRule, $taskCategoryIds) {
+                    if ($taskCategoryIds !== []) {
+                        $taskQuery->where(fn ($categoryQuery) => $categoryQuery->inCatalogCategories($taskCategoryIds));
+                    } else {
+                        $taskQuery->whereRaw('1 = 0');
+                    }
+
+                    foreach ($taskRule['keywords'] ?? [] as $keyword) {
+                        $like = '%'.$keyword.'%';
+
+                        $taskQuery->orWhere(function ($keywordQuery) use ($like) {
+                            $keywordQuery
+                                ->where('name', 'like', $like)
+                                ->orWhere('name_ru', 'like', $like)
+                                ->orWhere('name_ro', 'like', $like)
+                                ->orWhere('short_description', 'like', $like)
+                                ->orWhere('short_description_ru', 'like', $like)
+                                ->orWhere('short_description_ro', 'like', $like)
+                                ->orWhere('description', 'like', $like)
+                                ->orWhere('description_ru', 'like', $like)
+                                ->orWhere('description_ro', 'like', $like)
+                                ->orWhere('attributes', 'like', $like);
+                        });
+                    }
+                });
+            })
             ->when($request->filled('q'), function ($query) use ($request) {
                 $terms = $this->searchTerms($request->string('q')->toString());
 
@@ -105,7 +271,16 @@ class ShopController extends Controller
                 }
             });
 
-        match ($request->string('sort')->toString()) {
+        $sort = $request->string('sort')->toString();
+
+        if ($sort === '' && $taskRule) {
+            $this->orderByKeywordRelevance(
+                $products,
+                $taskRule['relevance_keywords'] ?? $taskRule['keywords'] ?? []
+            );
+        }
+
+        match ($sort) {
             'price_asc' => $products->orderBy('price'),
             'price_desc' => $products->orderByDesc('price'),
             'new' => $products->orderByDesc('is_new')->orderByDesc('created_at'),
@@ -216,7 +391,18 @@ class ShopController extends Controller
 
     public function promotions()
     {
-        return $this->productCollection(__('ui.promotions'), Product::query()->where('is_discounted', true));
+        return view('shop.collection', [
+            'title' => __('ui.promotions'),
+            'subtitle' => __('ui.promotions_page_subtitle'),
+            'products' => Product::with(['brand', 'category', 'categories'])
+                ->where('is_discounted', true)
+                ->availableForSale()
+                ->orderByDesc('is_featured')
+                ->orderByDesc('created_at')
+                ->paginate(20),
+            'collectionClass' => 'product-grid-compact promotions-product-grid',
+            'emptyState' => 'promotions',
+        ]);
     }
 
     public function newProducts()
@@ -259,13 +445,14 @@ class ShopController extends Controller
             $products = $products->concat($backfillProducts)->values();
         }
 
-        return view('shop.collection', [
-            'title' => __('ui.new_items'),
-            'subtitle' => __('ui.collection_text'),
-            'products' => $products,
-            'collectionClass' => 'product-grid-compact',
-        ]);
-    }
+          return view('shop.collection', [
+              'title' => __('ui.new_items'),
+              'subtitle' => __('ui.collection_text'),
+              'products' => $products,
+              'collectionClass' => 'product-grid-compact new-arrivals-grid',
+              'collectionHero' => 'new',
+          ]);
+      }
 
     public function bestsellers()
     {
@@ -397,6 +584,106 @@ class ShopController extends Controller
     private function catalogTree()
     {
         return $this->catalogMainSections();
+    }
+
+    private function categoryIdsForSlugs(array $slugs): array
+    {
+        if ($slugs === []) {
+            return [];
+        }
+
+        return Category::with('childrenRecursive')
+            ->where('is_active', true)
+            ->whereIn('slug', $slugs)
+            ->get()
+            ->flatMap(fn (Category $category) => $category->descendantsAndSelfIds())
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function orderByKeywordRelevance($query, array $keywords): void
+    {
+        $keywords = collect($keywords)
+            ->map(fn ($keyword) => trim((string) $keyword))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($keywords->isEmpty()) {
+            return;
+        }
+
+        $columns = ['name', 'name_ru', 'name_ro', 'short_description', 'short_description_ru', 'short_description_ro'];
+        $conditions = [];
+        $bindings = [];
+
+        foreach ($keywords as $keyword) {
+            foreach ($columns as $column) {
+                $conditions[] = "{$column} like ?";
+                $bindings[] = '%'.$keyword.'%';
+            }
+        }
+
+        $query->orderByRaw('case when '.implode(' or ', $conditions).' then 0 else 1 end', $bindings);
+    }
+
+    private function categoryHasAvailableProducts(?array $categoryIds): bool
+    {
+        return $categoryIds !== null
+            && $categoryIds !== []
+            && Product::inCatalogCategories($categoryIds)->availableForSale()->exists();
+    }
+
+    private function fallbackCategoryIds(Category $category): array
+    {
+        $fallbackSlugs = self::EMPTY_CATEGORY_FALLBACKS[$category->slug] ?? [];
+        $fallbackIds = $this->categoryIdsForSlugs($fallbackSlugs);
+
+        if ($fallbackIds !== []) {
+            return $fallbackIds;
+        }
+
+        $parent = $category->parent;
+
+        while ($parent) {
+            $parent->loadMissing('childrenRecursive');
+            $parentIds = $parent->descendantsAndSelfIds();
+
+            if ($this->categoryHasAvailableProducts($parentIds)) {
+                return $parentIds;
+            }
+
+            $parent = $parent->parent;
+        }
+
+        return $category->descendantsAndSelfIds();
+    }
+
+    private function defaultTaskForCategory(?string $slug): ?string
+    {
+        return match ($slug) {
+            'echipamente-pentru-service',
+            'echipamente-service',
+            'cricuri-si-ridicare',
+            'prese-hidraulice',
+            'cricuri-hidraulice',
+            'capre-auto-si-suporturi',
+            'pompe-si-cilindri-hidraulici',
+            'echipamente-schimb-ulei',
+            'echipamente-spalare-piese',
+            'echipamente-depozitare-manipulare',
+            'macarale-standuri-suporti-motor' => 'service',
+            'vulcanizare' => 'tires',
+            'scule-motor-frane-suspensie' => 'auto-repair',
+            'mobilier-pentru-service',
+            'dulapuri-si-organizare',
+            'sisteme-de-depozitare-si-transport',
+            'carucioare-pentru-rafturi',
+            'accesorii-pentru-bancuri-de-lucru' => 'workshop',
+            default => null,
+        };
     }
 
     private function catalogMainSections()

@@ -19,14 +19,14 @@
         ];
 
     $taskCards = [
-        ['key' => 'garage', 'href' => route('catalog', 'instrument-manual'), 'tone' => 'blue', 'image' => '/images/tasks/for-garage.png'],
-        ['key' => 'service', 'href' => route('catalog', 'echipamente-pentru-service'), 'tone' => 'dark', 'image' => '/images/tasks/for-service.png'],
-        ['key' => 'tires', 'href' => route('catalog', 'vulcanizare'), 'tone' => 'orange', 'image' => '/images/tasks/for-tires.png'],
-        ['key' => 'pneumatic', 'href' => route('catalog', 'scule-pneumatice'), 'tone' => 'orange', 'image' => '/images/tasks/for-pneumatic.png'],
-        ['key' => 'brakes', 'href' => route('catalog', 'scule-motor-frane-suspensie'), 'tone' => 'blue', 'image' => '/images/tasks/for-brakes-suspension.png'],
-        ['key' => 'engine', 'href' => route('catalog', 'scule-motor-frane-suspensie'), 'tone' => 'dark', 'image' => '/images/tasks/for-engine.png'],
-        ['key' => 'electric', 'href' => route('catalog', 'instrumente-electromontaj'), 'tone' => 'blue', 'image' => '/images/tasks/for-electric.png'],
-        ['key' => 'workshop', 'href' => route('catalog', 'dulapuri-si-organizare'), 'tone' => 'dark', 'image' => '/images/tasks/for-workshop.png'],
+        ['key' => 'garage', 'href' => route('catalog', ['category' => 'instrument-manual', 'task' => 'garage']), 'tone' => 'blue', 'image' => '/images/tasks/for-garage.png'],
+        ['key' => 'service', 'href' => route('catalog', ['category' => 'echipamente-pentru-service', 'task' => 'service']), 'tone' => 'dark', 'image' => '/images/tasks/for-service.png'],
+        ['key' => 'tires', 'href' => route('catalog', ['category' => 'vulcanizare', 'task' => 'tires']), 'tone' => 'orange', 'image' => '/images/tasks/for-tires.png'],
+        ['key' => 'pneumatic', 'href' => route('catalog', ['category' => 'scule-pneumatice', 'task' => 'pneumatic']), 'tone' => 'orange', 'image' => '/images/tasks/for-pneumatic.png'],
+        ['key' => 'brakes', 'href' => route('catalog', ['category' => 'scule-motor-frane-suspensie', 'task' => 'brakes']), 'tone' => 'blue', 'image' => '/images/tasks/for-brakes-suspension.png'],
+        ['key' => 'engine', 'href' => route('catalog', ['category' => 'scule-motor-frane-suspensie', 'task' => 'engine']), 'tone' => 'dark', 'image' => '/images/tasks/for-engine.png'],
+        ['key' => 'electric', 'href' => route('catalog', ['category' => 'instrumente-electromontaj', 'task' => 'electric']), 'tone' => 'blue', 'image' => '/images/tasks/for-electric.png'],
+        ['key' => 'workshop', 'href' => route('catalog', ['category' => 'dulapuri-si-organizare', 'task' => 'workshop']), 'tone' => 'dark', 'image' => '/images/tasks/for-workshop.png'],
     ];
 @endphp
 
