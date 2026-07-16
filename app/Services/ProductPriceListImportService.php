@@ -2,10 +2,13 @@
 
 namespace App\Services;
 
+use App\Jobs\ProcessExternalPriceListRowJob;
+use App\Jobs\ProcessPriceListRowJob;
 use App\Models\Product;
 use App\Models\ProductParserBatch;
 use App\Models\ProductParserItem;
 use App\Models\ProductParserSource;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
@@ -15,7 +18,9 @@ class ProductPriceListImportService
     public function __construct(
         private ProductPriceListReader $reader,
         private ProductCategoryDetector $categoryDetector,
+        private ProductCategoryResolverService $categoryResolver,
         private ProductParserContentBuilder $contentBuilder,
+        private ProductTranslationService $translation,
         private ProductSearchService $search,
         private ProductImageCollectorService $imageCollector,
         private ProductParserItemPreparationService $preparation,
@@ -24,19 +29,31 @@ class ProductPriceListImportService
 
     public function dryRun(ProductParserBatch $batch): void
     {
-        $this->run($batch, true);
+        $this->run($batch, true, true);
     }
 
     public function import(ProductParserBatch $batch): void
     {
-        $this->run($batch, false);
+        $this->run($batch, false, false);
     }
 
-    private function run(ProductParserBatch $batch, bool $dryRun): void
+    public function queueImport(ProductParserBatch $batch): void
     {
+        $this->run($batch, false, true);
+    }
+
+    private function run(ProductParserBatch $batch, bool $dryRun, bool $queueRows = false): void
+    {
+        $options = $batch->options_json ?: [];
+        if ($queueRows) {
+            $options['staging_complete'] = false;
+        }
+
         $batch->forceFill([
             'status' => 'processing',
             'started_at' => $batch->started_at ?: now(),
+            'finished_at' => null,
+            'options_json' => $options,
         ])->save();
         $batch->addLog($dryRun ? 'Price list dry-run started' : 'Price list import started', [
             'file' => $batch->file_name,
@@ -45,7 +62,7 @@ class ProductPriceListImportService
 
         try {
             $path = Storage::disk('local')->path((string) $batch->file_path);
-            $parsed = $this->reader->read($path, (string) $batch->file_type);
+            $parsed = $this->reader->stream($path, (string) $batch->file_type);
         } catch (Throwable $e) {
             $batch->forceFill([
                 'status' => 'failed',
@@ -57,17 +74,20 @@ class ProductPriceListImportService
             return;
         }
 
-        $options = $batch->options_json ?: [];
         $rowLimit = $dryRun ? 0 : max(0, (int) ($options['row_limit'] ?? 0));
         $context = $this->initialContext($batch);
         $seenSkus = [];
         $existingProducts = $this->existingProductsIndex();
         $stats = $this->emptyStats();
+        $queuedItemIds = [];
 
+        if (! $dryRun && $this->batchIsCancelled($batch)) {
+            return;
+        }
         ProductParserItem::where('batch_id', $batch->id)->delete();
 
         foreach ($parsed['rows'] as $row) {
-            if (! $dryRun && $batch->fresh()->status === 'cancelled') {
+            if (! $dryRun && $stats['parsed_rows'] % 25 === 0 && $this->batchIsCancelled($batch)) {
                 break;
             }
 
@@ -95,7 +115,9 @@ class ProductPriceListImportService
                 $sku = $this->cleanSku((string) $row['sku']);
                 $normalizedSku = $this->normalizeSku($sku);
                 $brand = $this->brandValue($row['brand'] ?? null) ?: $context['brand'];
-                $duplicateKey = $this->brandKey($brand).'|'.$normalizedSku;
+                // Products use SKU as the global identity, so a repeated SKU must
+                // never create two drafts even when the supplier changes brand text.
+                $duplicateKey = $normalizedSku;
 
                 if (isset($seenSkus[$duplicateKey])) {
                     $this->skippedItem($batch, $row, $sku, 'Duplicate SKU inside price list.', $brand, $normalizedSku, $context);
@@ -119,6 +141,7 @@ class ProductPriceListImportService
                 $existing = $this->findExistingProduct($sku, $brand, $existingProducts);
                 $category = $this->categoryDetector->detect($sku, $name, $brand, $group, $subgroup, $vehicleApplication);
                 $content = $this->contentBuilder->build($sku, $name, $brand, $group, $category);
+                $content = $this->contentBuilder->ensureComplete($content, $sku, $name, $brand, $group, $category);
 
                 if ($needsPriceReview) {
                     $stats['rows_without_price']++;
@@ -149,7 +172,10 @@ class ProductPriceListImportService
                     'normalized_sku' => $normalizedSku,
                     'brand' => $brand,
                     'category_id' => $category['category_id'] ?: ($batch->category_default_id ?: null),
-                    'status' => $this->initialItemStatus($dryRun, $existing !== null, $category['needs_review']),
+                    'status' => $queueRows
+                        ? 'tristool_queued'
+                        : $this->initialItemStatus($dryRun, $existing !== null, $category['needs_review']),
+                    'processing_stage' => $queueRows ? 'tristool_queued' : null,
                     'confidence_score' => $category['confidence'],
                     'raw_name' => $row['name'],
                     'parsed_name' => $name,
@@ -197,6 +223,12 @@ class ProductPriceListImportService
                     'existing_product_id' => $existing?->id,
                 ]);
 
+                if ($queueRows) {
+                    $queuedItemIds[] = $item->id;
+
+                    continue;
+                }
+
                 if ($dryRun) {
                     continue;
                 }
@@ -228,6 +260,12 @@ class ProductPriceListImportService
                     }
 
                     $batch->addLog('Existing product found. No automatic update was made.', ['sku' => $sku, 'product_id' => $existing->id]);
+
+                    continue;
+                }
+
+                if ($item->needs_category_review) {
+                    $item->forceFill(['status' => 'needs_category_review'])->save();
 
                     continue;
                 }
@@ -269,11 +307,12 @@ class ProductPriceListImportService
             'headers' => $parsed['headers'] ?? [],
             'mapping' => $parsed['mapping'] ?? [],
             'dry_run' => $dryRun,
+            'queued_rows' => $queueRows ? count($queuedItemIds) : 0,
         ];
 
-        $cancelled = $batch->fresh()->status === 'cancelled';
+        $cancelled = $this->batchIsCancelled($batch);
 
-        $batch->forceFill([
+        $batchValues = [
             'sku_count' => $stats['product_rows'],
             'total_rows' => $parsed['total_rows'],
             'parsed_rows' => $stats['parsed_rows'],
@@ -291,17 +330,385 @@ class ProductPriceListImportService
             'planned_drafts' => $stats['planned_drafts'],
             'error_rows' => $stats['error_rows'],
             'dry_run_report_json' => $report,
-            'status' => $cancelled
+        ];
+
+        if ($queueRows && ! $cancelled) {
+            $options['staging_complete'] = true;
+            $batchValues['options_json'] = $options;
+            $batchValues['status'] = 'processing';
+            $batchValues['finished_at'] = null;
+        } else {
+            $batchValues['status'] = $cancelled
                 ? 'cancelled'
                 : ($dryRun
                     ? ($stats['error_rows'] > 0 ? 'completed_with_errors' : 'dry_run_completed')
-                    : ($stats['error_rows'] > 0 ? 'completed_with_errors' : 'completed')),
-            'finished_at' => now(),
-        ])->save();
+                    : ($stats['error_rows'] > 0 ? 'completed_with_errors' : 'completed'));
+            $batchValues['finished_at'] = now();
+        }
+
+        $batch->forceFill($batchValues)->save();
         $batch->addLog(
-            $cancelled ? 'Price list import cancelled' : ($dryRun ? 'Price list dry-run completed' : 'Price list import completed'),
+            $cancelled
+                ? 'Price list import cancelled'
+                : ($queueRows
+                    ? 'Price list rows queued for enrichment'
+                    : ($dryRun ? 'Price list dry-run completed' : 'Price list import completed')),
             $report
         );
+
+        if ($queueRows && ! $cancelled) {
+            $this->dispatchQueuedItems($batch, $queuedItemIds);
+            $this->finalizeQueuedImport($batch);
+        }
+    }
+
+    public function processQueuedItem(ProductParserItem $item): void
+    {
+        $this->processExternalQueuedItem($item);
+    }
+
+    public function processFastQueuedItem(ProductParserItem $item): void
+    {
+        $item->loadMissing(['batch', 'existingProduct', 'imageAssets', 'category']);
+        $batch = $item->batch;
+
+        if (! $batch || $this->batchIsCancelled($batch)) {
+            $this->rejectIfPresent($item);
+
+            return;
+        }
+
+        $existing = $item->existingProduct ?: Product::where('sku', $item->sku)->first();
+        if ($existing && (int) $item->existing_product_id !== (int) $existing->id) {
+            $item->forceFill(['existing_product_id' => $existing->id])->save();
+        }
+
+        $sourceFound = $this->enrichImages($item, $item->brand, 'tristool');
+        $item->refresh();
+        $item->forceFill(['tristool_checked_at' => now()])->save();
+
+        if (! $sourceFound || ! $this->itemIsAutomaticallyComplete($item)) {
+            $this->queueExternalCheck($item);
+
+            return;
+        }
+
+        $this->finalizeResolvedItem($item, $existing, 'tristool_ready');
+    }
+
+    public function processExternalQueuedItem(ProductParserItem $item): void
+    {
+        $item->loadMissing(['batch', 'existingProduct', 'imageAssets', 'category']);
+        $batch = $item->batch;
+
+        if (! $batch || $this->batchIsCancelled($batch)) {
+            $this->rejectIfPresent($item);
+
+            return;
+        }
+
+        $existing = $item->existingProduct ?: Product::where('sku', $item->sku)->first();
+
+        if ($existing && (int) $item->existing_product_id !== (int) $existing->id) {
+            $item->forceFill(['existing_product_id' => $existing->id])->save();
+        }
+
+        $item->increment('external_attempts');
+        $sourceFound = $this->enrichImages($item, $item->brand, 'external');
+        $item->refresh();
+        $item->forceFill(['external_checked_at' => now()])->save();
+
+        if (! $sourceFound) {
+            $item->forceFill([
+                'status' => 'needs_manual_review',
+                'processing_stage' => 'external_manual',
+                'needs_source_review' => true,
+                'needs_content_review' => true,
+                'needs_translation_review' => true,
+                'needs_image_review' => true,
+                'error_message' => 'All automatic TrisTool and external-source recovery attempts were exhausted.',
+            ])->save();
+
+            return;
+        }
+
+        if ($item->needs_category_review) {
+            $item->forceFill([
+                'status' => 'needs_manual_review',
+                'processing_stage' => 'external_manual',
+                'error_message' => trim(($item->error_message ? $item->error_message.' ' : '')
+                    .'Automatic category detection and category creation were exhausted.'),
+            ])->save();
+
+            return;
+        }
+        $item->refresh();
+
+        $item = $this->freshActiveItem($item);
+        if (! $item) {
+            return;
+        }
+
+        if ($item->needs_source_review
+            || $item->needs_content_review
+            || $item->needs_translation_review
+            || $item->imageAssets()->doesntExist()) {
+            $item->forceFill([
+                'status' => 'needs_manual_review',
+                'processing_stage' => 'external_manual',
+            ])->save();
+
+            return;
+        }
+
+        $this->finalizeResolvedItem($item, $existing, 'external_ready');
+    }
+
+    private function finalizeResolvedItem(ProductParserItem $item, ?Product $existing, string $processingStage): void
+    {
+        $item->loadMissing(['batch', 'imageAssets', 'category']);
+        $batch = $item->batch;
+        if (! $batch || $this->batchIsCancelled($batch)) {
+            $this->rejectIfPresent($item);
+
+            return;
+        }
+
+        $options = $batch->options_json ?: [];
+        $dryRun = $batch->import_mode === 'dry_run';
+
+        if ($existing) {
+            $isParserDraft = $existing->status === 'draft'
+                && (int) $existing->source_import_batch_id === (int) $batch->id;
+
+            if (! $dryRun && ($options['add_photos_to_existing'] ?? true) === true) {
+                $fresh = $this->freshActiveItem($item);
+                if (! $fresh) {
+                    return;
+                }
+                $this->preparation->prepare(
+                    $fresh,
+                    ($options['process_images'] ?? true) === true,
+                );
+            }
+
+            if ($isParserDraft) {
+                $fresh = $this->freshActiveItem($item, ['imageAssets', 'category', 'batch']);
+                if ($fresh) {
+                    $this->drafts->refreshParserDraft($fresh, $existing);
+                    $fresh->forceFill(['processing_stage' => $processingStage])->save();
+                }
+
+                return;
+            }
+
+            if ($fresh = $this->freshActiveItem($item)) {
+                $fresh->forceFill([
+                    'status' => 'existing_product_found',
+                    'processing_stage' => $processingStage,
+                    'error_message' => null,
+                ])->save();
+            }
+
+            return;
+        }
+
+        $item->forceFill([
+            'status' => $dryRun ? 'dry_run_ready' : 'ready_for_review',
+            'processing_stage' => $processingStage,
+            'error_message' => null,
+        ])->save();
+
+        if (! $dryRun) {
+            $this->preparation->prepare(
+                $item->load(['imageAssets', 'batch']),
+                ($options['process_images'] ?? true) === true,
+            );
+            $item = $this->freshActiveItem($item);
+            if (! $item) {
+                return;
+            }
+        }
+
+        if (! $dryRun && ($options['create_drafts_automatically'] ?? true) === true) {
+            $item = $this->freshActiveItem($item, ['imageAssets', 'category', 'batch']);
+            if ($item) {
+                $this->drafts->createDraft($item);
+            }
+        }
+    }
+
+    private function itemIsAutomaticallyComplete(ProductParserItem $item): bool
+    {
+        $item->loadMissing('imageAssets');
+
+        return ! $item->needs_category_review
+            && ! $item->needs_source_review
+            && ! $item->needs_content_review
+            && ! $item->needs_translation_review
+            && $item->imageAssets->isNotEmpty();
+    }
+
+    private function queueExternalCheck(ProductParserItem $item): void
+    {
+        if (! $item->batch || $this->batchIsCancelled($item->batch)) {
+            $this->rejectIfPresent($item);
+
+            return;
+        }
+
+        $item->forceFill([
+            'status' => 'external_check_queued',
+            'processing_stage' => 'external_queued',
+            'error_message' => 'TrisTool fast check did not return a complete product card. External recovery queued.',
+        ])->save();
+        ProcessExternalPriceListRowJob::dispatch($item->id);
+    }
+
+    private function dispatchQueuedItems(ProductParserBatch $batch, array $itemIds): void
+    {
+        $dispatched = 0;
+        $failed = 0;
+
+        foreach ($itemIds as $index => $itemId) {
+            if ($index % 50 === 0 && $this->batchIsCancelled($batch)) {
+                ProductParserItem::whereIn('id', array_slice($itemIds, $index))
+                    ->whereIn('status', ['queued', 'tristool_queued'])
+                    ->update(['status' => 'rejected', 'processing_stage' => 'rejected']);
+                break;
+            }
+
+            try {
+                ProcessPriceListRowJob::dispatch($itemId);
+                $dispatched++;
+            } catch (Throwable $e) {
+                $failed++;
+                ProductParserItem::whereKey($itemId)->update([
+                    'status' => 'failed',
+                    'error_message' => 'Unable to enqueue row: '.$e->getMessage(),
+                ]);
+            }
+        }
+
+        $freshBatch = ProductParserBatch::find($batch->id);
+        if (! $freshBatch || $freshBatch->status === 'cancelled') {
+            return;
+        }
+
+        $options = $freshBatch->options_json ?: [];
+        $options['dispatched_rows'] = $dispatched;
+        $freshBatch->forceFill([
+            'options_json' => $options,
+            'error_rows' => max((int) $freshBatch->error_rows, $failed),
+        ])->save();
+        $freshBatch->addLog('Price list row dispatch completed', [
+            'queued' => count($itemIds),
+            'dispatched' => $dispatched,
+            'failed' => $failed,
+        ]);
+    }
+
+    private function freshActiveItem(ProductParserItem $item, array $relations = ['imageAssets', 'batch']): ?ProductParserItem
+    {
+        $fresh = ProductParserItem::with($relations)->find($item->id);
+
+        if (! $fresh || ! $fresh->batch || $fresh->batch->status === 'cancelled') {
+            if ($fresh) {
+                $this->rejectIfPresent($fresh);
+            }
+
+            return null;
+        }
+
+        return $fresh;
+    }
+
+    private function rejectIfPresent(ProductParserItem $item): void
+    {
+        ProductParserItem::whereKey($item->id)
+            ->whereNotIn('status', ['approved', 'draft_created', 'existing_product_found'])
+            ->update(['status' => 'rejected', 'processing_stage' => 'rejected']);
+    }
+
+    private function batchIsCancelled(ProductParserBatch $batch): bool
+    {
+        $status = ProductParserBatch::whereKey($batch->id)->value('status');
+
+        return $status === null || $status === 'cancelled';
+    }
+
+    public function finalizeQueuedImport(ProductParserBatch $batch): void
+    {
+        Cache::store(config('product_parser.lock_store', 'file'))
+            ->lock('parser-price-list-finalize:'.$batch->id, 30)
+            ->get(function () use ($batch) {
+            $batch = ProductParserBatch::find($batch->id);
+            if (! $batch) {
+                return;
+            }
+            $options = $batch->options_json ?: [];
+
+            if ($batch->status === 'cancelled' || ! ($options['staging_complete'] ?? false)) {
+                return;
+            }
+
+            $pending = $batch->items()
+                ->whereIn('status', [
+                    'queued',
+                    'searching',
+                    'tristool_queued',
+                    'tristool_searching',
+                    'external_check_queued',
+                    'external_searching',
+                    'processing_images',
+                    'parsed',
+                ])
+                ->exists();
+
+            if ($pending) {
+                return;
+            }
+
+            $report = $batch->dry_run_report_json ?: [];
+            $failedRows = $batch->items()->where('status', 'failed')->count();
+            $errorRows = max((int) ($report['error_rows'] ?? 0), $failedRows);
+            $createdDrafts = $batch->items()->whereNotNull('created_product_id')->count();
+            $rowsWithoutCategory = $batch->items()->where(function ($query) {
+                $query->whereNull('category_id')
+                    ->orWhere('needs_category_review', true);
+            })->count();
+            $plannedDrafts = $batch->items()
+                ->whereNull('existing_product_id')
+                ->whereIn('status', ['dry_run_ready', 'ready_for_review', 'draft_created'])
+                ->count();
+            $status = $errorRows > 0
+                ? 'completed_with_errors'
+                : ($batch->import_mode === 'dry_run' ? 'dry_run_completed' : 'completed');
+
+            if ($batch->status === $status && $batch->finished_at) {
+                return;
+            }
+
+            $report['created_drafts'] = $createdDrafts;
+            $report['error_rows'] = $errorRows;
+            $report['rows_without_category'] = $rowsWithoutCategory;
+            $report['planned_drafts'] = $plannedDrafts;
+            $report['queued_rows'] = 0;
+
+            $batch->forceFill([
+                'created_drafts' => $createdDrafts,
+                'error_rows' => $errorRows,
+                'rows_without_category' => $rowsWithoutCategory,
+                'planned_drafts' => $plannedDrafts,
+                'dry_run_report_json' => $report,
+                'status' => $status,
+                'finished_at' => now(),
+            ])->save();
+            $batch->addLog(
+                $batch->import_mode === 'dry_run' ? 'Price list dry-run enrichment completed' : 'Price list import completed',
+                $report,
+            );
+        });
     }
 
     private function emptyStats(): array
@@ -347,56 +754,96 @@ class ProductPriceListImportService
         ];
     }
 
-    private function enrichImages(ProductParserItem $item, ?string $brand): void
+    private function enrichImages(ProductParserItem $item, ?string $brand, string $scope = 'all'): bool
     {
         try {
-            $result = $this->search->searchForParser($item->sku, $brand, 'auto', false, $item->raw_name);
-
-            foreach ($result['sources'] ?? [] as $source) {
-                ProductParserSource::create([
-                    'parser_item_id' => $item->id,
-                    'url' => $source['url'],
-                    'domain' => $source['domain'] ?? parse_url($source['url'], PHP_URL_HOST),
-                    'title' => $source['title'] ?? null,
-                    'snippet' => $source['snippet'] ?? null,
-                    'source_type' => $source['source_type'] ?? 'generic',
-                    'confidence_score' => $source['confidence_score'] ?? null,
-                    'raw_data_json' => $source['raw_data_json'] ?? null,
-                ]);
+            $result = match ($scope) {
+                'tristool' => $this->search->searchTrisToolForParser($item->sku, $brand, $item->raw_name),
+                'external' => $this->search->searchExternalForParser($item->sku, $brand, $item->raw_name),
+                default => $this->search->searchForParser($item->sku, $brand, 'auto', false, $item->raw_name),
+            };
+            if (! ($result['found'] ?? false)) {
+                return false;
             }
 
+            foreach ($result['sources'] ?? [] as $source) {
+                ProductParserSource::updateOrCreate(
+                    [
+                        'parser_item_id' => $item->id,
+                        'url' => $source['url'],
+                    ],
+                    [
+                        'domain' => $source['domain'] ?? parse_url($source['url'], PHP_URL_HOST),
+                        'title' => $source['title'] ?? null,
+                        'snippet' => $source['snippet'] ?? null,
+                        'source_type' => $source['source_type'] ?? 'generic',
+                        'confidence_score' => $source['confidence_score'] ?? null,
+                        'raw_data_json' => $source['raw_data_json'] ?? null,
+                    ],
+                );
+            }
+
+            $this->categoryResolver->resolveFromSourceResult($item, $result);
+            $item->refresh();
+
             $images = array_values(array_filter($result['images'] ?? []));
-            $imageSourceDomain = $result['fallback_source_used'] ?? false
-                ? ($result['fallback_source_domain'] ?? null)
-                : ($result['official_source_domain'] ?? null);
+            $imageSourceDomain = parse_url($images[0] ?? '', PHP_URL_HOST)
+                ?: ($result['official_source_domain'] ?? null);
             $this->imageCollector->collect($item, $images, $imageSourceDomain);
-            $content = $this->contentBuilder->mergeOfficialContent(
-                [
-                    'name_ru' => $item->name_ru,
-                    'name_ro' => $item->name_ro,
-                    'short_description_ru' => $item->short_description_ru,
-                    'short_description_ro' => $item->short_description_ro,
-                    'description_ru' => $item->description_ru,
-                    'description_ro' => $item->description_ro,
-                    'needs_translation_review' => $item->needs_translation_review,
-                    'needs_content_review' => $item->needs_content_review,
-                    'generated_content' => $item->generated_content,
-                ],
-                $result['title'] ?? null,
-                $result['description'] ?? null,
+            $images = $item->imageAssets()->pluck('source_url')->values()->all();
+            $translated = $this->translation->bilingual($result);
+            $contentVariants = collect($result['content_variants'] ?? [])
+                ->map(function (array $variant) {
+                    $bilingual = $this->translation->bilingual($variant);
+
+                    return $variant + [
+                        'name_ru' => $bilingual['name_ru'],
+                        'name_ro' => $bilingual['name_ro'],
+                        'description_ru' => $bilingual['description_ru'],
+                        'description_ro' => $bilingual['description_ro'],
+                        'translation_complete' => $bilingual['complete'],
+                    ];
+                })
+                ->values()
+                ->all();
+            $content = [
+                'name_ru' => $translated['name_ru'],
+                'name_ro' => $translated['name_ro'],
+                'short_description_ru' => $translated['short_description_ru'],
+                'short_description_ro' => $translated['short_description_ro'],
+                'description_ru' => $translated['description_ru'],
+                'description_ro' => $translated['description_ro'],
+                'needs_translation_review' => ! $translated['complete'],
+                'needs_content_review' => ! filled($result['description'] ?? $result['description_ru'] ?? $result['description_ro'] ?? null),
+                'generated_content' => false,
+                'translation_source_type' => $translated['translation_source_type'],
+            ];
+            $content = $this->contentBuilder->ensureComplete(
+                $content,
                 $item->sku,
+                (string) ($item->raw_name ?: $item->found_title ?: $item->sku),
                 $brand,
             );
             $item->forceFill([
                 'found_title' => $result['title'] ?? $item->found_title,
                 'found_description' => $result['description'] ?? $item->found_description,
-                'found_specs_json' => array_merge($item->found_specs_json ?: [], $result['specs'] ?? []),
+                'found_specs_json' => array_merge($item->found_specs_json ?: [], ($result['specs'] ?? []) + [
+                    '_package_contents' => $result['package_contents'] ?? [],
+                    '_breadcrumb' => $result['breadcrumb'] ?? [],
+                    '_breadcrumb_ro' => $result['breadcrumb_ro'] ?? [],
+                    '_official_breadcrumb' => $result['official_breadcrumb'] ?? [],
+                    '_content_variants' => $contentVariants,
+                    '_automation_attempts' => $result['automation_attempts'] ?? 1,
+                    '_automation_exhausted' => $result['automation_exhausted'] ?? false,
+                ]),
                 'found_images_json' => $images,
                 'selected_images_json' => collect($images)->take(1)->values()->all(),
                 'source_urls_json' => $result['source_urls'] ?? [],
-                'tristools_url' => collect($result['sources'] ?? [])->firstWhere('domain', 'tristool.md')['url'] ?? (($result['source_urls'][0] ?? null)),
+                'tristools_url' => collect($result['sources'] ?? [])
+                    ->first(fn (array $source) => str_contains((string) ($source['domain'] ?? ''), 'tristool.md'))['url']
+                        ?? ($result['source_urls'][0] ?? null),
                 'tristools_match_confidence' => $result['confidence'] ?? null,
-                'needs_image_review' => true,
+                'needs_image_review' => $images === [],
                 'official_source_url' => $result['official_source_url'] ?? null,
                 'official_source_domain' => $result['official_source_domain'] ?? null,
                 'official_source_confidence' => $result['official_source_confidence'] ?? null,
@@ -413,16 +860,22 @@ class ProductPriceListImportService
                 'short_description_ro' => $content['short_description_ro'],
                 'description_ru' => $content['description_ru'],
                 'description_ro' => $content['description_ro'],
-                'needs_translation_review' => (bool) $content['needs_translation_review'],
-                'needs_content_review' => (bool) $content['needs_content_review'],
-                'generated_content' => (bool) $content['generated_content'],
+                'needs_translation_review' => ! $translated['complete'],
+                'needs_content_review' => ! filled($result['description'] ?? $result['description_ru'] ?? $result['description_ro'] ?? null),
+                'generated_content' => false,
+                'translation_source_type' => $translated['translation_source_type'],
+                'error_message' => null,
             ])->save();
+
+            return true;
         } catch (Throwable $e) {
             $item->forceFill([
                 'needs_image_review' => true,
                 'error_message' => trim(($item->error_message ? $item->error_message.' ' : '').'Image search failed: '.$e->getMessage()),
             ])->save();
             $item->batch?->addLog('Image search failed', ['sku' => $item->sku, 'error' => $e->getMessage()]);
+
+            return false;
         }
     }
 
@@ -498,16 +951,26 @@ class ProductPriceListImportService
     {
         $index = [];
 
-        Product::with('brand:id,name')
-            ->select(['id', 'sku', 'brand_id', 'status', 'source_import_batch_id'])
-            ->get()
+        Product::query()
+            ->leftJoin('brands', 'brands.id', '=', 'products.brand_id')
+            ->select([
+                'products.id',
+                'products.sku',
+                'products.brand_id',
+                'products.status',
+                'products.source_import_batch_id',
+                'brands.name as index_brand_name',
+            ])
+            ->orderBy('products.id')
+            ->cursor()
             ->each(function (Product $product) use (&$index) {
                 $normalizedSku = $this->normalizeSku($product->sku);
                 if ($normalizedSku === '') {
                     return;
                 }
 
-                $brandKey = $this->brandKey($product->brand?->name);
+                $brandKey = $this->brandKey($product->getAttribute('index_brand_name'));
+                unset($product->index_brand_name);
                 $index[$brandKey.'|'.$normalizedSku] = $product;
                 $index['*|'.$normalizedSku] ??= $product;
             });

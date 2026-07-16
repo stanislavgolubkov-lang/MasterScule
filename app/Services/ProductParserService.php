@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Category;
+use App\Models\Product;
 use App\Models\ProductParserItem;
 use App\Models\ProductParserSource;
 use Illuminate\Support\Str;
@@ -15,6 +16,8 @@ class ProductParserService
         private ProductImageCollectorService $imageCollector,
         private ProductParserItemPreparationService $preparation,
         private ProductParserContentBuilder $contentBuilder,
+        private ProductTranslationService $translation,
+        private ProductCategoryResolverService $categoryResolver,
     ) {}
 
     public function parseItem(ProductParserItem $item, bool $processImages = false, bool $officialOnly = false, bool $forceFallback = false): void
@@ -30,6 +33,7 @@ class ProductParserService
 
         try {
             $options = $batch?->options_json ?: [];
+            $existingProductId = Product::where('sku', $item->sku)->value('id');
             $result = match (true) {
                 $forceFallback => $this->search->searchFallbackForParser($item->sku, $item->brand),
                 $officialOnly => $this->search->searchOfficialForParser($item->sku, $item->brand),
@@ -37,7 +41,7 @@ class ProductParserService
                     $item->sku,
                     $item->brand,
                     $options['language'] ?? 'auto',
-                    preferLocal: ! filled($item->created_product_id),
+                    preferLocal: false,
                     name: $item->raw_name,
                 ),
             };
@@ -56,31 +60,41 @@ class ProductParserService
                 ]);
             }
 
-            $categoryId = $item->category_id ?: ($result['category_id'] ?? null) ?: $this->inferCategoryId((string) ($result['title'] ?? ''), $item->brand);
+            if (($result['found'] ?? false) && ! filled($result['existing_product_id'] ?? null)) {
+                $this->categoryResolver->resolveFromSourceResult($item, $result);
+                $item->refresh();
+            }
+
+            $categoryId = $item->category_id ?: ($result['category_id'] ?? null);
             $category = $categoryId ? Category::find($categoryId) : null;
-            $content = $this->contentBuilder->build(
-                $item->sku,
-                (string) ($item->raw_name ?: $result['title'] ?: $item->sku),
-                $item->brand,
-                null,
-                [
-                    'category_slug' => $category?->slug,
-                    'category_name_ru' => $category?->name,
-                    'category_name_ro' => $category?->name_ro,
-                ],
-            );
-            $content = $this->contentBuilder->mergeOfficialContent(
-                $content,
-                $result['title'] ?? null,
-                $result['description'] ?? null,
-                $item->sku,
-                $item->brand,
-            );
+            $translated = $this->translation->bilingual($result);
+            $content = $this->contentBuilder->ensureComplete([
+                'name_ru' => $translated['name_ru'],
+                'name_ro' => $translated['name_ro'],
+                'short_description_ru' => $translated['short_description_ru'],
+                'short_description_ro' => $translated['short_description_ro'],
+                'description_ru' => $translated['description_ru'],
+                'description_ro' => $translated['description_ro'],
+                'needs_translation_review' => ! $translated['complete'],
+                'needs_content_review' => ! filled($result['description'] ?? null),
+                'generated_content' => false,
+                'translation_source_type' => $translated['translation_source_type'],
+            ], $item->sku, (string) ($item->raw_name ?: $result['title'] ?: $item->sku), $item->brand, null, [
+                'category_slug' => $category?->slug,
+                'category_name_ru' => $category?->name,
+                'category_name_ro' => $category?->name_ro,
+            ]);
             $images = $result['images'] ?? [];
-            $imageSourceDomain = $result['fallback_source_used'] ?? false
-                ? ($result['fallback_source_domain'] ?? null)
-                : ($result['official_source_domain'] ?? null);
+            $imageSourceDomain = parse_url($images[0] ?? '', PHP_URL_HOST)
+                ?: ($result['official_source_domain'] ?? null);
             $this->imageCollector->collect($item, $images, $imageSourceDomain);
+            $images = $item->imageAssets()->pluck('source_url')->values()->all();
+            $ready = ($result['found'] ?? false)
+                && ! ($result['needs_source_review'] ?? true)
+                && filled($categoryId)
+                && $translated['complete']
+                && filled($result['description'] ?? null)
+                && $images !== [];
 
             $batch?->addLog('Source discovery completed', [
                 'sku' => $item->sku,
@@ -94,37 +108,50 @@ class ProductParserService
 
             $item->forceFill([
                 'category_id' => $categoryId,
-                'status' => ($result['found'] ?? false) ? 'ready_for_review' : 'not_found',
+                'status' => ! ($result['found'] ?? false)
+                    ? 'needs_manual_review'
+                    : ($ready ? 'ready_for_review' : 'needs_manual_review'),
                 'confidence_score' => $result['confidence'] ?? 0,
                 'found_title' => $result['title'] ?? null,
                 'found_description' => $result['description'] ?? null,
-                'found_specs_json' => $result['specs'] ?? [],
+                'found_specs_json' => array_filter(($result['specs'] ?? []) + [
+                    '_package_contents' => $result['package_contents'] ?? [],
+                    '_breadcrumb' => $result['breadcrumb'] ?? [],
+                    '_automation_attempts' => $result['automation_attempts'] ?? 1,
+                    '_automation_exhausted' => $result['automation_exhausted'] ?? false,
+                ]),
                 'found_images_json' => $images,
                 'selected_images_json' => collect($images)->take(1)->values()->all(),
                 'source_urls_json' => $result['source_urls'] ?? [],
-                'existing_product_id' => $result['existing_product_id'] ?? null,
-                'error_message' => collect($result['warnings'] ?? [])->implode(' '),
+                'existing_product_id' => $result['existing_product_id'] ?? $existingProductId,
+                'error_message' => ($result['found'] ?? false)
+                    ? collect($result['warnings'] ?? [])->implode(' ')
+                    : 'All automatic TrisTool and external-source recovery attempts were exhausted.',
                 'official_source_url' => $result['official_source_url'] ?? null,
                 'official_source_domain' => $result['official_source_domain'] ?? null,
                 'official_source_confidence' => $result['official_source_confidence'] ?? null,
                 'fallback_source_url' => $result['fallback_source_url'] ?? null,
                 'fallback_source_domain' => $result['fallback_source_domain'] ?? null,
                 'fallback_source_used' => (bool) ($result['fallback_source_used'] ?? false),
+                'tristools_url' => collect($result['sources'] ?? [])
+                    ->first(fn (array $source) => str_contains((string) ($source['domain'] ?? ''), 'tristool.md'))['url']
+                        ?? null,
+                'tristools_match_confidence' => $result['confidence'] ?? null,
                 'source_match_confidence' => $result['source_match_confidence'] ?? ($result['confidence'] ?? 0),
                 'needs_source_review' => (bool) ($result['needs_source_review'] ?? true),
                 'needs_content_review' => ! filled($result['description'] ?? null),
-                'generated_content' => ! filled($result['description'] ?? null),
+                'generated_content' => false,
                 'content_source_type' => $result['content_source_type'] ?? null,
                 'image_source_type' => $result['image_source_type'] ?? null,
-                'translation_source_type' => $result['translation_source_type'] ?? 'generated_pending_review',
-                'needs_image_review' => true,
+                'translation_source_type' => $translated['translation_source_type'],
+                'needs_image_review' => $images === [],
                 'name_ru' => $content['name_ru'],
                 'name_ro' => $content['name_ro'],
                 'short_description_ru' => $content['short_description_ru'],
                 'short_description_ro' => $content['short_description_ro'],
                 'description_ru' => $content['description_ru'],
                 'description_ro' => $content['description_ro'],
-                'needs_translation_review' => (bool) $content['needs_translation_review'],
+                'needs_translation_review' => ! $translated['complete'],
                 'needs_content_review' => (bool) $content['needs_content_review'],
                 'generated_content' => (bool) $content['generated_content'],
             ])->save();
@@ -171,7 +198,7 @@ class ProductParserService
             return;
         }
 
-        $failed = $statuses->contains(fn ($status) => in_array($status, ['failed', 'not_found', 'rejected'], true));
+        $failed = $statuses->contains(fn ($status) => in_array($status, ['failed', 'not_found', 'needs_manual_review', 'rejected'], true));
         $ready = $statuses->contains(fn ($status) => in_array($status, ['ready_for_review', 'approved'], true));
 
         $batch->forceFill([
@@ -195,5 +222,17 @@ class ProductParserService
         };
 
         return Category::where('slug', $slug)->value('id') ?: Category::orderBy('sort_order')->value('id');
+    }
+
+    private function inferCategoryIdFromBreadcrumb(array $breadcrumb): ?int
+    {
+        $text = Str::lower(implode(' ', $breadcrumb));
+
+        $slug = match (true) {
+            Str::contains($text, ['рихтов', 'покраск', 'tinichigerie', 'richtuire']) => 'tinichigerie-si-richtuire',
+            default => null,
+        };
+
+        return $slug ? Category::where('slug', $slug)->value('id') : null;
     }
 }

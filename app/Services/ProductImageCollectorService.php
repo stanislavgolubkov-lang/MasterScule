@@ -16,6 +16,7 @@ class ProductImageCollectorService
         $urls = collect($imageUrls)
             ->map(fn ($url) => trim((string) $url))
             ->filter()
+            ->reject(fn ($url) => $this->isBlockedBrandImage($item, $url))
             ->unique()
             ->take(max($max, 4))
             ->values();
@@ -41,5 +42,50 @@ class ProductImageCollectorService
                 'needs_review' => $isFallback,
             ]);
         }
+    }
+
+    private function isBlockedBrandImage(ProductParserItem $item, string $url): bool
+    {
+        $brand = Str::lower((string) $item->brand);
+        $lower = Str::lower($url);
+
+        if (Str::contains($lower, [
+            'logo', 'brand', 'favicon', 'icon', 'banner', 'collection', 'category',
+            'avatar', 'social', 'facebook', 'instagram', 'youtube', 'placeholder',
+            'messenger', 'no-image', 'no_image', 'no-pic', 'no_pic',
+        ])) {
+            return true;
+        }
+
+        $path = (string) parse_url($url, PHP_URL_PATH);
+        $fileName = pathinfo($path, PATHINFO_FILENAME);
+        $normalizedBrand = $this->normalizeSku($brand);
+        $normalizedFileName = $this->normalizeSku($fileName);
+
+        if ($normalizedBrand !== '' && $normalizedFileName === $normalizedBrand) {
+            return true;
+        }
+
+        if (! Str::contains($brand, 'jtc')) {
+            return false;
+        }
+
+        $host = Str::lower((string) parse_url($url, PHP_URL_HOST));
+        if ($host === '' || (! Str::endsWith($host, 'jtc.com.tw') && ! Str::endsWith($host, 'jtcautotools.com'))) {
+            return false;
+        }
+
+        $sku = $this->normalizeSku((string) $item->sku);
+        $skuCore = preg_replace('/^JTC/', '', $sku) ?: $sku;
+        $normalizedUrl = $this->normalizeSku($url);
+
+        return $sku === ''
+            || (! Str::contains($normalizedUrl, $sku)
+                && (strlen($skuCore) < 3 || ! Str::contains($normalizedUrl, $skuCore)));
+    }
+
+    private function normalizeSku(string $value): string
+    {
+        return preg_replace('/[^A-Z0-9]/', '', Str::upper(Str::ascii($value))) ?: '';
     }
 }

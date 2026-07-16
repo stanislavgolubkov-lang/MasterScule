@@ -22,7 +22,6 @@ class ParserCatalogSeeder extends Seeder
             ['JTC', 'jtc', '/images/brand/jtc.jpg'],
             ['Hoegert', 'hoegert', '/images/brand/hoegert.png'],
             ['Torin BIG RED', 'torin-big-red', '/images/brand/torin-big-red.png'],
-            ['TONGRUN', 'tongrun', '/images/brand/tongrun.svg'],
         ] as [$name, $slug, $logo]) {
             Brand::updateOrCreate(
                 ['slug' => $slug],

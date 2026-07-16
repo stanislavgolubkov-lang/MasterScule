@@ -30,6 +30,7 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
     {
         $sku = trim($sku);
         $needle = $this->normalizeSku($sku);
+        $directImage = null;
 
         foreach ($this->searchUrls($sku) as $url) {
             $html = $this->get($url, $brand);
@@ -51,15 +52,44 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
                     continue;
                 }
 
+                if ($this->isDocumentUrl($candidate)) {
+                    continue;
+                }
+
+                if ($this->isDirectImageUrl($candidate)) {
+                    $directImage ??= new ProductSourceSearchResult(
+                        true,
+                        $sku,
+                        $brand,
+                        $candidate,
+                        $domain,
+                        trim($text),
+                        true,
+                        priority: 100,
+                        payload: ['direct_image' => $candidate],
+                    );
+
+                    continue;
+                }
+
                 return new ProductSourceSearchResult(true, $sku, $brand, $candidate, $domain, trim($text), true, priority: 100);
             }
         }
 
-        return ProductSourceSearchResult::notFound($sku, $brand);
+        return $directImage ?: ProductSourceSearchResult::notFound($sku, $brand);
     }
 
     public function fetchProductPage(ProductSourceSearchResult $result): ProductSourceProductData
     {
+        if ($directImage = $result->payload['direct_image'] ?? null) {
+            return new ProductSourceProductData(
+                $result,
+                title: $result->title,
+                images: [$directImage],
+                raw: $result->payload,
+            );
+        }
+
         $html = $result->url ? $this->get($result->url, $result->brand) : null;
         if (! $html) {
             return new ProductSourceProductData($result, raw: $result->payload);
@@ -70,14 +100,14 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
         $data = new ProductSourceProductData($result, $html, $title, $description, raw: $result->payload);
 
         return new ProductSourceProductData(
-            $result,
-            $html,
-            $title,
-            $description,
-            $this->extractImages($data),
-            $this->extractSpecifications($data),
-            $this->extractBreadcrumb($data),
-            $result->payload,
+            search: $result,
+            html: $html,
+            title: $title,
+            description: $description,
+            images: $this->extractImages($data),
+            specifications: $this->extractSpecifications($data),
+            breadcrumb: $this->extractBreadcrumb($data),
+            raw: $result->payload,
         );
     }
 
@@ -85,9 +115,18 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
     {
         $html = (string) $data->html;
         preg_match_all('/(?:src|data-src|data-original|data-large_image|content)=["\']([^"\']+\.(?:jpe?g|png|webp)(?:\?[^"\']*)?)["\']/iu', $html, $matches);
+        preg_match_all('/srcset=["\']([^"\']+)["\']/iu', $html, $srcsets);
+        $srcsetUrls = collect($srcsets[1] ?? [])
+            ->flatMap(fn (string $srcset) => array_map(
+                fn (string $candidate) => trim((string) preg_split('/\s+/', trim($candidate))[0]),
+                explode(',', $srcset),
+            ))
+            ->filter(fn (string $url) => preg_match('/\.(?:jpe?g|png|webp)(?:\?[^#]*)?$/i', $url));
 
         return collect($matches[1] ?? [])
+            ->merge($srcsetUrls)
             ->map(fn ($url) => $this->absoluteUrl((string) $data->search->url, html_entity_decode($url, ENT_QUOTES | ENT_HTML5, 'UTF-8')))
+            ->filter(fn ($url) => parse_url($url, PHP_URL_SCHEME) === 'https')
             ->filter(fn ($url) => $this->registry->isOfficialDomain((string) parse_url($url, PHP_URL_HOST), $data->search->brand))
             ->reject(fn ($url) => Str::contains(Str::lower($url), ['logo', 'icon', 'banner', 'category', 'no-image', 'no_pic']))
             ->unique()
@@ -156,6 +195,10 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
 
     protected function absoluteUrl(string $base, string $url): string
     {
+        if (Str::startsWith($url, '//')) {
+            return (parse_url($base, PHP_URL_SCHEME) ?: 'https').':'.$url;
+        }
+
         if (Str::startsWith($url, ['http://', 'https://'])) {
             return $url;
         }
@@ -163,6 +206,16 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
         $root = ($parts['scheme'] ?? 'https').'://'.($parts['host'] ?? '');
 
         return $root.'/'.ltrim($url, '/');
+    }
+
+    private function isDirectImageUrl(string $url): bool
+    {
+        return (bool) preg_match('/\.(?:jpe?g|png|webp)(?:\?[^#]*)?$/i', $url);
+    }
+
+    private function isDocumentUrl(string $url): bool
+    {
+        return (bool) preg_match('/\.(?:pdf|docx?|xlsx?|csv|zip)(?:\?[^#]*)?$/i', $url);
     }
 
     private function throttle(string $domain, string $brand): void

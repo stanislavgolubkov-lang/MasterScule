@@ -48,6 +48,32 @@ class ProductImageProcessorTest extends TestCase
         Storage::disk('public')->deleteDirectory('products/official/test-brand/test-1');
     }
 
+    public function test_broken_selected_image_requires_review_without_failing_the_item(): void
+    {
+        $batch = ProductParserBatch::create(['title' => 'Broken image test']);
+        $item = ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'BROKEN-1',
+            'brand' => 'Test Brand',
+            'status' => 'searching',
+            'needs_image_review' => true,
+        ]);
+        $asset = ProductParserImageAsset::create([
+            'parser_item_id' => $item->id,
+            'source_url' => '/storage/parser-fixtures/missing.png',
+            'source_domain' => 'local-test',
+            'is_selected' => true,
+            'is_main' => true,
+        ]);
+
+        app(ProductImageProcessorService::class)->processSelected($item);
+
+        $this->assertSame('failed', $asset->fresh()->status);
+        $this->assertSame('ready_for_review', $item->fresh()->status);
+        $this->assertTrue($item->fresh()->needs_image_review);
+        $this->assertNull($item->fresh()->error_message);
+    }
+
     private function assertImageDimensions(?string $publicPath, int $width, int $height): void
     {
         $this->assertNotNull($publicPath);

@@ -12,6 +12,7 @@ class ProductSourceProductData
         public readonly array $images = [],
         public readonly array $specifications = [],
         public readonly array $breadcrumb = [],
+        public readonly array $packageContents = [],
         public readonly array $raw = [],
     ) {}
 }

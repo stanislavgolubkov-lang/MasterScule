@@ -7,18 +7,18 @@ return new class extends Migration
 {
     public function up(): void
     {
-        $phone = config('store.phone', '+373 60 000 000');
-        $email = config('store.email', 'contact@masterscule.md');
+        $phone = config('store.phone', '+373 781000 99');
+        $email = config('store.email', 'info@masterscule.md');
         $domain = config('store.domain_label', 'MasterScule.md');
         $country = config('store.country', 'Moldova');
-        $address = config('store.address', 'Chisinau, Republica Moldova');
+        $address = config('store.address', 'Alexandru cel Bun 103/A, Chișinău, Republica Moldova');
 
         $replacements = [
             'MasterScule.ro' => $domain,
             'masterscule.ro' => strtolower($domain),
             'contact@masterscule.ro' => $email,
             '0724 123 456' => $phone,
-            '0724123456' => config('store.phone_href', '+37360000000'),
+            '0724123456' => config('store.phone_href', '+37378100099'),
             'Voluntari' => 'Chisinau',
             'Romania' => $country,
             'România' => $country,

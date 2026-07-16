@@ -90,6 +90,7 @@ class ProductLocalizer
     private static function clean(string $value): string
     {
         $value = html_entity_decode(strip_tags($value), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $value = preg_replace('/^\s*(?:https?:\/\/)?(?:www\.)?tristool\.md\s*(?:[-–—:|]\s*)?/iu', '', $value) ?: $value;
 
         return trim(preg_replace('/\s+/u', ' ', $value) ?: '', " \t\n\r\0\x0B,.;-");
     }

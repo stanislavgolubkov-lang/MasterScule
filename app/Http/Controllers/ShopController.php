@@ -6,12 +6,12 @@ use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Page;
 use App\Models\Product;
-use App\Services\Catalog\ProductImageAvailabilityService;
 use Illuminate\Http\Request;
 
 class ShopController extends Controller
 {
     private const CATALOG_ROOT_SLUG = 'instrumente-si-mobilier';
+    private const NEW_PRODUCTS_PER_BRAND = 4;
 
     private const MAIN_CATALOG_SLUGS = [
         'mobilier-pentru-service',
@@ -138,10 +138,9 @@ class ShopController extends Controller
         ]);
     }
 
-    public function product(string $slug, ProductImageAvailabilityService $images)
+    public function product(string $slug)
     {
         $product = Product::with(['brand', 'category', 'categories'])->where('slug', $slug)->availableForSale()->firstOrFail();
-        abort_unless($images->isAvailable($product->main_image), 404);
         $similarCategoryIds = $product->categories
             ->pluck('id')
             ->push($product->category_id)
@@ -216,7 +215,28 @@ class ShopController extends Controller
 
     public function newProducts()
     {
-        return $this->productCollection(__('ui.new_items'), Product::query()->where('is_new', true)->orderByDesc('created_at'));
+        $products = Brand::query()
+            ->where('is_active', true)
+            ->whereHas('products', fn ($products) => $products->purchasable())
+            ->orderByDesc('is_featured')
+            ->orderBy('name')
+            ->get()
+            ->flatMap(fn (Brand $brand) => Product::with(['brand', 'category', 'categories'])
+                ->purchasable()
+                ->where('brand_id', $brand->id)
+                ->orderByDesc('is_new')
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->limit(self::NEW_PRODUCTS_PER_BRAND)
+                ->get())
+            ->values();
+
+        return view('shop.collection', [
+            'title' => __('ui.new_items'),
+            'subtitle' => __('ui.collection_text'),
+            'products' => $products,
+            'collectionClass' => 'product-grid-compact',
+        ]);
     }
 
     public function bestsellers()

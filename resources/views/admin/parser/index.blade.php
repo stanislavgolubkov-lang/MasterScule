@@ -229,7 +229,7 @@
                             <td>{{ $batch->items_count }} / {{ $batch->sku_count }}</td>
                             <td>{{ $batch->new_sku_count }} / {{ $batch->existing_sku_count }}</td>
                             <td><span class="parser-status parser-status-{{ $batch->status }}">{{ $batch->status }}</span></td>
-                            <td><a class="btn small" href="{{ route('admin.parser.batches.show', $batch) }}">{{ __('ui.open') }}</a></td>
+                            <td><a class="btn small" href="{{ route('admin.parser.batches.show', $batch) }}">{{ __('ui.open') }} <span aria-hidden="true">→</span></a></td>
                         </tr>
                     @empty
                         <tr><td colspan="6">{{ __('ui.parser_no_batches') }}</td></tr>
@@ -258,15 +258,15 @@
                 <label>Preview<input type="number" name="preview_size" value="{{ $settings['preview_size'] ?? 600 }}" min="300" max="1200"></label>
             </div>
             <div class="admin-three-cols">
-                <label>{{ __('ui.parser_min_confidence') }}<input type="number" name="min_confidence_score" value="{{ $settings['min_confidence_score'] ?? 70 }}" min="0" max="100"></label>
+                <label>{{ __('ui.parser_min_confidence') }}<input type="number" name="min_confidence_score" value="{{ max(90, (int) ($settings['min_confidence_score'] ?? 90)) }}" min="90" max="100"></label>
                 <label>{{ __('ui.parser_image_size') }}<input type="number" name="image_size" value="{{ $settings['image_size'] ?? 1200 }}" min="600" max="2000"></label>
                 <label>{{ __('ui.parser_thumb_size') }}<input type="number" name="thumb_size" value="{{ $settings['thumb_size'] ?? 300 }}" min="150" max="800"></label>
             </div>
             <label>{{ __('ui.parser_webp_quality') }}<input type="number" name="webp_quality" value="{{ $settings['webp_quality'] ?? 88 }}" min="70" max="95"></label>
             <div class="parser-check-grid">
                 <label><input type="checkbox" name="official_sources_enabled" value="1" @checked($settings['official_sources_enabled'] ?? true)> {{ $ru ? 'Официальные источники включены' : 'Surse oficiale active' }}</label>
-                <label><input type="checkbox" name="tristools_fallback_enabled" value="1" @checked($settings['tristools_fallback_enabled'] ?? false)> {{ $ru ? 'Разрешить TrisTools только как fallback' : 'Permite TrisTools doar ca fallback' }}</label>
-                <label><input type="checkbox" name="auto_approve_exact_fallback" value="1" @checked($settings['auto_approve_exact_fallback'] ?? true)> {{ $ru ? 'Автопроверка точного fallback по SKU' : 'Aproba automat fallback exact dupa SKU' }}</label>
+                <label><input type="checkbox" name="tristools_fallback_enabled" value="1" @checked($settings['tristools_fallback_enabled'] ?? false)> {{ $ru ? 'Использовать TrisTool только если официальный источник неполный' : 'Foloseste TrisTool doar daca sursa oficiala este incompleta' }}</label>
+                <label><input type="checkbox" name="auto_approve_exact_fallback" value="1" @checked($settings['auto_approve_exact_fallback'] ?? false)> {{ $ru ? 'Автопроверка точного fallback по SKU' : 'Aproba automat fallback exact dupa SKU' }}</label>
                 <label><input type="checkbox" name="allow_marketplace_sources" value="1" @checked($settings['allow_marketplace_sources'] ?? false)> {{ $ru ? 'Разрешить marketplace-источники' : 'Permite surse marketplace' }}</label>
                 <label><input type="checkbox" name="search_images" value="1" @checked($settings['search_images'] ?? true)> {{ $ru ? 'Искать изображения' : 'Cauta imagini' }}</label>
                 <label><input type="checkbox" name="translate_descriptions" value="1" @checked($settings['translate_descriptions'] ?? true)> {{ $ru ? 'Готовить RU/RO описания' : 'Pregateste descrieri RU/RO' }}</label>

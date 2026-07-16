@@ -4,23 +4,29 @@ namespace Tests\Feature;
 
 use App\Jobs\ParsePriceListJob;
 use App\Jobs\ParseSkuBatchJob;
+use App\Jobs\ProcessExternalPriceListRowJob;
+use App\Jobs\ProcessPriceListRowJob;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\PaymentTransaction;
 use App\Models\Product;
 use App\Models\ProductParserBatch;
+use App\Models\ProductParserCategoryLearning;
 use App\Models\ProductParserImageAsset;
 use App\Models\ProductParserItem;
 use App\Models\User;
 use App\Services\ProductImageProcessorService;
 use App\Services\ProductPriceListImportService;
+use App\Services\ProductPriceListReader;
+use App\Services\TrisToolsEnrichmentService;
 use Database\Seeders\CatalogStructureSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Mockery;
 use Tests\TestCase;
 
 class ExampleTest extends TestCase
@@ -68,6 +74,93 @@ class ExampleTest extends TestCase
     {
         $this->get('/catalog')->assertStatus(200)->assertSee('Каталог товаров');
         $this->get('/product/king-tony-7596mr')->assertStatus(200)->assertSee('Набор инструментов King Tony 7596MR');
+    }
+
+    public function test_out_of_stock_products_are_visible_but_not_purchasable(): void
+    {
+        $product = Product::create([
+            'brand_id' => Brand::firstOrFail()->id,
+            'category_id' => Category::firstOrFail()->id,
+            'name' => 'Visible out of stock product',
+            'name_ru' => 'Visible out of stock product',
+            'name_ro' => 'Visible out of stock product',
+            'slug' => 'visible-out-of-stock-product',
+            'sku' => 'OOS-1',
+            'price' => 100,
+            'currency' => 'MDL',
+            'stock_quantity' => 0,
+            'stock_status' => 'out_of_stock',
+            'status' => 'published',
+            'approval_status' => 'approved',
+            'needs_review' => false,
+            'needs_image_review' => false,
+            'needs_category_review' => false,
+            'needs_translation_review' => false,
+            'needs_price_review' => false,
+            'is_active' => true,
+            'main_image' => '/storage/products/seed-product.png',
+            'gallery' => ['/storage/products/seed-product.png'],
+        ]);
+
+        $this->get('/catalog?q=OOS-1')->assertOk()->assertSee('Visible out of stock product');
+        $this->get('/product/'.$product->slug)->assertOk()->assertSee(__('ui.out_of_stock'));
+
+        $this
+            ->from('/product/'.$product->slug)
+            ->post('/cart/add/'.$product->id, ['quantity' => 1])
+            ->assertRedirect('/product/'.$product->slug)
+            ->assertSessionHasErrors('cart');
+    }
+
+    public function test_product_detail_tabs_are_rendered_as_interactive_controls(): void
+    {
+        $this
+            ->get('/product/king-tony-7596mr')
+            ->assertOk()
+            ->assertSee('data-product-tab="description"', false)
+            ->assertSee('data-product-tab="specifications"', false)
+            ->assertSee('data-product-tab="contents"', false)
+            ->assertSee('role="tabpanel"', false);
+    }
+
+    public function test_products_with_missing_image_files_still_render_cards_and_detail_page(): void
+    {
+        $product = Product::create([
+            'brand_id' => Brand::firstOrFail()->id,
+            'category_id' => Category::firstOrFail()->id,
+            'name' => 'Missing image visible product',
+            'name_ru' => 'Missing image visible product',
+            'name_ro' => 'Missing image visible product',
+            'slug' => 'missing-image-visible-product',
+            'sku' => 'MISS-IMG-1',
+            'description_ru' => 'Visible product description.',
+            'description_ro' => 'Descriere produs vizibil.',
+            'price' => 100,
+            'currency' => 'MDL',
+            'stock_quantity' => 2,
+            'stock_status' => 'in_stock',
+            'status' => 'published',
+            'approval_status' => 'approved',
+            'needs_review' => false,
+            'needs_image_review' => false,
+            'needs_category_review' => false,
+            'needs_translation_review' => false,
+            'needs_price_review' => false,
+            'is_active' => true,
+            'main_image' => '/storage/products/not-uploaded-yet.png',
+            'gallery' => ['/storage/products/not-uploaded-yet.png'],
+        ]);
+
+        $this
+            ->get('/catalog?q=MISS-IMG-1')
+            ->assertOk()
+            ->assertSee('Missing image visible product')
+            ->assertSee(__('ui.product_photo_pending_short'));
+
+        $this
+            ->get('/product/'.$product->slug)
+            ->assertOk()
+            ->assertSee('Visible product description.');
     }
 
     public function test_product_can_be_added_to_cart(): void
@@ -544,6 +637,24 @@ class ExampleTest extends TestCase
     public function test_price_list_dry_run_tracks_brand_vehicle_context_without_creating_products(): void
     {
         Storage::fake('local');
+        config()->set('product_parser.official_sources_enabled', false);
+        $tristools = Mockery::mock(TrisToolsEnrichmentService::class);
+        $tristools->shouldReceive('enrich')->once()->with('JTC-4902', 'JTC')->andReturn([
+            'found' => true,
+            'title' => 'Головка TORX для механизма стеклоочистителей BMW',
+            'description' => 'Специальная головка TORX для обслуживания автомобилей BMW.',
+            'title_ru' => 'Головка TORX для механизма стеклоочистителей BMW',
+            'title_ro' => 'Cap TORX pentru mecanismul ștergătoarelor BMW',
+            'description_ru' => 'Специальная головка TORX для обслуживания автомобилей BMW.',
+            'description_ro' => 'Cap TORX special pentru întreținerea automobilelor BMW.',
+            'breadcrumb' => ['Специальный автоинструмент', 'Тормозной инструмент'],
+            'breadcrumb_ro' => ['Scule auto speciale', 'Scule pentru frâne'],
+            'specs' => [],
+            'images' => ['https://tristool.md/uploaded_files/JTC-4902.jpg'],
+            'source_urls' => ['https://tristool.md/ru/products/1/4902'],
+            'confidence' => 96,
+        ]);
+        $this->app->instance(TrisToolsEnrichmentService::class, $tristools);
 
         $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
         $csv = implode("\n", [
@@ -589,6 +700,366 @@ class ExampleTest extends TestCase
         $this->assertDatabaseMissing('products', ['sku' => 'JTC-4902']);
     }
 
+    public function test_large_price_list_stages_rows_and_finishes_after_the_last_queued_row(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        config()->set('product_parser.official_sources_enabled', false);
+        $tristools = Mockery::mock(TrisToolsEnrichmentService::class);
+        $tristools->shouldReceive('enrich')->twice()->andReturnUsing(function (string $sku) {
+            return [
+                'found' => true,
+                'title' => "Пневмогайковерт M7 {$sku}",
+                'description' => "Пневматический гайковерт M7 {$sku}.",
+                'title_ru' => "Пневмогайковерт M7 {$sku}",
+                'title_ro' => "Cheie pneumatică M7 {$sku}",
+                'description_ru' => "Пневматический гайковерт M7 {$sku}.",
+                'description_ro' => "Cheie pneumatică M7 {$sku}.",
+                'breadcrumb' => ['Пневматический инструмент', 'Гайковерты'],
+                'breadcrumb_ro' => ['Scule pneumatice', 'Chei pneumatice'],
+                'specs' => [],
+                'images' => ["https://tristool.md/uploaded_files/{$sku}.jpg"],
+                'source_urls' => ["https://tristool.md/ru/product/{$sku}"],
+                'confidence' => 98,
+            ];
+        });
+        $this->app->instance(TrisToolsEnrichmentService::class, $tristools);
+
+        $csv = implode("\n", [
+            'Артикул;Наименование;ОтпускЦена;Остаток',
+            ';M7 (Mighty Seven);;',
+            'NC-STREAM-001;Пневматический гайковерт M7 NC-STREAM-001;799;5',
+            'NC-STREAM-002;Пневматический гайковерт M7 NC-STREAM-002;899;7',
+        ]);
+        Storage::disk('local')->put('parser/test/large-stream.csv', $csv);
+
+        $batch = ProductParserBatch::create([
+            'title' => 'Large streaming import test',
+            'source_type' => 'price_list',
+            'file_name' => 'large-stream.csv',
+            'file_path' => 'parser/test/large-stream.csv',
+            'file_type' => 'csv',
+            'price_type' => 'retail_price',
+            'import_mode' => 'review_only',
+            'status' => 'pending',
+            'options_json' => [
+                'search_images' => false,
+                'process_images' => false,
+                'create_drafts_automatically' => false,
+            ],
+        ]);
+
+        $importer = app(ProductPriceListImportService::class);
+        $importer->queueImport($batch);
+
+        $batch->refresh();
+        $this->assertSame('processing', $batch->status);
+        $this->assertTrue((bool) $batch->options_json['staging_complete']);
+        $this->assertSame(2, $batch->product_rows);
+        $this->assertSame(2, $batch->items()->where('status', 'tristool_queued')->count());
+        Queue::assertPushed(ProcessPriceListRowJob::class, 2);
+
+        $jobs = Queue::pushed(ProcessPriceListRowJob::class)->values();
+        $jobs[0]->handle($importer);
+        $this->assertSame('processing', $batch->fresh()->status);
+
+        $jobs[1]->handle($importer);
+        $this->assertSame('completed', $batch->fresh()->status);
+        $this->assertNotNull($batch->fresh()->finished_at);
+        $this->assertSame(0, $batch->fresh()->created_drafts);
+        $this->assertSame(2, $batch->items()->where('status', 'ready_for_review')->count());
+    }
+
+    public function test_queued_import_schedules_rows_that_need_category_resolution(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        Storage::disk('local')->put('parser/test/needs-category.csv', implode("\n", [
+            'Артикул;Наименование;ОтпускЦена;Остаток',
+            'ZZ-QUEUE-001;Деталь без понятной категории;100;3',
+        ]));
+
+        $batch = ProductParserBatch::create([
+            'title' => 'Category review queue test',
+            'source_type' => 'price_list',
+            'file_name' => 'needs-category.csv',
+            'file_path' => 'parser/test/needs-category.csv',
+            'file_type' => 'csv',
+            'price_type' => 'retail_price',
+            'import_mode' => 'create_drafts',
+            'status' => 'pending',
+            'options_json' => [
+                'search_images' => true,
+                'process_images' => true,
+                'create_drafts_automatically' => true,
+            ],
+        ]);
+
+        app(ProductPriceListImportService::class)->queueImport($batch);
+
+        $item = $batch->items()->where('sku', 'ZZ-QUEUE-001')->firstOrFail();
+        $this->assertSame('tristool_queued', $item->status);
+        $this->assertSame('tristool_queued', $item->processing_stage);
+        $this->assertTrue((bool) $item->needs_category_review);
+        $this->assertSame('processing', $batch->fresh()->status);
+        $this->assertSame(1, $batch->fresh()->dry_run_report_json['queued_rows']);
+        Queue::assertPushed(ProcessPriceListRowJob::class, 1);
+    }
+
+    public function test_fast_price_list_job_defers_a_missing_tristool_sku_without_blocking_the_fast_queue(): void
+    {
+        Queue::fake();
+        config()->set('product_parser.official_sources_enabled', true);
+        $tristools = Mockery::mock(TrisToolsEnrichmentService::class);
+        $tristools->shouldReceive('enrich')->once()->with('KT-MISSING-1', 'King Tony')->andReturn([
+            'found' => false,
+            'confidence' => 0,
+        ]);
+        $this->app->instance(TrisToolsEnrichmentService::class, $tristools);
+
+        $batch = ProductParserBatch::create([
+            'title' => 'Fast TrisTool deferral',
+            'source_type' => 'price_list',
+            'import_mode' => 'dry_run',
+            'status' => 'processing',
+            'options_json' => ['staging_complete' => true],
+        ]);
+        $item = ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'KT-MISSING-1',
+            'brand' => 'King Tony',
+            'status' => 'tristool_queued',
+            'processing_stage' => 'tristool_queued',
+        ]);
+
+        (new ProcessPriceListRowJob($item->id))->handle(app(ProductPriceListImportService::class));
+
+        $item->refresh();
+        $this->assertSame('external_check_queued', $item->status);
+        $this->assertSame('external_queued', $item->processing_stage);
+        $this->assertNotNull($item->tristool_checked_at);
+        Queue::assertPushed(ProcessExternalPriceListRowJob::class, 1);
+    }
+
+    public function test_queued_import_learns_unknown_category_from_tristool_and_reuses_it(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        config([
+            'product_parser.tristools.rate_limit_ms' => 0,
+            'product_parser.min_fallback_confidence' => 80,
+            'product_parser.official_sources_enabled' => false,
+        ]);
+        $tristools = Mockery::mock(TrisToolsEnrichmentService::class);
+        $tristools->shouldReceive('enrich')->twice()->andReturnUsing(function (string $sku) {
+            return [
+                'found' => true,
+                'title' => "King Tony VDE diagonal cutters {$sku}",
+                'description' => "VDE insulated diagonal cutters {$sku}.",
+                'title_ru' => "Диэлектрические бокорезы King Tony {$sku}",
+                'title_ro' => "Clește diagonal VDE King Tony {$sku}",
+                'description_ru' => "Изолированные диагональные кусачки VDE {$sku}.",
+                'description_ro' => "Clește diagonal izolat VDE {$sku}.",
+                'breadcrumb' => ['Hand tools', 'VDE insulated tools'],
+                'breadcrumb_ro' => ['Scule manuale', 'Scule izolate VDE'],
+                'specs' => [],
+                'images' => ["https://tristool.md/uploaded_files/{$sku}.jpg"],
+                'source_urls' => ["https://tristool.md/ru/product/{$sku}"],
+                'confidence' => 98,
+            ];
+        });
+        $this->app->instance(TrisToolsEnrichmentService::class, $tristools);
+
+        Storage::disk('local')->put('parser/test/category-learning.csv', implode("\n", [
+            'sku;name;price;stock;brand;group;subgroup',
+            '6216-06A;Diagonal cutters;100;3;King Tony;VDE;',
+            '6216-07A;Long diagonal cutters;110;4;King Tony;VDE;',
+        ]));
+
+        $batch = ProductParserBatch::create([
+            'title' => 'Category learning queue test',
+            'source_type' => 'price_list',
+            'file_name' => 'category-learning.csv',
+            'file_path' => 'parser/test/category-learning.csv',
+            'file_type' => 'csv',
+            'price_type' => 'retail_price',
+            'import_mode' => 'review_only',
+            'status' => 'pending',
+            'options_json' => [
+                'search_images' => false,
+                'process_images' => false,
+                'create_drafts_automatically' => false,
+            ],
+        ]);
+
+        $importer = app(ProductPriceListImportService::class);
+        $importer->queueImport($batch);
+
+        Queue::assertPushed(ProcessPriceListRowJob::class, 2);
+        $jobs = Queue::pushed(ProcessPriceListRowJob::class)->values();
+        $jobs[0]->handle($importer);
+        $jobs[1]->handle($importer);
+
+        $category = Category::where('slug', 'instrumente-electromontaj')->firstOrFail();
+        $items = $batch->items()->orderBy('id')->get();
+
+        $this->assertCount(2, $items);
+        $this->assertSame([$category->id, $category->id], $items->pluck('category_id')->all());
+        $this->assertSame(['ready_for_review', 'ready_for_review'], $items->pluck('status')->all());
+        $this->assertFalse((bool) $items[0]->needs_category_review);
+        $this->assertFalse((bool) $items[1]->needs_category_review);
+        $this->assertSame('tristools_category', $items[0]->category_detection_method);
+        $this->assertSame('learned_tristools_breadcrumb', $items[1]->category_detection_method);
+        $this->assertSame('completed', $batch->fresh()->status);
+        $this->assertSame(0, $batch->fresh()->dry_run_report_json['queued_rows']);
+        $this->assertDatabaseHas('product_parser_category_learnings', [
+            'key_type' => 'sku',
+            'key_value' => '6216-06A',
+            'category_id' => $category->id,
+            'source' => 'tristools',
+        ]);
+        $this->assertDatabaseHas('product_parser_category_learnings', [
+            'key_type' => 'group',
+            'key_value' => 'VDE',
+            'category_id' => $category->id,
+        ]);
+        $this->assertSame(4, ProductParserCategoryLearning::count());
+    }
+
+    public function test_cancellation_before_staging_preserves_the_dry_run_snapshot(): void
+    {
+        $batch = ProductParserBatch::create([
+            'title' => 'Cancelled before staging test',
+            'source_type' => 'price_list',
+            'file_name' => 'cancelled.csv',
+            'file_path' => 'parser/test/cancelled.csv',
+            'file_type' => 'csv',
+            'price_type' => 'retail_price',
+            'import_mode' => 'create_drafts',
+            'status' => 'dry_run_completed',
+            'product_rows' => 1,
+            'parsed_rows' => 1,
+            'options_json' => ['search_images' => false],
+        ]);
+        ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'KEEP-DRY-RUN-1',
+            'status' => 'dry_run_ready',
+        ]);
+
+        $reader = Mockery::mock(ProductPriceListReader::class);
+        $reader->shouldReceive('stream')->once()->andReturnUsing(function () use ($batch) {
+            $batch->forceFill(['status' => 'cancelled', 'finished_at' => now()])->save();
+
+            return [
+                'sheet' => 'CSV',
+                'headers' => ['Артикул', 'Наименование', 'ОтпускЦена'],
+                'mapping' => ['sku' => 0, 'name' => 1, 'price' => 2],
+                'total_rows' => 1,
+                'rows' => new \ArrayIterator([]),
+            ];
+        });
+        $this->app->instance(ProductPriceListReader::class, $reader);
+
+        app(ProductPriceListImportService::class)->queueImport($batch);
+
+        $this->assertSame('cancelled', $batch->fresh()->status);
+        $this->assertSame(1, $batch->fresh()->product_rows);
+        $this->assertDatabaseHas('product_parser_items', [
+            'batch_id' => $batch->id,
+            'sku' => 'KEEP-DRY-RUN-1',
+            'status' => 'dry_run_ready',
+        ]);
+    }
+
+    public function test_active_parser_batch_must_be_cancelled_before_deletion(): void
+    {
+        $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
+        $batch = ProductParserBatch::create([
+            'title' => 'Active delete guard test',
+            'source_type' => 'price_list',
+            'status' => 'processing',
+        ]);
+        foreach (['queued', 'searching', 'processing_images', 'parsed'] as $index => $status) {
+            ProductParserItem::create([
+                'batch_id' => $batch->id,
+                'sku' => 'CANCEL-'.$index,
+                'status' => $status,
+            ]);
+        }
+
+        $this->actingAs($admin)
+            ->delete(route('admin.parser.batches.destroy', $batch))
+            ->assertRedirect()
+            ->assertSessionHas('error');
+        $this->assertDatabaseHas('product_parser_batches', ['id' => $batch->id]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.parser.batches.cancel', $batch))
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertSame('cancelled', $batch->fresh()->status);
+        $this->assertSame(4, $batch->items()->where('status', 'rejected')->count());
+    }
+
+    public function test_parser_batch_does_not_count_queued_category_flags_as_manual_exceptions(): void
+    {
+        $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
+        $batch = ProductParserBatch::create([
+            'title' => 'Parser counter test',
+            'source_type' => 'price_list',
+            'status' => 'processing',
+        ]);
+
+        ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'QUEUED-CATEGORY',
+            'status' => 'queued',
+            'needs_category_review' => true,
+        ]);
+        ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'SEARCHING-CATEGORY',
+            'status' => 'searching',
+            'needs_category_review' => true,
+        ]);
+        ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'FINAL-CATEGORY',
+            'status' => 'needs_category_review',
+            'needs_category_review' => true,
+        ]);
+        ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'FAILED-PARSER',
+            'status' => 'failed',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.parser.batches.show', $batch))
+            ->assertOk()
+            ->assertViewHas('bulkStats', fn (array $stats) => $stats['exceptions'] === 2)
+            ->assertViewHas('filterCounts', fn (array $counts) => $counts['processing'] === 2
+                && $counts['completed'] === 2
+                && $counts['progress_percent'] === 50
+                && $counts['needs_category'] === 1
+                && $counts['failed'] === 1);
+
+        $this->actingAs($admin)
+            ->get(route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'processing_auto']))
+            ->assertOk()
+            ->assertViewHas('items', fn ($items) => $items->pluck('sku')->sort()->values()->all() === [
+                'QUEUED-CATEGORY',
+                'SEARCHING-CATEGORY',
+            ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.parser.batches.show', ['batch' => $batch, 'needs_category' => 1]))
+            ->assertOk()
+            ->assertViewHas('items', fn ($items) => $items->pluck('sku')->all() === ['FINAL-CATEGORY']);
+    }
+
     public function test_parser_price_list_upload_rejects_disguised_php_file(): void
     {
         Queue::fake();
@@ -618,6 +1089,24 @@ class ExampleTest extends TestCase
         $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
         $product = Product::where('sku', '7596MR')->firstOrFail();
         $initialProductCount = Product::count();
+        config()->set('product_parser.official_sources_enabled', false);
+        $tristools = Mockery::mock(TrisToolsEnrichmentService::class);
+        $tristools->shouldReceive('enrich')->once()->with('7596MR', 'King Tony')->andReturn([
+            'found' => true,
+            'title' => 'Набор инструментов King Tony 7596MR',
+            'description' => 'Профессиональный набор инструментов King Tony 7596MR.',
+            'title_ru' => 'Набор инструментов King Tony 7596MR',
+            'title_ro' => 'Trusă de scule King Tony 7596MR',
+            'description_ru' => 'Профессиональный набор инструментов King Tony 7596MR.',
+            'description_ro' => 'Trusă profesională de scule King Tony 7596MR.',
+            'breadcrumb' => ['Ручной инструмент', 'Наборы инструментов'],
+            'breadcrumb_ro' => ['Scule manuale', 'Truse de scule'],
+            'specs' => [],
+            'images' => ['https://tristool.md/uploaded_files/7596MR.jpg'],
+            'source_urls' => ['https://tristool.md/ru/product/7596MR'],
+            'confidence' => 98,
+        ]);
+        $this->app->instance(TrisToolsEnrichmentService::class, $tristools);
 
         $this
             ->actingAs($admin)
@@ -693,7 +1182,8 @@ class ExampleTest extends TestCase
 
         app(ProductImageProcessorService::class)->processSelected($item);
 
-        $this->assertSame('failed', $item->fresh()->status);
+        $this->assertSame('ready_for_review', $item->fresh()->status);
+        $this->assertTrue((bool) $item->fresh()->needs_image_review);
         $this->assertSame('failed', $asset->fresh()->status);
         $this->assertStringContainsString('HTTPS', $asset->fresh()->error_message);
     }
@@ -808,6 +1298,17 @@ class ExampleTest extends TestCase
         $admin = User::where('email', 'admin@masterscule.md')->firstOrFail();
         $existing = Product::where('sku', '7596MR')->firstOrFail();
         $initialExistingCount = Product::where('sku', '7596MR')->count();
+        $pneumaticCategory = Category::where('slug', 'chei-pneumatice')->firstOrFail();
+        ProductParserCategoryLearning::create([
+            'key_type' => 'sku',
+            'key_hash' => sha1('nc 4233 test'),
+            'key_value' => 'NC-4233-TEST',
+            'brand_key' => '*',
+            'category_id' => $pneumaticCategory->id,
+            'source' => 'test',
+            'confidence' => 99,
+            'observations' => 1,
+        ]);
 
         $csv = implode("\n", [
             'Артикул;Наименование;ОтпускЦена;Остаток',

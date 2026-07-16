@@ -9,6 +9,7 @@ document.addEventListener('click', (event) => {
     const catalogSidebarToggle = event.target.closest('[data-catalog-sidebar-toggle]');
     const heroDot = event.target.closest('[data-hero-dot]');
     const productGalleryButton = event.target.closest('[data-product-gallery-src]');
+    const productTab = event.target.closest('[data-product-tab]');
 
     if (openTarget) {
         const target = document.getElementById(openTarget.dataset.open);
@@ -77,6 +78,10 @@ document.addEventListener('click', (event) => {
                 button.setAttribute('aria-pressed', active ? 'true' : 'false');
             });
         }
+    }
+
+    if (productTab) {
+        setProductTab(productTab);
     }
 });
 
@@ -263,4 +268,23 @@ function setHeroSlide(slider, index) {
     slider.dataset.heroIndex = String(index);
     slides.forEach((slide, slideIndex) => slide.classList.toggle('is-active', slideIndex === index));
     dots.forEach((dot, dotIndex) => dot.classList.toggle('is-active', dotIndex === index));
+}
+
+function setProductTab(tab) {
+    const tabList = tab.closest('[data-product-tabs]');
+    const tabId = tab.dataset.productTab;
+    if (!tabList || !tabId) return;
+
+    tabList.querySelectorAll('[data-product-tab]').forEach((button) => {
+        const active = button === tab;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+
+    const card = tabList.closest('.tabs-card');
+    card?.querySelectorAll('[data-product-panel]').forEach((panel) => {
+        const active = panel.dataset.productPanel === tabId;
+        panel.classList.toggle('active', active);
+        panel.hidden = !active;
+    });
 }

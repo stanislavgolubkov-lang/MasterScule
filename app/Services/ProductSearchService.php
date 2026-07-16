@@ -35,6 +35,16 @@ class ProductSearchService
         return $this->sourceDiscovery->search(trim($sku), trim((string) $brand), forceFallback: true);
     }
 
+    public function searchTrisToolForParser(string $sku, ?string $brand = null, ?string $name = null): array
+    {
+        return $this->sourceDiscovery->searchTrisTool(trim($sku), trim((string) $brand), $name);
+    }
+
+    public function searchExternalForParser(string $sku, ?string $brand = null, ?string $name = null): array
+    {
+        return $this->sourceDiscovery->search(trim($sku), trim((string) $brand), $name);
+    }
+
     public function searchOfficialForParser(string $sku, ?string $brand = null): array
     {
         return $this->sourceDiscovery->search(trim($sku), trim((string) $brand), allowFallback: false);

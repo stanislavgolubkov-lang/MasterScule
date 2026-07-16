@@ -3,7 +3,7 @@
 @section('content')
 @php
     $ru = app()->isLocale('ru');
-    $activeFilter = request('status') ?: (request('needs_category') ? 'needs_category' : (request('no_images') ? 'no_images' : ''));
+    $activeFilter = request('status') ?: (request('needs_category') ? 'needs_category' : (request('no_images') ? 'no_images' : (request('exceptions') ? 'exceptions' : '')));
     $productRows = $batch->product_rows ?: $batch->sku_count;
     $draftPlan = $batch->planned_drafts ?: $batch->created_drafts;
     $autoRefresh = in_array($batch->status, ['pending', 'running', 'processing'], true);
@@ -29,6 +29,62 @@
         <div><strong>{{ $batch->existing_sku_count ?: $batch->updated_existing }}</strong><span>{{ $ru ? 'существующих' : 'existente' }}</span></div>
         <div><strong>{{ $draftPlan }}</strong><span>{{ $ru ? 'draft' : 'drafturi' }}</span></div>
         <div><strong>{{ $batch->error_rows }}</strong><span>{{ $ru ? 'ошибок' : 'erori' }}</span></div>
+    </div>
+</section>
+
+<section class="shell panel parser-card parser-progress-card">
+    <div class="parser-progress-block">
+        <div class="parser-progress-heading">
+            <div>
+                <span>{{ $ru ? 'Быстрый проход TrisTool' : 'Verificare rapida TrisTool' }}</span>
+                <strong>{{ $filterCounts['fast_percent'] }}%</strong>
+            </div>
+            <small>
+                {{ $ru ? 'Проверено' : 'Verificate' }}:
+                {{ $filterCounts['fast_completed'] }} {{ $ru ? 'из' : 'din' }} {{ $filterCounts['fast_total'] }}
+                · {{ $ru ? 'Осталось' : 'Ramase' }}: {{ $filterCounts['fast_pending'] }}
+            </small>
+        </div>
+        <div
+            class="parser-progress-track"
+            role="progressbar"
+            aria-label="{{ $ru ? 'Быстрая проверка TrisTool' : 'Verificare rapida TrisTool' }}"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="{{ $filterCounts['fast_percent'] }}"
+        >
+            <span style="width: {{ $filterCounts['fast_percent'] }}%"></span>
+        </div>
+        <div class="parser-progress-scale" aria-hidden="true">
+            <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
+        </div>
+    </div>
+
+    <div class="parser-progress-block parser-progress-block-slow">
+        <div class="parser-progress-heading">
+            <div>
+                <span>{{ $ru ? 'Сторонняя проверка отложенных товаров' : 'Verificarea externa a produselor amanate' }}</span>
+                <strong>{{ $filterCounts['external_percent'] }}%</strong>
+            </div>
+            <small>
+                {{ $ru ? 'Проверено' : 'Verificate' }}:
+                {{ $filterCounts['external_completed'] }} {{ $ru ? 'из' : 'din' }} {{ $filterCounts['external_total'] }}
+                · {{ $ru ? 'В очереди' : 'In asteptare' }}: {{ $filterCounts['external_pending'] }}
+            </small>
+        </div>
+        <div
+            class="parser-progress-track parser-progress-track-slow"
+            role="progressbar"
+            aria-label="{{ $ru ? 'Сторонняя проверка' : 'Verificare externa' }}"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="{{ $filterCounts['external_percent'] }}"
+        >
+            <span style="width: {{ $filterCounts['external_percent'] }}%"></span>
+        </div>
+        <div class="parser-progress-scale" aria-hidden="true">
+            <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
+        </div>
     </div>
 </section>
 
@@ -63,9 +119,9 @@
             <label>{{ $ru ? 'Лимит' : 'Limita' }}<input type="number" name="limit" value="20000" min="1" max="20000"></label>
             <button class="btn outline small" @disabled($bulkStats['existing'] === 0)>{{ $ru ? 'Обновить цену и остаток' : 'Actualizeaza pret si stoc' }}</button>
         </form>
-        <a class="parser-bulk-exceptions" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'needs_category' => 1]) }}">
+        <a class="parser-bulk-exceptions" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'exceptions' => 1]) }}">
             <strong>{{ $bulkStats['exceptions'] }}</strong>
-            <span>{{ $ru ? 'исключений на ручную проверку' : 'exceptii pentru verificare manuala' }}</span>
+            <span>{{ $ru ? 'окончательных исключений после автопроверки' : 'exceptii finale dupa verificarea automata' }}</span>
         </a>
     </div>
 </section>
@@ -92,19 +148,37 @@
 
 <section class="shell parser-toolbar panel parser-card">
     <div class="parser-filters">
-        <a class="{{ $activeFilter === '' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', $batch) }}">{{ __('ui.all') }}</a>
-        <a class="{{ $activeFilter === 'ready_for_review' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'ready_for_review']) }}">{{ __('ui.parser_ready') }}</a>
-        <a class="{{ $activeFilter === 'dry_run_ready' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'dry_run_ready']) }}">{{ $ru ? 'Dry-run готово' : 'Dry-run gata' }}</a>
-        <a class="{{ $activeFilter === 'existing_product_found' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'existing_product_found']) }}">{{ $ru ? 'Существующие' : 'Existente' }}</a>
-        <a class="{{ $activeFilter === 'needs_category' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'needs_category' => 1]) }}">{{ $ru ? 'Нужна категория' : 'Necesita categorie' }}</a>
-        <a class="{{ $activeFilter === 'no_images' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'no_images' => 1]) }}">{{ $ru ? 'Нет фото' : 'Fara imagini' }}</a>
-        <a class="{{ $activeFilter === 'failed' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'failed']) }}">{{ __('ui.parser_failed') }}</a>
+        <a class="{{ $activeFilter === '' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', $batch) }}">{{ __('ui.all') }} <span>{{ $filterCounts['all'] }}</span></a>
+        <a class="{{ $activeFilter === 'tristool_queue' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'tristool_queue']) }}">{{ $ru ? 'Очередь TrisTool' : 'Coada TrisTool' }} <span>{{ $filterCounts['fast_pending'] }}</span></a>
+        <a class="{{ $activeFilter === 'tristool_found' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'tristool_found']) }}">{{ $ru ? 'Найдено TrisTool' : 'Gasite TrisTool' }} <span>{{ $filterCounts['tristool_ready'] }}</span></a>
+        <a class="{{ $activeFilter === 'external_check' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'external_check']) }}">{{ $ru ? 'Сторонняя проверка' : 'Verificare externa' }} <span>{{ $filterCounts['external_total'] }}</span></a>
+        <a class="{{ $activeFilter === 'processing_auto' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'processing_auto']) }}">{{ $ru ? 'Сейчас обрабатывается' : 'Se proceseaza acum' }} <span>{{ $filterCounts['processing'] }}</span></a>
+        <a class="{{ $activeFilter === 'ready_for_review' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'ready_for_review']) }}">{{ __('ui.parser_ready') }} <span>{{ $filterCounts['ready_for_review'] }}</span></a>
+        <a class="{{ $activeFilter === 'dry_run_ready' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'dry_run_ready']) }}">{{ $ru ? 'Dry-run готово' : 'Dry-run gata' }} <span>{{ $filterCounts['dry_run_ready'] }}</span></a>
+        <a class="{{ $activeFilter === 'existing_product_found' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'existing_product_found']) }}">{{ $ru ? 'Существующие' : 'Existente' }} <span>{{ $filterCounts['existing_product_found'] }}</span></a>
+        <a class="{{ $activeFilter === 'needs_category' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'needs_category' => 1]) }}">{{ $ru ? 'Нужна категория' : 'Necesita categorie' }} <span>{{ $filterCounts['needs_category'] }}</span></a>
+        <a class="{{ $activeFilter === 'no_images' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'no_images' => 1]) }}">{{ $ru ? 'Нет фото' : 'Fara imagini' }} <span>{{ $filterCounts['no_images'] }}</span></a>
+        <a class="{{ $activeFilter === 'failed' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'failed']) }}">{{ __('ui.parser_failed') }} <span>{{ $filterCounts['failed'] }}</span></a>
     </div>
     <div class="parser-actions">
+        @if($filterCounts['deferred_retryable'] > 0)
+            <form method="post" action="{{ route('admin.parser.batches.retry-deferred', $batch) }}">
+                @csrf
+                <input type="hidden" name="mode" value="tristool">
+                <button class="btn outline small">{{ $ru ? 'Перепроверить TrisTool' : 'Reverifica TrisTool' }}</button>
+            </form>
+            <form method="post" action="{{ route('admin.parser.batches.retry-deferred', $batch) }}">
+                @csrf
+                <input type="hidden" name="mode" value="external">
+                <button class="btn outline small">{{ $ru ? 'Повторить все источники' : 'Repeta toate sursele' }}</button>
+            </form>
+        @endif
         @if($autoRefresh)
             <form method="post" action="{{ route('admin.parser.batches.cancel', $batch) }}" onsubmit="return confirm('{{ $ru ? 'Остановить текущую обработку?' : 'Opriti procesarea curenta?' }}')">@csrf<button class="btn outline small">{{ __('ui.parser_cancel_batch') }}</button></form>
         @endif
-        <form method="post" action="{{ route('admin.parser.batches.destroy', $batch) }}" onsubmit="return confirm('{{ __('ui.parser_delete_confirm') }}')">@csrf @method('DELETE')<button class="delete">{{ __('ui.parser_delete_report') }}</button></form>
+        @if(!$autoRefresh)
+            <form method="post" action="{{ route('admin.parser.batches.destroy', $batch) }}" onsubmit="return confirm('{{ __('ui.parser_delete_confirm') }}')">@csrf @method('DELETE')<button class="delete">{{ __('ui.parser_delete_report') }}</button></form>
+        @endif
     </div>
 </section>
 
@@ -141,7 +215,7 @@
                         <td><span class="parser-status parser-status-{{ $item->status }}">{{ $item->status }}</span></td>
                         <td>{{ $item->category_confidence_score ?? $item->confidence_score ?? '-' }}%</td>
                         <td>{{ $item->imageAssets->count() }}</td>
-                        <td><a class="btn small" href="{{ route('admin.parser.items.show', $item) }}">{{ __('ui.open') }}</a></td>
+                        <td><a class="btn small" href="{{ route('admin.parser.items.show', $item) }}">{{ __('ui.open') }} <span aria-hidden="true">→</span></a></td>
                     </tr>
                 @empty
                     <tr><td colspan="12">{{ __('ui.collection_empty') }}</td></tr>
@@ -167,7 +241,7 @@
 @endif
 @if($autoRefresh)
 <script>
-    window.setTimeout(() => window.location.reload(), 3000);
+    window.setTimeout(() => window.location.reload(), 10000);
 </script>
 @endif
 @endsection

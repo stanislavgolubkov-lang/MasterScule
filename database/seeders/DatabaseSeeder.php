@@ -109,7 +109,7 @@ class DatabaseSeeder extends Seeder
             ['delivery-payment', 'Livrare si plata', 'Livram produse in toata Moldova. Plata se poate face la livrare, prin transfer bancar sau online cand integrarea va fi activata.'],
             ['warranty', 'Garantie', 'Produsele beneficiaza de garantie conform conditiilor producatorului si legislatiei in vigoare.'],
             ['returns', 'Retur si rambursare', 'Ai 14 zile pentru retur conform politicii comerciale si legislatiei aplicabile.'],
-            ['contacts', 'Contact', 'Telefon: '.config('store.phone').'. Email: '.config('store.email').'. Program: luni-vineri 08:00 - 17:00.'],
+            ['contacts', 'Contact', 'Telefon: '.config('store.phone').'. Email: '.config('store.email').'. Adresa: '.config('store.address').'. Program: luni-vineri 08:00 - 17:00.'],
             ['privacy-policy', 'Politica de confidentialitate', 'Datele clientilor sunt folosite pentru procesarea comenzilor, livrare si comunicari comerciale acceptate.'],
             ['terms', 'Termeni si conditii', 'Utilizarea site-ului si plasarea comenzilor presupun acceptarea termenilor comerciali '.config('store.domain_label').'.'],
             ['cookie-policy', 'Cookie Policy', 'Site-ul poate folosi cookie-uri pentru functionalitate, analiza si imbunatatirea experientei de cumparare.'],

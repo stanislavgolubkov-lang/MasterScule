@@ -38,7 +38,7 @@
                         <td>{{ $item->category?->display_name ?: ($ru ? 'Нужна проверка' : 'Necesita verificare') }}</td>
                         <td>{{ $item->parsed_price ?? '-' }} / {{ $item->parsed_stock ?? '-' }}</td>
                         <td><span class="parser-status parser-status-{{ $item->status }}">{{ $item->createdProduct?->status ?: $item->status }}</span></td>
-                        <td><a class="btn small" href="{{ route('admin.parser.items.show', $item) }}">{{ __('ui.open') }}</a></td>
+                        <td><a class="btn small" href="{{ route('admin.parser.items.show', $item) }}">{{ __('ui.open') }} <span aria-hidden="true">→</span></a></td>
                     </tr>
                 @empty
                     <tr><td colspan="7">{{ __('ui.collection_empty') }}</td></tr>

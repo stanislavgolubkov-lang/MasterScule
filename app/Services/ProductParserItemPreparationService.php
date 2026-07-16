@@ -83,6 +83,10 @@ class ProductParserItemPreparationService
 
     private function sourceIsTrusted(ProductParserItem $item): bool
     {
+        if (filled($item->tristools_url) && (int) $item->tristools_match_confidence >= 90) {
+            return true;
+        }
+
         if ($item->fallback_source_used) {
             return (bool) $this->settings->get('auto_approve_exact_fallback', true)
                 && filled($item->fallback_source_url)
@@ -102,13 +106,18 @@ class ProductParserItemPreparationService
 
     private function markUnready(ProductParserItem $item): void
     {
+        $errorMessage = trim((string) $item->error_message);
+        if ($errorMessage === trim((string) __('ui.parser_images_failed'))) {
+            $errorMessage = '';
+        }
+
         $item->forceFill([
             'selected_images_json' => [],
             'processed_images_json' => [],
             'needs_image_review' => true,
             'image_reviewed_at' => null,
             'status' => $item->needs_category_review ? 'needs_category_review' : 'ready_for_review',
-            'error_message' => $item->error_message ?: __('ui.parser_images_failed'),
+            'error_message' => $errorMessage !== '' ? $errorMessage : null,
         ])->save();
     }
 }

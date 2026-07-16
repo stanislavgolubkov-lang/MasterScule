@@ -14,6 +14,10 @@ class ProductParserItem extends Model
         'brand',
         'category_id',
         'status',
+        'processing_stage',
+        'tristool_checked_at',
+        'external_checked_at',
+        'external_attempts',
         'confidence_score',
         'raw_name',
         'parsed_name',
@@ -98,6 +102,9 @@ class ProductParserItem extends Model
         'source_reviewed_at' => 'datetime',
         'image_reviewed_at' => 'datetime',
         'translation_reviewed_at' => 'datetime',
+        'tristool_checked_at' => 'datetime',
+        'external_checked_at' => 'datetime',
+        'external_attempts' => 'integer',
     ];
 
     public function batch()

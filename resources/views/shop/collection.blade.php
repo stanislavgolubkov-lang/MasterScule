@@ -9,7 +9,7 @@
     <span>{{ $subtitle }}</span>
 </section>
 
-<section class="shell product-grid">
+<section class="shell product-grid {{ $collectionClass ?? '' }}">
     @forelse($products as $product)
         <x-product-card :product="$product" />
     @empty

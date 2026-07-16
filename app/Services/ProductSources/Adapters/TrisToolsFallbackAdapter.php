@@ -24,14 +24,23 @@ class TrisToolsFallbackAdapter implements ProductSourceAdapterInterface
         }
         $url = $result['source_urls'][0] ?? null;
 
-        return new ProductSourceSearchResult(true, $sku, $brand, $url, $url ? parse_url($url, PHP_URL_HOST) : 'tristool.md', $result['title'] ?? null, true, 'fallback_reference', 40, $result);
+        return new ProductSourceSearchResult(true, $sku, $brand, $url, $url ? parse_url($url, PHP_URL_HOST) : 'tristool.md', $result['title'] ?? null, true, 'tristools_primary', 120, $result);
     }
 
     public function fetchProductPage(ProductSourceSearchResult $result): ProductSourceProductData
     {
         $payload = $result->payload;
 
-        return new ProductSourceProductData($result, title: $payload['title'] ?? null, description: $payload['description'] ?? null, images: $payload['images'] ?? [], specifications: $payload['specs'] ?? [], raw: $payload);
+        return new ProductSourceProductData(
+            $result,
+            title: $payload['title'] ?? null,
+            description: $payload['description'] ?? null,
+            images: $payload['images'] ?? [],
+            specifications: $payload['specs'] ?? [],
+            breadcrumb: $payload['breadcrumb'] ?? [],
+            packageContents: $payload['package_contents'] ?? [],
+            raw: $payload,
+        );
     }
 
     public function extractImages(ProductSourceProductData $data): array

@@ -8,10 +8,22 @@ use Illuminate\Support\Str;
 
 class ProductCategoryDetector
 {
-    public function __construct(private ProductParserSettings $settings) {}
+    public function __construct(
+        private ProductParserSettings $settings,
+        private ProductCategoryLearningService $learning,
+    ) {}
 
     public function detect(string $sku, string $name, ?string $brand = null, ?string $group = null, ?string $subgroup = null, ?string $vehicleApplication = null): array
     {
+        if ($learned = $this->learning->resolve($sku, $brand, $group, $subgroup)) {
+            return $this->categoryResult(
+                $learned['category'],
+                $learned['confidence'],
+                $learned['method'],
+                [$learned['note']],
+            );
+        }
+
         $rules = $this->settings->get('category_rules', config('product_parser.category_rules', []));
         $productText = $this->normalize(implode(' ', array_filter([$sku, $name, $brand, $subgroup, $vehicleApplication])));
         $groupText = $this->normalize((string) $group);
@@ -92,7 +104,7 @@ class ProductCategoryDetector
         $slug = array_key_first($scores);
         $score = $slug ? min(98, (int) $scores[$slug]) : 0;
         $category = $slug ? Category::where('slug', $slug)->first() : null;
-        $min = (int) ($rules['min_confidence'] ?? $this->settings->get('min_confidence_score', 70));
+        $min = $this->minimumConfidence($rules);
 
         return [
             'category_id' => $score >= $min ? $category?->id : null,
@@ -106,6 +118,56 @@ class ProductCategoryDetector
             'notes' => $notes,
             'needs_review' => ! $category || $score < $min,
         ];
+    }
+
+    public function detectFromTrisTools(
+        string $sku,
+        string $name,
+        ?string $brand,
+        array $breadcrumb,
+        ?string $description = null,
+        array $specifications = [],
+    ): array {
+        if ($learned = $this->learning->resolveBreadcrumb($breadcrumb, $brand)) {
+            return $this->categoryResult(
+                $learned['category'],
+                $learned['confidence'],
+                $learned['method'],
+                [$learned['note']],
+            );
+        }
+
+        $sourceText = $this->normalize(implode(' ', array_filter([
+            implode(' ', $breadcrumb),
+            $name,
+            $description,
+            implode(' ', array_keys($specifications)),
+            implode(' ', array_values($specifications)),
+        ])));
+
+        foreach ($this->trisToolsCategoryRules() as $rule) {
+            if (! collect($rule['keywords'])->contains(fn (string $keyword) => $this->contains($sourceText, $keyword))) {
+                continue;
+            }
+
+            $category = Category::where('slug', $rule['slug'])->first();
+            if ($category) {
+                return $this->categoryResult(
+                    $category,
+                    (int) ($rule['confidence'] ?? 96),
+                    'tristools_category',
+                    ['TrisTool category: '.implode(' > ', $breadcrumb).' -> '.$category->slug],
+                );
+            }
+        }
+
+        return $this->detect(
+            $sku,
+            trim($name.' '.$sourceText),
+            $brand,
+            implode(' ', $breadcrumb),
+            collect($breadcrumb)->last(),
+        );
     }
 
     private function similarProduct(string $sku, ?string $brand): ?Product
@@ -186,6 +248,85 @@ class ProductCategoryDetector
             'scule-pentru-roti-vulcanizare' => ['вентиль шин', 'ремонт шин', 'шиномонтаж'],
             'dispozitive-pneumatice-service' => ['прокачки тормоз', 'вакуумный экстрактор', 'пневматический домкрат'],
         ];
+    }
+
+    private function trisToolsCategoryRules(): array
+    {
+        return [
+            ['slug' => 'clesti-electrician-si-cabluri', 'keywords' => [
+                'каблерез',
+                'кабелерез',
+                'ножницы для кабеля',
+                'режущих губок',
+                'cable cutter',
+                'ratcheting cable',
+                'wire & cable tools',
+                'стрипперы - для очистки изоляции',
+            ], 'confidence' => 98],
+            ['slug' => 'instrumente-electromontaj', 'keywords' => ['vde', 'диэлектр', 'изолирован', 'электромонтаж']],
+            ['slug' => 'capete-tubulare-impact', 'keywords' => ['ударные головки', 'головка ударная', 'impact socket']],
+            ['slug' => 'scule-pentru-filtre-ulei', 'keywords' => ['масляных фильтр', 'масляный фильтр']],
+            ['slug' => 'scule-pentru-frane', 'keywords' => ['тормоз', 'brake']],
+            ['slug' => 'scule-pentru-suspensie', 'keywords' => ['подвеск', 'амортизатор', 'пружин']],
+            ['slug' => 'scule-pentru-motor', 'keywords' => ['двигател', 'грм', 'распредвал', 'коленвал']],
+            ['slug' => 'scule-pentru-roti-vulcanizare', 'keywords' => ['колес', 'шиномонтаж', 'вулканизац']],
+            ['slug' => 'diagnoza-auto', 'keywords' => ['диагностик', 'diagnostic']],
+            ['slug' => 'tinichigerie-si-richtuire', 'keywords' => ['правка кузова', 'рихтов', 'покраск', 'tinichigerie']],
+            ['slug' => 'chei-dinamometrice', 'keywords' => ['динамометр', 'torque']],
+            ['slug' => 'sublere-micrometre-comparatoare', 'keywords' => ['штангенциркул', 'микрометр', 'индикатор часового']],
+            ['slug' => 'multimetre-testere', 'keywords' => ['мультиметр', 'тестер электр']],
+            ['slug' => 'instrumente-de-masurare', 'keywords' => ['измерительный инструмент', 'измерение']],
+            ['slug' => 'manusi', 'keywords' => ['перчатк']],
+            ['slug' => 'ochelari-protectie-fata', 'keywords' => ['защитные очки', 'защита лица']],
+            ['slug' => 'echipament-protectie', 'keywords' => ['средства защиты', 'спецодежд', 'рабочая одежда']],
+            ['slug' => 'seturi-de-scule', 'keywords' => ['инструменты в ложементах', 'универсальные в наборах', 'ключи в наборах', 'отвертки в наборах']],
+            ['slug' => 'tubulare-si-clichete', 'keywords' => ['головки торцевые', 'воротки и трещотки', 'удлинители', 'карданы', 'трещотк']],
+            ['slug' => 'biti-insertii-adaptoare', 'keywords' => ['биты - вставки', 'биты, вставки', 'держатели бит', 'ударные биты', 'hex, torx', 'насадки бит']],
+            ['slug' => 'surubelnite-si-biti', 'keywords' => ['отвертк', 'отвёртк', 'screwdriver']],
+            ['slug' => 'clesti-si-instrumente-taiere', 'keywords' => ['пассатиж', 'плоскогуб', 'бокорез', 'кусач', 'клещи', 'зажимы и захваты']],
+            ['slug' => 'chei-si-surubelnite', 'keywords' => ['ключи', 'ключ гаечн', 'ключ комбинирован']],
+            ['slug' => 'tarozi-filiere-filetare', 'keywords' => ['плашки и метчики', 'метчик', 'плашк', 'резьб']],
+            ['slug' => 'taiere-pilire-prelucrare', 'keywords' => ['ударный и режущий', 'напильник', 'ножовк', 'зубил', 'молоток']],
+            ['slug' => 'accesorii-universale', 'keywords' => ['фонари', 'фонарь', 'squad', 'разное']],
+            ['slug' => 'chei-pneumatice', 'keywords' => ['пневмогайковерт']],
+            ['slug' => 'clichete-pneumatice', 'keywords' => ['пневмотрещот']],
+            ['slug' => 'ciocane-pneumatice', 'keywords' => ['пневмомолот']],
+            ['slug' => 'burghie-pneumatice', 'keywords' => ['пневмодрел']],
+            ['slug' => 'surubelnite-pneumatice', 'keywords' => ['пневмоотверт', 'пневмоотвёрт']],
+            ['slug' => 'polizoare-si-slefuitoare-pneumatice', 'keywords' => ['пневмошлиф', 'пневматическая шлиф', 'турбинк']],
+            ['slug' => 'pistoale-suflat-si-sablare', 'keywords' => ['продувочн', 'пескостру', 'tornador']],
+            ['slug' => 'scule-pneumatice', 'keywords' => ['пневматический инструмент', 'пневмоинструмент']],
+        ];
+    }
+
+    private function categoryResult(Category $category, int $confidence, string $method, array $notes): array
+    {
+        $confidence = min(100, $confidence);
+        $needsReview = $confidence < $this->minimumConfidence();
+
+        return [
+            'category_id' => $needsReview ? null : $category->id,
+            'detected_category_id' => $category->id,
+            'detected_category_path' => $this->path($category),
+            'category_slug' => $category->slug,
+            'category_name_ru' => $category->name,
+            'category_name_ro' => $category->name_ro,
+            'confidence' => $confidence,
+            'method' => $method,
+            'notes' => $notes,
+            'needs_review' => $needsReview,
+        ];
+    }
+
+    private function minimumConfidence(?array $rules = null): int
+    {
+        $rules ??= $this->settings->get('category_rules', config('product_parser.category_rules', []));
+
+        return max(
+            90,
+            (int) ($rules['min_confidence'] ?? 0),
+            (int) $this->settings->get('min_confidence_score', 90),
+        );
     }
 
     private function path(Category $category): string

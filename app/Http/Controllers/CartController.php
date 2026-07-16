@@ -19,7 +19,7 @@ class CartController extends Controller
     {
         $quantity = max(1, (int) $request->input('quantity', 1));
 
-        $available = Product::whereKey($product->id)->availableForSale()->exists();
+        $available = Product::whereKey($product->id)->purchasable()->exists();
         if (! $available || ! $this->images->isAvailable($product->main_image)) {
             return back()->withErrors(['cart' => app()->isLocale('ru') ? 'Товар недоступен на складе.' : 'Produsul nu este disponibil in stoc.']);
         }
@@ -40,7 +40,7 @@ class CartController extends Controller
         if ($quantity === 0) {
             unset($cart[$product->id]);
         } else {
-            if (! Product::whereKey($product->id)->availableForSale()->exists() || ! $this->images->isAvailable($product->main_image)) {
+            if (! Product::whereKey($product->id)->purchasable()->exists() || ! $this->images->isAvailable($product->main_image)) {
                 unset($cart[$product->id]);
             } else {
                 $cart[$product->id] = min($quantity, $product->stock_quantity);
@@ -65,7 +65,7 @@ class CartController extends Controller
     {
         $items = collect(session('cart', []))
             ->map(function ($quantity, $productId) {
-                $product = Product::with('brand')->availableForSale()->find($productId);
+                $product = Product::with('brand')->purchasable()->find($productId);
 
                 if (! $product) {
                     return null;

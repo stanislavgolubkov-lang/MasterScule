@@ -19,7 +19,7 @@ return [
     ],
     'contacts' => [
         'title' => 'Контакты',
-        'content' => 'Телефон: +373 60 000 000. Email: contact@masterscule.md. График: понедельник-пятница 08:00 - 17:00.',
+        'content' => 'Телефон: +373 781000 99. Email: info@masterscule.md. Адрес: Alexandru cel Bun 103/A, Chișinău, Republica Moldova. График: понедельник-пятница 08:00 - 17:00.',
     ],
     'privacy-policy' => [
         'title' => 'Политика конфиденциальности',

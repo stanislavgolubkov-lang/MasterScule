@@ -33,7 +33,7 @@
         <form method="post" action="{{ route('admin.parser.rules.update') }}" class="admin-product-form">
             @csrf
             <label>{{ $ru ? 'Минимальный confidence для рекомендации' : 'Confidence minim pentru recomandare' }}
-                <input type="number" name="min_confidence" value="{{ $rules['min_confidence'] ?? 70 }}" min="0" max="100">
+                <input type="number" name="min_confidence" value="{{ max(90, (int) ($rules['min_confidence'] ?? 90)) }}" min="90" max="100">
             </label>
             <label>{{ $ru ? 'Ключевые слова' : 'Cuvinte cheie' }}
                 <textarea name="keywords" rows="10" placeholder="scule-pneumatice=пневмо,pneumatic,гайковерт">{{ $keywords }}</textarea>

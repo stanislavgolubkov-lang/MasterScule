@@ -83,10 +83,20 @@ class Product extends Model
             ->where('needs_price_review', false)
             ->whereNotNull('main_image')
             ->where('main_image', '!=', '')
-            ->where('main_image', 'not like', '%placeholder%')
-            ->where('main_image', 'not like', '%fallback%')
+            ->where('main_image', 'not like', '%placeholder%');
+    }
+
+    public function scopePurchasable($query)
+    {
+        return $query
+            ->availableForSale()
             ->where('stock_status', 'in_stock')
             ->where('stock_quantity', '>', 0);
+    }
+
+    public function getIsPurchasableAttribute(): bool
+    {
+        return $this->stock_status === 'in_stock' && (int) $this->stock_quantity > 0;
     }
 
     public function scopeInCatalogCategories($query, array $categoryIds)
@@ -142,21 +152,27 @@ class Product extends Model
         return $this->name_ro ?: $this->name_ru ?: $this->name ?: $this->sku;
     }
 
-    public function getDisplayDescriptionAttribute(): ?string
+    public function getDisplayDescriptionAttribute(): string
     {
-        if (app()->isLocale('ru')) {
-            return $this->description_ru ?: $this->description ?: $this->short_description_ru ?: $this->short_description;
+        $candidates = app()->isLocale('ru')
+            ? [$this->description_ru, $this->description, $this->short_description_ru, $this->short_description, $this->description_ro, $this->short_description_ro]
+            : [$this->description_ro, $this->short_description_ro, $this->description, $this->description_ru, $this->short_description, $this->short_description_ru];
+
+        foreach ($candidates as $candidate) {
+            $description = trim((string) $candidate);
+
+            if ($description !== '') {
+                return $description;
+            }
         }
 
-        return $this->description_ro ?: $this->short_description_ro;
+        return app()->isLocale('ru')
+            ? "{$this->display_name} — профессиональный товар для автосервиса, мастерской или гаража. Артикул: {$this->sku}."
+            : "{$this->display_name} este un produs profesional pentru service auto, atelier sau garaj. Cod produs: {$this->sku}.";
     }
 
     public function getDisplayAttributesAttribute(): array
     {
-        if (! app()->isLocale('ru')) {
-            return $this->getAttributeValue('attributes') ?? [];
-        }
-
         $keys = [
             'Numar piese' => 'Количество предметов',
             'Număr piese' => 'Количество предметов',
@@ -175,10 +191,48 @@ class Product extends Model
             '24 luni' => '24 месяца',
         ];
 
-        return collect($this->getAttributeValue('attributes') ?? [])
-            ->mapWithKeys(fn ($value, $key) => [
-                $keys[$key] ?? $key => $values[$value] ?? $value,
-            ])
+        $attributes = collect($this->getAttributeValue('attributes') ?? [])
+            ->filter(fn ($value, $key) => trim((string) $key) !== '' && trim((string) $value) !== '');
+
+        if (app()->isLocale('ru')) {
+            $attributes = $attributes
+                ->mapWithKeys(fn ($value, $key) => [
+                    $keys[$key] ?? $key => $values[$value] ?? $value,
+                ]);
+        }
+
+        $attributes = $attributes->all();
+
+        foreach ([
+            app()->isLocale('ru') ? 'Вес' : 'Greutate' => $this->weight,
+            app()->isLocale('ru') ? 'Габариты' : 'Dimensiuni' => $this->dimensions,
+            app()->isLocale('ru') ? 'Гарантия' : 'Garantie' => $this->display_warranty,
+        ] as $key => $value) {
+            if (filled($value) && ! array_key_exists($key, $attributes)) {
+                $attributes[$key] = $value;
+            }
+        }
+
+        return $attributes;
+    }
+
+    public function getDisplayPackageContentsAttribute(): array
+    {
+        return collect($this->getAttributeValue('package_contents') ?? [])
+            ->map(fn ($value) => trim((string) $value))
+            ->filter()
+            ->values()
             ->all();
+    }
+
+    public function getDisplayWarrantyAttribute(): string
+    {
+        $warranty = trim((string) ($this->warranty ?: '24 luni'));
+
+        if (app()->isLocale('ru')) {
+            return str_replace(['luni', 'luna'], ['мес.', 'мес.'], $warranty);
+        }
+
+        return $warranty;
     }
 }

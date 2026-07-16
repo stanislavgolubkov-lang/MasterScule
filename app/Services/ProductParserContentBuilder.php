@@ -19,13 +19,15 @@ class ProductParserContentBuilder
             ? trim($categoryRo.' '.$brandLabel.' '.$sku)
             : $sourceName;
         $shortRu = trim($nameRu.'. Бренд '.$brandLabel.', артикул '.$sku.'.');
-        $shortRo = trim($nameRo.'. Brand '.$brandLabel.', cod '.$sku.'.');
+        $shortRo = trim($nameRo.'. '.$brandLabel.', articol '.$sku.'.');
         $descriptionRu = $nameRu.' — товар бренда '.$brandLabel.' из категории «'.$categoryRu.'». '
             .'Артикул производителя: '.$sku.'. Подходит для профессионального использования в мастерской и автосервисе. '
             .'Перед применением проверьте характеристики и совместимость с вашей задачей.';
         $descriptionRo = $nameRo.' este un produs '.$brandLabel.' din categoria „'.$categoryRo.'”. '
             .'Cod producator: '.$sku.'. Este destinat utilizarii profesionale in atelier si service auto. '
             .'Inainte de utilizare, verificati caracteristicile si compatibilitatea cu lucrarea planificata.';
+        $descriptionRo = $nameRo.'. '.$brandLabel.' '.$sku.' este recomandat pentru lucrari profesionale in atelier, service auto sau zona tehnica. '
+            .'Categoria: '.$categoryRo.'. Verificati caracteristicile, dimensiunile si compatibilitatea cu lucrarea planificata inainte de utilizare.';
 
         return [
             'name_ru' => $nameRu,
@@ -76,9 +78,58 @@ class ProductParserContentBuilder
             || $this->containsCyrillic((string) ($content['name_ro'] ?? '').' '.(string) ($content['description_ro'] ?? ''));
 
         if ($usedOfficialTranslation) {
-            $content['generated_content'] = false;
             $content['needs_content_review'] = $description === '';
         }
+
+        return $this->ensureComplete($content, $sku, $officialTitle ?: ($content['name_ru'] ?? $content['name_ro'] ?? $sku), $brand);
+    }
+
+    public function ensureComplete(array $content, string $sku, string $sourceName, ?string $brand = null, ?string $group = null, array $category = []): array
+    {
+        $fallback = $this->build($sku, $sourceName, $brand, $group, $category);
+        $usedFallback = false;
+
+        foreach ([
+            'name_ru',
+            'name_ro',
+            'short_description_ru',
+            'short_description_ro',
+            'description_ru',
+            'description_ro',
+        ] as $key) {
+            if (! filled($content[$key] ?? null)) {
+                $content[$key] = $fallback[$key];
+                $usedFallback = true;
+            }
+        }
+
+        if (! filled($content['short_description_ru'] ?? null) && filled($content['description_ru'] ?? null)) {
+            $content['short_description_ru'] = mb_strimwidth((string) $content['description_ru'], 0, 240, '');
+            $usedFallback = true;
+        }
+
+        if (! filled($content['short_description_ro'] ?? null) && filled($content['description_ro'] ?? null)) {
+            $content['short_description_ro'] = mb_strimwidth((string) $content['description_ro'], 0, 240, '');
+            $usedFallback = true;
+        }
+
+        $hasMissing = ! filled($content['name_ru'] ?? null)
+            || ! filled($content['name_ro'] ?? null)
+            || ! filled($content['description_ru'] ?? null)
+            || ! filled($content['description_ro'] ?? null);
+        $roContainsCyrillic = $this->containsCyrillic((string) ($content['name_ro'] ?? '').' '.(string) ($content['description_ro'] ?? ''));
+
+        $content['generated_content'] = (bool) ($content['generated_content'] ?? false) || $usedFallback;
+        $content['needs_translation_review'] = (bool) ($content['needs_translation_review'] ?? false)
+            || $usedFallback
+            || $hasMissing
+            || $roContainsCyrillic;
+        $content['needs_content_review'] = (bool) ($content['needs_content_review'] ?? false)
+            || $usedFallback
+            || $hasMissing
+            || (bool) $content['generated_content'];
+        $content['translation_source_type'] = $content['translation_source_type']
+            ?? ($usedFallback ? 'generated_pending_review' : 'official_or_imported');
 
         return $content;
     }
@@ -132,6 +183,7 @@ class ProductParserContentBuilder
     private function clean(string $value): string
     {
         $value = html_entity_decode(strip_tags($value), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $value = preg_replace('/^\s*(?:https?:\/\/)?(?:www\.)?tristool\.md\s*(?:[-–—:|]\s*)?/iu', '', $value) ?: $value;
 
         return trim(preg_replace('/\s+/u', ' ', $value) ?: '', " \t\n\r\0\x0B,.;");
     }

@@ -2,8 +2,8 @@
     $productImage = trim((string) $product->main_image);
     $imageAvailable = app(\App\Services\Catalog\ProductImageAvailabilityService::class)->isAvailable($productImage);
     $missingProductImage = ! $imageAvailable;
+    $inStock = $product->is_purchasable;
 @endphp
-@if($imageAvailable)
 <article class="product-card {{ $missingProductImage ? 'product-card-no-photo' : '' }}">
     <div class="product-image">
         @if(config('features.wishlist'))
@@ -33,12 +33,11 @@
                 <strong>{{ money($product->price) }}</strong>
                 @if($product->old_price)<del>{{ money($product->old_price) }}</del>@endif
             </div>
-            <div class="stock"><span aria-hidden="true">&#9679;</span> {{ __('ui.in_stock') }}</div>
+            <div class="stock {{ $inStock ? '' : 'stock-out' }}"><span aria-hidden="true">&#9679;</span> {{ $inStock ? __('ui.in_stock') : __('ui.out_of_stock') }}</div>
             <form action="{{ route('cart.add', $product) }}" method="post">
                 @csrf
-                <button class="btn small product-card-button" @disabled($product->stock_status !== 'in_stock' || $product->stock_quantity < 1)>{{ __('ui.add_to_cart') }}</button>
+                <button class="btn small product-card-button" @disabled(! $inStock)>{{ $inStock ? __('ui.add_to_cart') : __('ui.out_of_stock') }}</button>
             </form>
         </div>
     </div>
 </article>
-@endif

@@ -8,6 +8,7 @@ use App\Models\ProductParserItem;
 use App\Services\Catalog\ProductPublicationGuard;
 use App\Services\ProductDraftService;
 use App\Services\ProductImageProcessorService;
+use App\Services\ProductParserItemPreparationService;
 use App\Services\ProductParserService;
 use App\Services\ProductParserSettings;
 use Illuminate\Console\Command;
@@ -37,6 +38,7 @@ class RepairParserDrafts extends Command
         ProductParserService $parser,
         ProductDraftService $drafts,
         ProductImageProcessorService $images,
+        ProductParserItemPreparationService $preparation,
         ProductPublicationGuard $guard,
         ProductParserSettings $settings,
     ): int {
@@ -76,14 +78,16 @@ class RepairParserDrafts extends Command
                 $item->refresh()->load(['createdProduct', 'imageAssets', 'category', 'batch']);
                 $hasReusableSourceAsset = (filled($item->official_source_url) || filled($item->fallback_source_url))
                     && $item->imageAssets->contains(fn ($asset) => ! str_ends_with(strtolower((string) parse_url($asset->source_url, PHP_URL_PATH)), '.svg'));
-                if (! $hasReusableSourceAsset) {
+                $hasProcessedImage = $item->imageAssets->contains(
+                    fn ($asset) => $asset->status === 'processed'
+                        && filled($asset->processed_path)
+                        && filled($asset->thumb_path),
+                );
+                if ((! $hasReusableSourceAsset || $item->needs_image_review) && ! $hasProcessedImage) {
                     $parser->parseItem($item, processImages: false);
                     $item->refresh()->load(['createdProduct', 'imageAssets', 'category', 'batch']);
                 }
-                $this->selectPrimaryImage($item);
-                if ($item->imageAssets()->where('is_selected', true)->where('status', '!=', 'processed')->exists()) {
-                    $images->processSelected($item->fresh(['imageAssets', 'batch']));
-                }
+                $preparation->prepare($item->fresh(['imageAssets', 'batch']), true);
                 $item->refresh()->load(['createdProduct', 'imageAssets', 'category', 'batch']);
                 $this->keepOnlyUsableSelectedImages($item);
                 $item->refresh()->load('imageAssets');

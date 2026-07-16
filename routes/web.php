@@ -65,6 +65,7 @@ Route::middleware('admin.only')->group(function () {
     Route::get('/admin/parser/batches/{batch}', [ProductParserController::class, 'showBatch'])->name('admin.parser.batches.show');
     Route::post('/admin/parser/batches/{batch}/run-import', [ProductParserController::class, 'runPriceListImport'])->name('admin.parser.batches.run-import');
     Route::post('/admin/parser/batches/{batch}/bulk-action', [ProductParserController::class, 'bulkBatchAction'])->name('admin.parser.batches.bulk-action');
+    Route::post('/admin/parser/batches/{batch}/retry-deferred', [ProductParserController::class, 'retryDeferredBatch'])->name('admin.parser.batches.retry-deferred');
     Route::post('/admin/parser/batches/{batch}/cancel', [ProductParserController::class, 'cancelBatch'])->name('admin.parser.batches.cancel');
     Route::delete('/admin/parser/batches/{batch}', [ProductParserController::class, 'destroyBatch'])->name('admin.parser.batches.destroy');
     Route::get('/admin/parser/items/{item}', [ProductParserController::class, 'showItem'])->name('admin.parser.items.show');

@@ -93,7 +93,7 @@
             @if($newsletterEnabled)
                 <div><h4>{{ __('ui.newsletter') }}</h4><p>{{ __('ui.newsletter_text') }}</p><form class="newsletter"><input placeholder="{{ __('ui.email_placeholder') }}"><button>{{ __('ui.subscribe') }}</button></form></div>
             @else
-                <div><h4>{{ __('ui.contact') }}</h4><span>{{ config('store.working_hours.'.app()->getLocale()) }}</span><span>{{ config('store.legal_name') }}</span><span>{{ config('store.country') }}</span></div>
+                <div><h4>{{ config('store.legal_name') }}</h4><span>{{ config('store.working_hours.'.app()->getLocale()) }}</span><span>{{ config('store.country') }}</span></div>
             @endif
         </div>
         <div class="footer-bottom shell">{{ __('ui.copyright') }}</div>

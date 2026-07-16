@@ -9,40 +9,36 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
 
-class ProcessPriceListRowJob implements ShouldQueue
+class ProcessExternalPriceListRowJob implements ShouldQueue
 {
     use Queueable;
 
-    public int $timeout = 600;
+    public int $timeout = 900;
 
     public int $tries = 3;
 
-    public array $backoff = [30, 120];
+    public array $backoff = [60, 180];
 
     public function __construct(public int $itemId)
     {
-        $this->onQueue('parser-fast');
+        $this->onQueue('parser-slow');
     }
 
     public function handle(ProductPriceListImportService $importer): void
     {
         $item = ProductParserItem::with('batch')->find($this->itemId);
 
-        if (! $item) {
-            return;
-        }
-
-        if (! $item->batch) {
+        if (! $item || ! $item->batch) {
             return;
         }
 
         if ($item->batch->status === 'cancelled') {
-            $item->forceFill(['status' => 'rejected'])->save();
+            $item->forceFill(['status' => 'rejected', 'processing_stage' => 'rejected'])->save();
 
             return;
         }
 
-        if (! in_array($item->status, ['queued', 'searching', 'tristool_queued', 'tristool_searching'], true)) {
+        if (! in_array($item->status, ['external_check_queued', 'external_searching'], true)) {
             $importer->finalizeQueuedImport($item->batch);
 
             return;
@@ -50,10 +46,10 @@ class ProcessPriceListRowJob implements ShouldQueue
 
         $batchId = $item->batch_id;
         $item->forceFill([
-            'status' => 'tristool_searching',
-            'processing_stage' => 'tristool_searching',
+            'status' => 'external_searching',
+            'processing_stage' => 'external_searching',
         ])->save();
-        $importer->processFastQueuedItem($item);
+        $importer->processExternalQueuedItem($item);
 
         if ($batch = ProductParserBatch::find($batchId)) {
             $importer->finalizeQueuedImport($batch);
@@ -70,11 +66,11 @@ class ProcessPriceListRowJob implements ShouldQueue
 
         $item->forceFill([
             'status' => 'failed',
-            'processing_stage' => 'tristool_failed',
-            'tristool_checked_at' => now(),
-            'error_message' => trim(($item->error_message ? $item->error_message.' ' : '').($exception?->getMessage() ?: 'Row processing failed.')),
+            'processing_stage' => 'external_failed',
+            'external_checked_at' => now(),
+            'error_message' => trim(($item->error_message ? $item->error_message.' ' : '').($exception?->getMessage() ?: 'External source processing failed.')),
         ])->save();
-        $item->batch->addLog('Queued price list row failed', [
+        $item->batch->addLog('External price list row failed', [
             'row' => $item->row_number,
             'sku' => $item->sku,
             'error' => $exception?->getMessage(),

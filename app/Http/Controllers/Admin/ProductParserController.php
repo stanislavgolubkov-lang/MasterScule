@@ -9,6 +9,8 @@ use App\Jobs\FindOfficialProductSourceJob;
 use App\Jobs\ParsePriceListJob;
 use App\Jobs\ParseSingleSkuJob;
 use App\Jobs\ParseSkuBatchJob;
+use App\Jobs\ProcessExternalPriceListRowJob;
+use App\Jobs\ProcessPriceListRowJob;
 use App\Jobs\ProcessProductImagesJob;
 use App\Models\Brand;
 use App\Models\Category;
@@ -16,6 +18,7 @@ use App\Models\ProductParserBatch;
 use App\Models\ProductParserImageAsset;
 use App\Models\ProductParserItem;
 use App\Services\Catalog\ProductPublicationGuard;
+use App\Services\ProductCategoryLearningService;
 use App\Services\ProductDraftService;
 use App\Services\ProductParserSettings;
 use Illuminate\Http\Request;
@@ -33,7 +36,10 @@ class ProductParserController extends Controller
         'needs_stock_review',
     ];
 
-    public function __construct(private ProductParserSettings $settings) {}
+    public function __construct(
+        private ProductParserSettings $settings,
+        private ProductCategoryLearningService $categoryLearning,
+    ) {}
 
     public function index()
     {
@@ -261,18 +267,65 @@ class ProductParserController extends Controller
     {
         $this->guard('parser.view');
 
+        $status = request('status');
         $items = $batch->items()
             ->with(['category', 'existingProduct', 'createdProduct', 'imageAssets'])
-            ->when(request('status'), fn ($query, $status) => $query->where('status', $status))
-            ->when(request('needs_category'), fn ($query) => $query->where('needs_category_review', true))
-            ->when(request('no_images'), fn ($query) => $query->where('needs_image_review', true))
+            ->when(
+                $status === 'processing_auto',
+                fn ($query) => $query->whereIn('status', [
+                    'queued',
+                    'searching',
+                    'tristool_queued',
+                    'tristool_searching',
+                    'external_check_queued',
+                    'external_searching',
+                    'processing_images',
+                    'parsed',
+                ]),
+            )
+            ->when(
+                $status === 'tristool_queue',
+                fn ($query) => $query->whereIn('status', ['queued', 'searching', 'tristool_queued', 'tristool_searching']),
+            )
+            ->when(
+                $status === 'tristool_found',
+                fn ($query) => $query->where('processing_stage', 'tristool_ready'),
+            )
+            ->when(
+                $status === 'external_check',
+                fn ($query) => $query->whereIn('processing_stage', [
+                    'external_queued',
+                    'external_searching',
+                    'external_ready',
+                    'external_manual',
+                    'external_failed',
+                ]),
+            )
+            ->when(
+                $status && ! in_array($status, ['processing_auto', 'tristool_queue', 'tristool_found', 'external_check'], true),
+                fn ($query) => $query->where('status', $status),
+            )
+            ->when(request('needs_category'), fn ($query) => $query
+                ->where('needs_category_review', true)
+                ->whereIn('status', ['needs_category_review', 'needs_manual_review', 'failed', 'not_found']))
+            ->when(request('no_images'), fn ($query) => $query
+                ->where('needs_image_review', true)
+                ->whereIn('status', ['needs_manual_review', 'failed', 'not_found']))
+            ->when(request('exceptions'), fn ($query) => $query
+                ->where(function ($exceptionQuery) {
+                    $exceptionQuery->where(function ($categoryQuery) {
+                        $categoryQuery->where('needs_category_review', true)
+                            ->whereIn('status', ['needs_category_review', 'needs_manual_review', 'failed', 'not_found']);
+                    })->orWhereIn('status', ['failed', 'not_found', 'needs_manual_review']);
+                }))
             ->latest()
             ->paginate(30)
             ->withQueryString();
 
         $bulkStats = $this->bulkStats($batch);
+        $filterCounts = $this->filterCounts($batch);
 
-        return view('admin.parser.batch', compact('batch', 'items', 'bulkStats'));
+        return view('admin.parser.batch', compact('batch', 'items', 'bulkStats', 'filterCounts'));
     }
 
     public function showItem(ProductParserItem $item, ProductPublicationGuard $publicationGuard)
@@ -316,7 +369,7 @@ class ProductParserController extends Controller
         $this->guard('parser.category_rules');
 
         $data = $request->validate([
-            'min_confidence' => ['required', 'integer', 'min:0', 'max:100'],
+            'min_confidence' => ['required', 'integer', 'min:90', 'max:100'],
             'keywords' => ['nullable', 'string'],
             'sku_prefixes' => ['nullable', 'string'],
             'group_mapping' => ['nullable', 'string'],
@@ -324,7 +377,7 @@ class ProductParserController extends Controller
 
         $settings = $this->settings->all();
         $settings['category_rules'] = [
-            'min_confidence' => (int) $data['min_confidence'],
+            'min_confidence' => max(90, (int) $data['min_confidence']),
             'keywords' => $this->parseRuleLines($data['keywords'] ?? '', true),
             'sku_prefixes' => $this->parseRuleLines($data['sku_prefixes'] ?? ''),
             'group_mapping' => $this->parseRuleLines($data['group_mapping'] ?? ''),
@@ -429,6 +482,13 @@ class ProductParserController extends Controller
             'category_detection_method' => 'admin',
             'category_detection_notes_json' => array_merge($item->category_detection_notes_json ?: [], ['admin selected '.$category->slug]),
         ])->save();
+        $this->categoryLearning->learnFromItem(
+            $item->fresh(),
+            $category,
+            'admin',
+            100,
+            data_get($item->found_specs_json, '_breadcrumb', []),
+        );
         $item->batch?->addLog('Admin changed parser category', ['sku' => $item->sku, 'category_id' => $category->id]);
 
         return back()->with('success', __('ui.parser_category_updated'));
@@ -712,15 +772,78 @@ class ProductParserController extends Controller
         $this->guard('parser.run');
 
         $batch->forceFill(['status' => 'cancelled', 'finished_at' => now()])->save();
-        $batch->items()->whereIn('status', ['queued', 'searching'])->update(['status' => 'rejected']);
+        $batch->items()
+            ->whereIn('status', [
+                'queued',
+                'searching',
+                'tristool_queued',
+                'tristool_searching',
+                'external_check_queued',
+                'external_searching',
+                'processing_images',
+                'parsed',
+            ])
+            ->update(['status' => 'rejected', 'processing_stage' => 'rejected']);
         $batch->addLog('Batch cancelled by admin');
 
         return back()->with('success', __('ui.parser_batch_cancelled'));
     }
 
+    public function retryDeferredBatch(Request $request, ProductParserBatch $batch)
+    {
+        $this->guard('parser.run');
+
+        $data = $request->validate([
+            'mode' => ['required', Rule::in(['tristool', 'external'])],
+        ]);
+        $items = $batch->items()
+            ->where(function ($query) {
+                $query->whereIn('processing_stage', ['external_manual', 'external_failed'])
+                    ->orWhereIn('status', ['needs_manual_review', 'failed', 'not_found']);
+            })
+            ->get();
+
+        foreach ($items as $item) {
+            if ($data['mode'] === 'tristool') {
+                $item->forceFill([
+                    'status' => 'tristool_queued',
+                    'processing_stage' => 'tristool_queued',
+                    'error_message' => null,
+                ])->save();
+                ProcessPriceListRowJob::dispatch($item->id);
+            } else {
+                $item->forceFill([
+                    'status' => 'external_check_queued',
+                    'processing_stage' => 'external_queued',
+                    'error_message' => null,
+                ])->save();
+                ProcessExternalPriceListRowJob::dispatch($item->id);
+            }
+        }
+
+        if ($items->isNotEmpty()) {
+            $batch->forceFill([
+                'status' => 'processing',
+                'finished_at' => null,
+            ])->save();
+            $batch->addLog('Deferred parser items queued again', [
+                'mode' => $data['mode'],
+                'count' => $items->count(),
+            ]);
+        }
+
+        return back()->with('success', $items->isEmpty()
+            ? ($request->user()?->locale === 'ro' ? 'Nu exista produse amanate pentru reverificare.' : 'Нет отложенных товаров для перепроверки.')
+            : ($request->user()?->locale === 'ro' ? 'Produsele amanate au fost retrimise la verificare.' : 'Отложенные товары отправлены на повторную проверку.'));
+    }
+
     public function destroyBatch(ProductParserBatch $batch)
     {
         $this->guard('parser.delete');
+
+        if (in_array($batch->status, ['pending', 'running', 'processing'], true)) {
+            return back()->with('error', __('ui.parser_batch_delete_active'));
+        }
 
         $batch->delete();
 
@@ -736,7 +859,7 @@ class ProductParserController extends Controller
             'max_sku_per_batch' => ['required', 'integer', 'min:1', 'max:20000'],
             'max_file_size_kb' => ['required', 'integer', 'min:512', 'max:51200'],
             'max_images_per_product' => ['required', 'integer', 'min:1', 'max:4'],
-            'min_confidence_score' => ['required', 'integer', 'min:0', 'max:100'],
+            'min_confidence_score' => ['required', 'integer', 'min:90', 'max:100'],
             'image_size' => ['required', 'integer', 'min:600', 'max:2000'],
             'preview_size' => ['required', 'integer', 'min:300', 'max:1200'],
             'thumb_size' => ['required', 'integer', 'min:150', 'max:800'],
@@ -767,7 +890,7 @@ class ProductParserController extends Controller
             'max_sku_per_batch' => (int) $data['max_sku_per_batch'],
             'max_file_size_kb' => (int) $data['max_file_size_kb'],
             'max_images_per_product' => (int) $data['max_images_per_product'],
-            'min_confidence_score' => (int) $data['min_confidence_score'],
+            'min_confidence_score' => max(90, (int) $data['min_confidence_score']),
             'image_size' => (int) $data['image_size'],
             'preview_size' => (int) $data['preview_size'],
             'thumb_size' => (int) $data['thumb_size'],
@@ -780,7 +903,9 @@ class ProductParserController extends Controller
             'official_sources_enabled' => $request->boolean('official_sources_enabled'),
             'tristools_fallback_enabled' => $request->boolean('tristools_fallback_enabled'),
             'auto_approve_exact_fallback' => $request->boolean('auto_approve_exact_fallback'),
-            'tristools_fallback_only' => true,
+            'tristools_image_first' => true,
+            'tristools_content_first' => true,
+            'tristools_fallback_only' => false,
             'allow_marketplace_sources' => $request->boolean('allow_marketplace_sources'),
             'min_official_confidence' => (int) $data['min_official_confidence'],
             'min_fallback_confidence' => (int) $data['min_fallback_confidence'],
@@ -876,10 +1001,77 @@ class ProductParserController extends Controller
                 ->count(),
             'exceptions' => $batch->items()
                 ->where(function ($query) {
-                    $query->where('needs_category_review', true)
-                        ->orWhereIn('status', ['failed', 'not_found']);
+                    $query->where(function ($categoryQuery) {
+                        $categoryQuery->where('needs_category_review', true)
+                            ->whereIn('status', ['needs_category_review', 'needs_manual_review', 'failed', 'not_found']);
+                    })->orWhereIn('status', ['failed', 'not_found', 'needs_manual_review']);
                 })
                 ->count(),
+        ];
+    }
+
+    private function filterCounts(ProductParserBatch $batch): array
+    {
+        $counts = $batch->items()
+            ->selectRaw('COUNT(*) as all_count')
+            ->selectRaw("SUM(CASE WHEN status = 'ready_for_review' THEN 1 ELSE 0 END) as ready_for_review_count")
+            ->selectRaw("SUM(CASE WHEN status = 'dry_run_ready' THEN 1 ELSE 0 END) as dry_run_ready_count")
+            ->selectRaw("SUM(CASE WHEN status = 'existing_product_found' THEN 1 ELSE 0 END) as existing_product_found_count")
+            ->selectRaw("SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END) as skipped_count")
+            ->selectRaw("SUM(CASE WHEN status IN ('queued', 'searching', 'tristool_queued', 'tristool_searching', 'external_check_queued', 'external_searching', 'processing_images', 'parsed') THEN 1 ELSE 0 END) as processing_count")
+            ->selectRaw("SUM(CASE WHEN status IN ('queued', 'searching', 'tristool_queued', 'tristool_searching') THEN 1 ELSE 0 END) as tristool_pending_count")
+            ->selectRaw("SUM(CASE WHEN processing_stage = 'tristool_ready' THEN 1 ELSE 0 END) as tristool_ready_count")
+            ->selectRaw("SUM(CASE WHEN processing_stage IN ('external_queued', 'external_searching', 'external_ready', 'external_manual', 'external_failed') THEN 1 ELSE 0 END) as external_total_count")
+            ->selectRaw("SUM(CASE WHEN processing_stage IN ('external_queued', 'external_searching') THEN 1 ELSE 0 END) as external_pending_count")
+            ->selectRaw("SUM(CASE WHEN processing_stage IN ('external_manual', 'external_failed') OR status IN ('needs_manual_review', 'failed', 'not_found') THEN 1 ELSE 0 END) as deferred_retryable_count")
+            ->selectRaw("SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_count")
+            ->selectRaw("SUM(CASE WHEN needs_category_review = 1 AND status IN ('needs_category_review', 'needs_manual_review', 'failed', 'not_found') THEN 1 ELSE 0 END) as needs_category_count")
+            ->selectRaw("SUM(CASE WHEN needs_image_review = 1 AND status IN ('needs_manual_review', 'failed', 'not_found') THEN 1 ELSE 0 END) as no_images_count")
+            ->selectRaw("SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_count")
+            ->first();
+
+        $all = (int) ($counts?->all_count ?? 0);
+        $skipped = (int) ($counts?->skipped_count ?? 0);
+        $processing = (int) ($counts?->processing_count ?? 0);
+        $rejected = (int) ($counts?->rejected_count ?? 0);
+        $completed = max(0, $all - $processing - $rejected);
+        $progressPercent = $all > 0
+            ? min(100, (int) round(($completed / $all) * 100))
+            : 0;
+        $fastTotal = max(0, $all - $skipped - $rejected);
+        $fastPending = (int) ($counts?->tristool_pending_count ?? 0);
+        $fastCompleted = max(0, $fastTotal - $fastPending);
+        $fastPercent = $fastTotal > 0
+            ? min(100, (int) round(($fastCompleted / $fastTotal) * 100))
+            : 0;
+        $externalTotal = (int) ($counts?->external_total_count ?? 0);
+        $externalPending = (int) ($counts?->external_pending_count ?? 0);
+        $externalCompleted = max(0, $externalTotal - $externalPending);
+        $externalPercent = $externalTotal > 0
+            ? min(100, (int) round(($externalCompleted / $externalTotal) * 100))
+            : 0;
+
+        return [
+            'all' => $all,
+            'ready_for_review' => (int) ($counts?->ready_for_review_count ?? 0),
+            'dry_run_ready' => (int) ($counts?->dry_run_ready_count ?? 0),
+            'existing_product_found' => (int) ($counts?->existing_product_found_count ?? 0),
+            'processing' => $processing,
+            'completed' => $completed,
+            'progress_percent' => $progressPercent,
+            'fast_total' => $fastTotal,
+            'fast_pending' => $fastPending,
+            'fast_completed' => $fastCompleted,
+            'fast_percent' => $fastPercent,
+            'tristool_ready' => (int) ($counts?->tristool_ready_count ?? 0),
+            'external_total' => $externalTotal,
+            'external_pending' => $externalPending,
+            'external_completed' => $externalCompleted,
+            'external_percent' => $externalPercent,
+            'deferred_retryable' => (int) ($counts?->deferred_retryable_count ?? 0),
+            'needs_category' => (int) ($counts?->needs_category_count ?? 0),
+            'no_images' => (int) ($counts?->no_images_count ?? 0),
+            'failed' => (int) ($counts?->failed_count ?? 0),
         ];
     }
 

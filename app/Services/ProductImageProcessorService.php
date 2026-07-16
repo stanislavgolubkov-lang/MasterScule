@@ -47,10 +47,19 @@ class ProductImageProcessorService
             }
         }
 
+        $hasProcessedImages = $processed !== [];
+        $errorMessage = trim((string) $item->error_message);
+        if ($errorMessage === trim((string) __('ui.parser_images_failed'))) {
+            $errorMessage = '';
+        }
+
         $item->forceFill([
             'processed_images_json' => array_values(array_filter($processed)),
-            'status' => $processed ? 'ready_for_review' : 'failed',
-            'error_message' => $processed ? null : __('ui.parser_images_failed'),
+            'status' => $hasProcessedImages
+                ? 'ready_for_review'
+                : ($item->needs_category_review ? 'needs_category_review' : 'ready_for_review'),
+            'needs_image_review' => ! $hasProcessedImages,
+            'error_message' => $hasProcessedImages || $errorMessage === '' ? null : $errorMessage,
         ])->save();
 
         $item->batch?->addLog('Processed parser images', ['sku' => $item->sku, 'count' => count($processed)]);

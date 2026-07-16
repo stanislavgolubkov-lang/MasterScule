@@ -12,6 +12,8 @@ use RuntimeException;
 
 class ProductDraftService
 {
+    public function __construct(private ProductParserContentBuilder $contentBuilder) {}
+
     public function createDraft(ProductParserItem $item): Product
     {
         if ($existing = Product::where('sku', $item->sku)->first()) {
@@ -28,10 +30,11 @@ class ProductDraftService
 
         $images = $this->imagePaths($item);
         $mainImage = $images[0] ?? '/images/products/product-placeholder-toolbox.svg';
-        $titleRu = $item->name_ru ?: ('Draft '.$item->sku);
-        $titleRo = $item->name_ro ?: null;
-        $descriptionRu = $item->description_ru ?: null;
-        $descriptionRo = $item->description_ro ?: null;
+        $content = $this->contentForItem($item);
+        $titleRu = $content['name_ru'];
+        $titleRo = $content['name_ro'];
+        $descriptionRu = $content['description_ru'];
+        $descriptionRo = $content['description_ro'];
         $price = $item->parsed_price !== null ? (float) $item->parsed_price : 0;
         $stock = $item->parsed_stock !== null ? max(0, (int) $item->parsed_stock) : 0;
         $needsTranslationReview = (bool) $item->needs_translation_review
@@ -48,9 +51,9 @@ class ProductDraftService
             'name_ro' => $titleRo,
             'slug' => $this->uniqueProductSlug($titleRu, $item->sku),
             'sku' => $item->sku,
-            'short_description' => $item->short_description_ru ?: Str::limit((string) $descriptionRu, 180),
-            'short_description_ru' => $item->short_description_ru ?: Str::limit((string) $descriptionRu, 180),
-            'short_description_ro' => $item->short_description_ro,
+            'short_description' => $content['short_description_ru'] ?: Str::limit((string) $descriptionRu, 180),
+            'short_description_ru' => $content['short_description_ru'] ?: Str::limit((string) $descriptionRu, 180),
+            'short_description_ro' => $content['short_description_ro'],
             'description' => $descriptionRu,
             'description_ru' => $descriptionRu,
             'description_ro' => $descriptionRo,
@@ -65,8 +68,8 @@ class ProductDraftService
             'needs_stock_review' => (bool) $item->needs_stock_review,
             'needs_image_review' => (bool) $item->needs_image_review || $images === [],
             'needs_category_review' => (bool) $item->needs_category_review,
-            'needs_translation_review' => $needsTranslationReview,
-            'needs_content_review' => (bool) $item->needs_content_review,
+            'needs_translation_review' => $needsTranslationReview || (bool) $content['needs_translation_review'],
+            'needs_content_review' => (bool) $content['needs_content_review'],
             'needs_source_review' => (bool) $item->needs_source_review,
             'needs_price_review' => (bool) $item->needs_price_review || $price <= 0,
             'source_import_batch_id' => $item->batch_id,
@@ -78,14 +81,14 @@ class ProductDraftService
             'source_domain' => $item->official_source_domain ?: $item->fallback_source_domain,
             'source_type' => $item->content_source_type ?: ($item->fallback_source_used ? 'fallback_reference' : 'official_manufacturer'),
             'fallback_source_used' => (bool) $item->fallback_source_used,
-            'generated_content' => (bool) $item->generated_content,
+            'generated_content' => (bool) $content['generated_content'],
             'source_reviewed_at' => $item->source_reviewed_at,
             'main_image' => $mainImage,
             'gallery' => $images,
-            'attributes' => array_filter(($item->found_specs_json ?: []) + [
+            'attributes' => array_filter($this->displaySpecs($item) + [
                 'Vehicle application' => $item->vehicle_application,
             ]),
-            'package_contents' => ['Draft parser preview'],
+            'package_contents' => $this->packageContents($item),
             'rating' => 5,
             'reviews_count' => 0,
             'is_active' => false,
@@ -106,6 +109,7 @@ class ProductDraftService
             'created_product_id' => $product->id,
             'approval_status' => 'pending_review',
         ])->save();
+        $item->batch()->increment('created_drafts');
         $item->batch?->addLog('Created draft product', ['sku' => $item->sku, 'product_id' => $product->id]);
 
         return $product;
@@ -135,18 +139,22 @@ class ProductDraftService
                 ])->save();
             }
         } elseif ($action === 'update_description') {
+            $content = $this->contentForItem($item, $product);
             $product->forceFill([
-                'name' => $item->name_ru ?: $product->name,
-                'name_ru' => $item->name_ru ?: $product->name_ru ?: $product->name,
-                'name_ro' => $item->name_ro ?: $product->name_ro,
-                'short_description' => $item->short_description_ru ?: $product->short_description,
-                'short_description_ru' => $item->short_description_ru ?: $product->short_description_ru,
-                'short_description_ro' => $item->short_description_ro ?: $product->short_description_ro,
-                'description' => $item->description_ru ?: $product->description,
-                'description_ru' => $item->description_ru ?: $product->description_ru,
-                'description_ro' => $item->description_ro ?: $product->description_ro,
-                'needs_translation_review' => (bool) $item->needs_translation_review,
-                'attributes' => $item->found_specs_json ?: $product->attributes,
+                'name' => $content['name_ru'] ?: $product->name,
+                'name_ru' => $content['name_ru'] ?: $product->name_ru ?: $product->name,
+                'name_ro' => $content['name_ro'] ?: $product->name_ro,
+                'short_description' => $content['short_description_ru'] ?: $product->short_description,
+                'short_description_ru' => $content['short_description_ru'] ?: $product->short_description_ru,
+                'short_description_ro' => $content['short_description_ro'] ?: $product->short_description_ro,
+                'description' => $content['description_ru'] ?: $product->description,
+                'description_ru' => $content['description_ru'] ?: $product->description_ru,
+                'description_ro' => $content['description_ro'] ?: $product->description_ro,
+                'needs_translation_review' => (bool) $content['needs_translation_review'],
+                'needs_content_review' => (bool) $content['needs_content_review'],
+                'generated_content' => (bool) $content['generated_content'],
+                'attributes' => $this->displaySpecs($item) ?: $product->attributes,
+                'package_contents' => $this->packageContents($item) ?: $product->package_contents,
                 'parser_confidence' => $item->confidence_score,
                 'parser_source_urls' => $item->source_urls_json ?: [],
             ])->save();
@@ -201,23 +209,24 @@ class ProductDraftService
         }
 
         $images = $this->imagePaths($item);
-        $titleRu = $item->name_ru ?: $product->name_ru ?: $product->name;
+        $content = $this->contentForItem($item, $product);
+        $titleRu = $content['name_ru'] ?: $product->name_ru ?: $product->name;
         $updates = [
             'category_id' => $category->id,
             'name' => $titleRu,
             'name_ru' => $titleRu,
-            'name_ro' => $item->name_ro,
-            'short_description' => $item->short_description_ru,
-            'short_description_ru' => $item->short_description_ru,
-            'short_description_ro' => $item->short_description_ro,
-            'description' => $item->description_ru,
-            'description_ru' => $item->description_ru,
-            'description_ro' => $item->description_ro,
+            'name_ro' => $content['name_ro'],
+            'short_description' => $content['short_description_ru'],
+            'short_description_ru' => $content['short_description_ru'],
+            'short_description_ro' => $content['short_description_ro'],
+            'description' => $content['description_ru'],
+            'description_ru' => $content['description_ru'],
+            'description_ro' => $content['description_ro'],
             'needs_review' => true,
             'needs_image_review' => (bool) $item->needs_image_review || $images === [],
             'needs_category_review' => (bool) $item->needs_category_review,
-            'needs_translation_review' => (bool) $item->needs_translation_review,
-            'needs_content_review' => (bool) $item->needs_content_review,
+            'needs_translation_review' => (bool) $content['needs_translation_review'],
+            'needs_content_review' => (bool) $content['needs_content_review'],
             'needs_source_review' => (bool) $item->needs_source_review,
             'source_parser_item_id' => $item->id,
             'parser_confidence' => $item->source_match_confidence ?: $item->confidence_score,
@@ -226,11 +235,12 @@ class ProductDraftService
             'source_domain' => $item->official_source_domain ?: $item->fallback_source_domain,
             'source_type' => $item->content_source_type ?: ($item->fallback_source_used ? 'fallback_reference' : 'official_manufacturer'),
             'fallback_source_used' => (bool) $item->fallback_source_used,
-            'generated_content' => (bool) $item->generated_content,
+            'generated_content' => (bool) $content['generated_content'],
             'source_reviewed_at' => $item->source_reviewed_at,
-            'attributes' => $item->found_specs_json ?: $product->attributes,
+            'attributes' => $this->displaySpecs($item) ?: $product->attributes,
+            'package_contents' => $this->packageContents($item) ?: $product->package_contents,
             'meta_title' => $titleRu.' | '.config('store.domain_label'),
-            'meta_description' => Str::limit((string) $item->description_ru, 150),
+            'meta_description' => Str::limit((string) $content['description_ru'], 150),
         ];
 
         if ($images !== []) {
@@ -267,6 +277,44 @@ class ProductDraftService
         return $item->imageAssets()
             ->where('is_selected', true)
             ->pluck('processed_path')
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function contentForItem(ProductParserItem $item, ?Product $product = null): array
+    {
+        $category = $item->category ?: ($item->category_id ? Category::find($item->category_id) : null);
+
+        return $this->contentBuilder->ensureComplete([
+            'name_ru' => $item->name_ru ?: $product?->name_ru ?: $product?->name,
+            'name_ro' => $item->name_ro ?: $product?->name_ro,
+            'short_description_ru' => $item->short_description_ru ?: $product?->short_description_ru ?: $product?->short_description,
+            'short_description_ro' => $item->short_description_ro ?: $product?->short_description_ro,
+            'description_ru' => $item->description_ru ?: $product?->description_ru ?: $product?->description,
+            'description_ro' => $item->description_ro ?: $product?->description_ro,
+            'needs_translation_review' => (bool) $item->needs_translation_review,
+            'needs_content_review' => (bool) $item->needs_content_review,
+            'generated_content' => (bool) $item->generated_content,
+            'translation_source_type' => $item->translation_source_type,
+        ], $item->sku, (string) ($item->raw_name ?: $item->found_title ?: $product?->name ?: $item->sku), $item->brand ?: $product?->brand?->name, null, [
+            'category_slug' => $category?->slug,
+            'category_name_ru' => $category?->name,
+            'category_name_ro' => $category?->name_ro,
+        ]);
+    }
+
+    private function displaySpecs(ProductParserItem $item): array
+    {
+        return collect($item->found_specs_json ?: [])
+            ->reject(fn ($value, $key) => Str::startsWith((string) $key, '_'))
+            ->all();
+    }
+
+    private function packageContents(ProductParserItem $item): array
+    {
+        return collect($item->found_specs_json['_package_contents'] ?? [])
+            ->map(fn ($value) => trim((string) $value))
             ->filter()
             ->values()
             ->all();
