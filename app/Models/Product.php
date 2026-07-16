@@ -180,7 +180,6 @@ class Product extends Model
             'Utilizare' => 'Применение',
             'Greutate' => 'Вес',
             'Dimensiuni' => 'Размеры',
-            'Garantie' => 'Гарантия',
         ];
 
         $values = [
@@ -188,11 +187,13 @@ class Product extends Model
             'Oțel crom-vanadiu' => 'Хром-ванадиевая сталь',
             'Profesional' => 'Профессиональное',
             'Service' => 'Сервис',
-            '24 luni' => '24 месяца',
+            '12 luni' => '12 месяцев',
         ];
 
         $attributes = collect($this->getAttributeValue('attributes') ?? [])
-            ->filter(fn ($value, $key) => trim((string) $key) !== '' && trim((string) $value) !== '');
+            ->filter(fn ($value, $key) => trim((string) $key) !== ''
+                && trim((string) $value) !== ''
+                && ! $this->isHiddenDisplayAttribute((string) $key));
 
         if (app()->isLocale('ru')) {
             $attributes = $attributes
@@ -206,7 +207,6 @@ class Product extends Model
         foreach ([
             app()->isLocale('ru') ? 'Вес' : 'Greutate' => $this->weight,
             app()->isLocale('ru') ? 'Габариты' : 'Dimensiuni' => $this->dimensions,
-            app()->isLocale('ru') ? 'Гарантия' : 'Garantie' => $this->display_warranty,
         ] as $key => $value) {
             if (filled($value) && ! array_key_exists($key, $attributes)) {
                 $attributes[$key] = $value;
@@ -214,6 +214,28 @@ class Product extends Model
         }
 
         return $attributes;
+    }
+
+    private function isHiddenDisplayAttribute(string $key): bool
+    {
+        $key = mb_strtolower(trim((string) preg_replace('/[\s:_-]+/u', ' ', $key)));
+
+        return in_array($key, [
+            'retail price',
+            'price retail',
+            'розничная цена',
+            'цена розничная',
+            'pret retail',
+            'preț retail',
+            'price source',
+            'источник цены',
+            'sursa pretului',
+            'sursa prețului',
+            'warranty',
+            'гарантия',
+            'garantie',
+            'garanție',
+        ], true);
     }
 
     public function getDisplayPackageContentsAttribute(): array
@@ -227,7 +249,7 @@ class Product extends Model
 
     public function getDisplayWarrantyAttribute(): string
     {
-        $warranty = trim((string) ($this->warranty ?: '24 luni'));
+        $warranty = trim((string) ($this->warranty ?: '12 luni'));
 
         if (app()->isLocale('ru')) {
             return str_replace(['luni', 'luna'], ['мес.', 'мес.'], $warranty);

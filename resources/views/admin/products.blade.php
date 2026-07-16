@@ -118,7 +118,7 @@
                 </label>
                 <div class="admin-two-cols">
                     <label>{{ __('ui.warranty') }}
-                        <input name="warranty" value="{{ old('warranty', '24 luni') }}">
+                        <input name="warranty" value="{{ old('warranty', '12 luni') }}">
                     </label>
                     <label>{{ app()->isLocale('ru') ? 'Вес' : 'Greutate' }}
                         <input name="weight" value="{{ old('weight') }}" placeholder="7,40 kg">

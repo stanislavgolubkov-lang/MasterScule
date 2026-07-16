@@ -12,7 +12,10 @@ use RuntimeException;
 
 class ProductDraftService
 {
-    public function __construct(private ProductParserContentBuilder $contentBuilder) {}
+    public function __construct(
+        private ProductParserContentBuilder $contentBuilder,
+        private ProductParserSettings $settings,
+    ) {}
 
     public function createDraft(ProductParserItem $item): Product
     {
@@ -36,7 +39,7 @@ class ProductDraftService
         $descriptionRu = $content['description_ru'];
         $descriptionRo = $content['description_ro'];
         $price = $item->parsed_price !== null ? (float) $item->parsed_price : 0;
-        $stock = $item->parsed_stock !== null ? max(0, (int) $item->parsed_stock) : 0;
+        $stock = $this->stockQuantity($item);
         $needsTranslationReview = (bool) $item->needs_translation_review
             || ! filled($titleRo)
             || ! filled($descriptionRu)
@@ -77,8 +80,8 @@ class ProductDraftService
             'vehicle_application' => $item->vehicle_application,
             'parser_confidence' => $item->source_match_confidence ?: $item->confidence_score,
             'parser_source_urls' => $item->source_urls_json ?: [],
-            'source_url' => $item->official_source_url ?: $item->fallback_source_url,
-            'source_domain' => $item->official_source_domain ?: $item->fallback_source_domain,
+            'source_url' => $this->sourcePageUrl($item),
+            'source_domain' => $this->sourcePageDomain($item),
             'source_type' => $item->content_source_type ?: ($item->fallback_source_used ? 'fallback_reference' : 'official_manufacturer'),
             'fallback_source_used' => (bool) $item->fallback_source_used,
             'generated_content' => (bool) $content['generated_content'],
@@ -96,7 +99,7 @@ class ProductDraftService
             'is_bestseller' => false,
             'is_new' => false,
             'is_discounted' => false,
-            'warranty' => '24 luni',
+            'warranty' => '12 luni',
             'meta_title' => $titleRu.' | '.config('store.domain_label'),
             'meta_description' => Str::limit((string) $descriptionRu, 150),
         ]);
@@ -211,6 +214,7 @@ class ProductDraftService
         $images = $this->imagePaths($item);
         $content = $this->contentForItem($item, $product);
         $titleRu = $content['name_ru'] ?: $product->name_ru ?: $product->name;
+        $stock = $this->stockQuantity($item);
         $updates = [
             'category_id' => $category->id,
             'name' => $titleRu,
@@ -228,11 +232,13 @@ class ProductDraftService
             'needs_translation_review' => (bool) $content['needs_translation_review'],
             'needs_content_review' => (bool) $content['needs_content_review'],
             'needs_source_review' => (bool) $item->needs_source_review,
+            'stock_quantity' => $stock,
+            'stock_status' => $stock > 0 ? 'in_stock' : 'out_of_stock',
             'source_parser_item_id' => $item->id,
             'parser_confidence' => $item->source_match_confidence ?: $item->confidence_score,
             'parser_source_urls' => $item->source_urls_json ?: [],
-            'source_url' => $item->official_source_url ?: $item->fallback_source_url,
-            'source_domain' => $item->official_source_domain ?: $item->fallback_source_domain,
+            'source_url' => $this->sourcePageUrl($item),
+            'source_domain' => $this->sourcePageDomain($item),
             'source_type' => $item->content_source_type ?: ($item->fallback_source_used ? 'fallback_reference' : 'official_manufacturer'),
             'fallback_source_used' => (bool) $item->fallback_source_used,
             'generated_content' => (bool) $content['generated_content'],
@@ -307,7 +313,23 @@ class ProductDraftService
     private function displaySpecs(ProductParserItem $item): array
     {
         return collect($item->found_specs_json ?: [])
-            ->reject(fn ($value, $key) => Str::startsWith((string) $key, '_'))
+            ->reject(fn ($value, $key) => Str::startsWith((string) $key, '_')
+                || in_array(Str::lower(trim((string) preg_replace('/[\s:_-]+/u', ' ', (string) $key))), [
+                    'retail price',
+                    'price retail',
+                    'розничная цена',
+                    'цена розничная',
+                    'pret retail',
+                    'preț retail',
+                    'price source',
+                    'источник цены',
+                    'sursa pretului',
+                    'sursa prețului',
+                    'warranty',
+                    'гарантия',
+                    'garantie',
+                    'garanție',
+                ], true))
             ->all();
     }
 
@@ -361,8 +383,8 @@ class ProductDraftService
                 'product_id' => $product->id,
                 'path' => $path,
                 'source_url' => $asset?->source_url,
-                'source_page_url' => $item?->official_source_url ?: $item?->fallback_source_url,
-                'source_domain' => $asset?->source_domain ?: $item?->official_source_domain ?: $item?->fallback_source_domain,
+                'source_page_url' => $item ? $this->sourcePageUrl($item) : null,
+                'source_domain' => $asset?->source_domain ?: ($item ? $this->sourcePageDomain($item) : null),
                 'is_official' => $item ? ! $item->fallback_source_used && filled($item->official_source_url) : false,
                 'mime_type' => $asset?->mime_type,
                 'width' => $asset?->width,
@@ -372,5 +394,28 @@ class ProductDraftService
                 'sort_order' => $index + 1,
             ]);
         }
+    }
+
+    private function sourcePageUrl(ProductParserItem $item): ?string
+    {
+        return $item->tristools_url
+            ?: $item->official_source_url
+            ?: $item->fallback_source_url;
+    }
+
+    private function sourcePageDomain(ProductParserItem $item): ?string
+    {
+        return parse_url((string) $this->sourcePageUrl($item), PHP_URL_HOST)
+            ?: $item->official_source_domain
+            ?: $item->fallback_source_domain;
+    }
+
+    private function stockQuantity(ProductParserItem $item): int
+    {
+        if ($item->parsed_stock !== null) {
+            return max(0, (int) $item->parsed_stock);
+        }
+
+        return max(1, (int) $this->settings->get('missing_stock_quantity', 1));
     }
 }

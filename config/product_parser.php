@@ -23,6 +23,7 @@ return [
         'timeout' => (int) env('PRODUCT_PARSER_TRANSLATION_TIMEOUT', 15),
     ],
     'create_drafts_automatically' => env('PRODUCT_PARSER_CREATE_DRAFTS_AUTOMATICALLY', true),
+    'missing_stock_quantity' => max(1, (int) env('PRODUCT_PARSER_MISSING_STOCK_QUANTITY', 1)),
     'update_existing_prices' => env('PRODUCT_PARSER_UPDATE_EXISTING_PRICES', false),
     'update_existing_stock' => env('PRODUCT_PARSER_UPDATE_EXISTING_STOCK', false),
     'add_photos_to_existing' => env('PRODUCT_PARSER_ADD_PHOTOS_TO_EXISTING', true),

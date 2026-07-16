@@ -59,7 +59,7 @@
                 @endforeach
             </div>
         @endif
-        <div class="mini-facts"><span>{{ __('ui.warranty') }} 24 {{ app()->isLocale('ru') ? 'мес.' : 'luni' }}</span><span>{{ __('ui.consultation') }}</span><span>{{ __('ui.fast_delivery') }}</span></div>
+        <div class="mini-facts"><span>{{ __('ui.warranty') }} 12 {{ app()->isLocale('ru') ? 'мес.' : 'luni' }}</span><span>{{ __('ui.consultation') }}</span><span>{{ __('ui.fast_delivery') }}</span></div>
     </div>
     <div class="buy-box">
         <nav class="product-breadcrumbs" aria-label="{{ __('ui.catalog') }}">
@@ -179,13 +179,13 @@
         data-product-panel="warranty"
         hidden
     >
-        <p>{{ app()->isLocale('ru') ? 'Гарантия на товар: '.$product->display_warranty.'. Перед отправкой товар проверяется, а по вопросам подбора и обслуживания помогает менеджер.' : 'Garantia produsului: '.$product->display_warranty.'. Produsul este verificat inainte de expediere, iar managerul te ajuta cu alegerea si service-ul.' }}</p>
+        <p>{{ app()->isLocale('ru') ? 'Гарантия на товар: 12 месяцев. *Уточняйте по каждому продукту. Перед отправкой товар проверяется, а по вопросам подбора и обслуживания помогает менеджер.' : 'Garanția produsului: 12 luni. *Condițiile se precizează pentru fiecare produs. Produsul este verificat înainte de expediere, iar managerul te ajută cu alegerea și service-ul.' }}</p>
     </div>
 </section>
 
 <section class="shell section-head"><h2>{{ __('ui.similar_products') }}</h2></section>
-<section class="shell product-grid">
-    @foreach($similarProducts->merge($brandProducts)->unique('id')->take(4) as $item)
+<section class="shell product-grid product-grid-compact product-grid-related">
+    @foreach($relatedProducts as $item)
         <x-product-card :product="$item" />
     @endforeach
 </section>

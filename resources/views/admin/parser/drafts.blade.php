@@ -16,6 +16,9 @@
 </section>
 
 <section class="shell panel parser-card parser-table-panel">
+    <div class="admin-products-summary parser-drafts-summary">
+        <strong>{{ $ru ? 'Всего черновиков' : 'Total drafturi' }}: {{ $items->total() }}</strong>
+    </div>
     <div class="parser-table-wrap">
         <table class="parser-table">
             <thead>

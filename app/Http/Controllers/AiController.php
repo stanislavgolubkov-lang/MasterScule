@@ -178,7 +178,7 @@ class AiController extends Controller
             'new' => 'Новинки: '.route('new').'. Здесь товары, отмеченные как новые.',
             'bestsellers' => 'Топ продаж: '.route('bestsellers').'. Здесь популярные товары.',
             'delivery' => 'Доставка и оплата: '.route('page', 'delivery-payment').'. Условия доставки и доступные способы оплаты.',
-            'warranty' => 'Гарантия: '.route('page', 'warranty').'. Обычно товары имеют гарантию 24 месяца.',
+            'warranty' => 'Гарантия: '.route('page', 'warranty').'. Базовый срок — 12 месяцев; условия нужно уточнять по каждому продукту.',
             'return' => 'Возврат: '.route('page', 'returns').'. Здесь условия возврата и компенсации.',
             'contact' => 'Контакты: '.route('page', 'contacts').'. Для сложного выбора можно обратиться к консультанту.',
         ] : [
@@ -194,7 +194,7 @@ class AiController extends Controller
             'new' => 'Noutati: '.route('new').'. Aici apar produsele marcate ca noi in catalog.',
             'bestsellers' => 'TOP vanzari: '.route('bestsellers').'. Aici sunt produsele marcate ca populare.',
             'delivery' => 'Livrare si plata: '.route('page', 'delivery-payment').'. Livrarea se face in Moldova, cu plata ramburs sau metoda agreata.',
-            'warranty' => 'Garantie: '.route('page', 'warranty').'. Produsele au garantie afisata, de regula 24 luni.',
+            'warranty' => 'Garanție: '.route('page', 'warranty').'. Termenul de bază este de 12 luni; condițiile trebuie precizate pentru fiecare produs.',
             'return' => 'Retur: '.route('page', 'returns').'. Clientul poate verifica termenii pentru retur si rambursare.',
             'contact' => 'Contact: '.route('page', 'contacts').'. Pentru alegere complexa, clientul poate cere ajutorul consultantului.',
         ];

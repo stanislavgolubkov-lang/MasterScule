@@ -19,9 +19,9 @@ class ProcessExternalPriceListRowJob implements ShouldQueue
 
     public array $backoff = [60, 180];
 
-    public function __construct(public int $itemId)
+    public function __construct(public int $itemId, string $queue = 'parser-slow')
     {
-        $this->onQueue('parser-slow');
+        $this->onQueue($queue);
     }
 
     public function handle(ProductPriceListImportService $importer): void
@@ -50,6 +50,18 @@ class ProcessExternalPriceListRowJob implements ShouldQueue
             'processing_stage' => 'external_searching',
         ])->save();
         $importer->processExternalQueuedItem($item);
+
+        $item = ProductParserItem::with('createdProduct')->find($this->itemId);
+        if ($item
+            && $item->processing_stage === 'external_ready'
+            && $item->createdProduct?->status === 'draft') {
+            $item->forceFill([
+                'status' => 'image_publish_queued',
+                'processing_stage' => 'image_publish_queued',
+                'error_message' => null,
+            ])->save();
+            PrepareAndPublishParserDraftJob::dispatch($item->id);
+        }
 
         if ($batch = ProductParserBatch::find($batchId)) {
             $importer->finalizeQueuedImport($batch);

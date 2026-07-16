@@ -9,6 +9,7 @@ use App\Jobs\FindOfficialProductSourceJob;
 use App\Jobs\ParsePriceListJob;
 use App\Jobs\ParseSingleSkuJob;
 use App\Jobs\ParseSkuBatchJob;
+use App\Jobs\PrepareAndPublishParserDraftJob;
 use App\Jobs\ProcessExternalPriceListRowJob;
 use App\Jobs\ProcessPriceListRowJob;
 use App\Jobs\ProcessProductImagesJob;
@@ -279,6 +280,7 @@ class ProductParserController extends Controller
                     'tristool_searching',
                     'external_check_queued',
                     'external_searching',
+                    'image_publish_queued',
                     'processing_images',
                     'parsed',
                 ]),
@@ -348,6 +350,7 @@ class ProductParserController extends Controller
 
         $items = ProductParserItem::with(['batch', 'category', 'createdProduct.brand'])
             ->whereNotNull('created_product_id')
+            ->whereHas('createdProduct', fn ($product) => $product->where('status', 'draft'))
             ->latest()
             ->paginate(30);
 
@@ -525,7 +528,6 @@ class ProductParserController extends Controller
         Request $request,
         ProductParserBatch $batch,
         ProductDraftService $drafts,
-        ProductPublicationGuard $publicationGuard,
     ) {
         $this->guard('parser.approve');
 
@@ -569,59 +571,48 @@ class ProductParserController extends Controller
             $query = $batch->items()
                 ->whereNotNull('created_product_id')
                 ->where('needs_category_review', false)
+                ->whereNotIn('status', ['image_publish_queued', 'processing_images'])
                 ->whereHas('createdProduct', fn ($product) => $product->where('status', 'draft'));
 
-            $blockedReasons = [];
-            $blockedMessages = [];
-            $query->with('createdProduct')->orderBy('id')->limit($limit)->chunkById(200, function ($items) use ($publicationGuard, &$processed, &$failed, &$blockedReasons, &$blockedMessages) {
+            $query->with('createdProduct')->orderBy('id')->limit($limit)->chunkById(200, function ($items) use (&$processed, &$failed) {
                 foreach ($items as $item) {
-                    $product = $item->createdProduct;
-                    if (! $product) {
+                    if (! $item->createdProduct) {
                         $failed++;
 
                         continue;
                     }
 
-                    $result = $publicationGuard->publish($product, true, self::PUBLICATION_APPROVAL_FLAGS);
-                    if (! $result['allowed']) {
+                    try {
+                        $item->forceFill([
+                            'status' => 'image_publish_queued',
+                            'processing_stage' => 'image_publish_queued',
+                            'error_message' => null,
+                        ])->save();
+                        PrepareAndPublishParserDraftJob::dispatch($item->id);
+                        $processed++;
+                    } catch (RuntimeException) {
                         $failed++;
-                        foreach ($result['error_codes'] as $index => $code) {
-                            $blockedReasons[$code] = ($blockedReasons[$code] ?? 0) + 1;
-                            $blockedMessages[$code] ??= $result['errors'][$index] ?? $code;
-                        }
-
-                        continue;
                     }
-
-                    $item->forceFill([
-                        'status' => 'approved',
-                        'approval_status' => 'approved',
-                        'needs_translation_review' => false,
-                        'needs_content_review' => false,
-                        'needs_price_review' => false,
-                        'needs_stock_review' => false,
-                    ])->save();
-                    $processed++;
                 }
             });
 
-            $batch->addLog('Bulk publication completed through guard', [
-                'processed' => $processed,
-                'blocked' => $failed,
-                'blocked_reasons' => $blockedReasons,
+            if ($processed > 0) {
+                $batch->forceFill([
+                    'status' => 'processing',
+                    'finished_at' => null,
+                ])->save();
+            }
+            $batch->addLog('Bulk image preparation and publication queued', [
+                'queued' => $processed,
+                'enqueue_failed' => $failed,
             ]);
 
-            $response = back()->with('success', "Опубликовано: {$processed}. Заблокировано: {$failed}.");
-            if ($failed > 0) {
-                arsort($blockedReasons);
-                $publicationErrors = collect($blockedReasons)
-                    ->map(fn (int $count, string $code) => "{$count} товаров: ".($blockedMessages[$code] ?? $code))
-                    ->values()
-                    ->all();
-                $response->with('publication_errors', $publicationErrors);
-            }
-
-            return $response;
+            return back()->with(
+                'success',
+                app()->isLocale('ru')
+                    ? "Отправлено на подготовку фото и публикацию: {$processed}. Ошибок постановки в очередь: {$failed}."
+                    : "Trimise pentru pregătirea imaginilor și publicare: {$processed}. Erori de coadă: {$failed}.",
+            );
         }
 
         $action = match ($data['action']) {
@@ -780,6 +771,7 @@ class ProductParserController extends Controller
                 'tristool_searching',
                 'external_check_queued',
                 'external_searching',
+                'image_publish_queued',
                 'processing_images',
                 'parsed',
             ])
@@ -867,6 +859,7 @@ class ProductParserController extends Controller
             'search_images' => ['nullable', 'boolean'],
             'translate_descriptions' => ['nullable', 'boolean'],
             'create_drafts_automatically' => ['nullable', 'boolean'],
+            'missing_stock_quantity' => ['required', 'integer', 'min:1', 'max:9999'],
             'update_existing_prices' => ['nullable', 'boolean'],
             'update_existing_stock' => ['nullable', 'boolean'],
             'official_sources_enabled' => ['nullable', 'boolean'],
@@ -898,6 +891,7 @@ class ProductParserController extends Controller
             'search_images' => $request->boolean('search_images'),
             'translate_descriptions' => $request->boolean('translate_descriptions'),
             'create_drafts_automatically' => $request->boolean('create_drafts_automatically'),
+            'missing_stock_quantity' => (int) $data['missing_stock_quantity'],
             'update_existing_prices' => $request->boolean('update_existing_prices'),
             'update_existing_stock' => $request->boolean('update_existing_stock'),
             'official_sources_enabled' => $request->boolean('official_sources_enabled'),
@@ -993,6 +987,7 @@ class ProductParserController extends Controller
             'drafts' => $batch->items()
                 ->whereNotNull('created_product_id')
                 ->where('needs_category_review', false)
+                ->whereNotIn('status', ['image_publish_queued', 'processing_images'])
                 ->whereHas('createdProduct', fn ($product) => $product->where('status', 'draft'))
                 ->count(),
             'existing' => $batch->items()
@@ -1018,7 +1013,7 @@ class ProductParserController extends Controller
             ->selectRaw("SUM(CASE WHEN status = 'dry_run_ready' THEN 1 ELSE 0 END) as dry_run_ready_count")
             ->selectRaw("SUM(CASE WHEN status = 'existing_product_found' THEN 1 ELSE 0 END) as existing_product_found_count")
             ->selectRaw("SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END) as skipped_count")
-            ->selectRaw("SUM(CASE WHEN status IN ('queued', 'searching', 'tristool_queued', 'tristool_searching', 'external_check_queued', 'external_searching', 'processing_images', 'parsed') THEN 1 ELSE 0 END) as processing_count")
+            ->selectRaw("SUM(CASE WHEN status IN ('queued', 'searching', 'tristool_queued', 'tristool_searching', 'external_check_queued', 'external_searching', 'image_publish_queued', 'processing_images', 'parsed') THEN 1 ELSE 0 END) as processing_count")
             ->selectRaw("SUM(CASE WHEN status IN ('queued', 'searching', 'tristool_queued', 'tristool_searching') THEN 1 ELSE 0 END) as tristool_pending_count")
             ->selectRaw("SUM(CASE WHEN processing_stage = 'tristool_ready' THEN 1 ELSE 0 END) as tristool_ready_count")
             ->selectRaw("SUM(CASE WHEN processing_stage IN ('external_queued', 'external_searching', 'external_ready', 'external_manual', 'external_failed') THEN 1 ELSE 0 END) as external_total_count")

@@ -213,12 +213,10 @@ class ProductPriceListImportService
                     'found_specs_json' => array_filter([
                         'Brand' => $brand,
                         'SKU' => $sku,
-                        'Retail price' => $price,
                         'Stock' => $stock,
                         'Group' => $group,
                         'Subgroup' => $subgroup,
                         'Vehicle application' => $vehicleApplication,
-                        'Price source' => 'ОтпускЦена / retail',
                     ], fn ($value) => $value !== null && $value !== ''),
                     'existing_product_id' => $existing?->id,
                 ]);
@@ -660,6 +658,7 @@ class ProductPriceListImportService
                     'tristool_searching',
                     'external_check_queued',
                     'external_searching',
+                    'image_publish_queued',
                     'processing_images',
                     'parsed',
                 ])

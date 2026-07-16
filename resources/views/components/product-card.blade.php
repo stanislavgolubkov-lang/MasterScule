@@ -16,7 +16,7 @@
                 <small>SKU {{ $product->sku }}</small>
             </span>
             @if(! $missingProductImage)
-                <img src="{{ $productImage }}" alt="{{ $product->display_name }}" onerror="this.hidden=true;this.previousElementSibling.hidden=false;this.closest('.product-card').classList.add('product-card-no-photo');">
+                <img src="{{ $productImage }}" alt="{{ $product->display_name }}" loading="lazy" decoding="async" onerror="this.hidden=true;this.previousElementSibling.hidden=false;this.closest('.product-card').classList.add('product-card-no-photo');">
             @endif
         </a>
     </div>

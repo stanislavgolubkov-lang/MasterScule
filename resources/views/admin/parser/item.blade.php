@@ -5,7 +5,16 @@
     $ru = app()->isLocale('ru');
     $confidence = $item->category_confidence_score ?? $item->confidence_score ?? 0;
     $displayName = $item->name_ru ?: $item->found_title ?: __('ui.parser_not_found');
-    $autoRefresh = in_array($item->status, ['queued', 'searching', 'processing_images'], true);
+    $autoRefresh = in_array($item->status, [
+        'queued',
+        'searching',
+        'tristool_queued',
+        'tristool_searching',
+        'external_check_queued',
+        'external_searching',
+        'image_publish_queued',
+        'processing_images',
+    ], true);
 @endphp
 
 <section class="shell page-title">
@@ -257,7 +266,7 @@
 
 @if($autoRefresh)
 <script>
-    window.setTimeout(() => window.location.reload(), 3000);
+    window.setTimeout(() => window.location.reload(), 10000);
 </script>
 @endif
 @endsection

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Jobs\ParsePriceListJob;
 use App\Jobs\ParseSkuBatchJob;
+use App\Jobs\PrepareAndPublishParserDraftJob;
 use App\Jobs\ProcessExternalPriceListRowJob;
 use App\Jobs\ProcessPriceListRowJob;
 use App\Models\Brand;
@@ -17,6 +18,9 @@ use App\Models\ProductParserImageAsset;
 use App\Models\ProductParserItem;
 use App\Models\User;
 use App\Services\ProductImageProcessorService;
+use App\Services\Catalog\ProductPublicationGuard;
+use App\Services\ProductDraftService;
+use App\Services\ProductParserItemPreparationService;
 use App\Services\ProductPriceListImportService;
 use App\Services\ProductPriceListReader;
 use App\Services\TrisToolsEnrichmentService;
@@ -73,7 +77,36 @@ class ExampleTest extends TestCase
     public function test_catalog_and_product_pages_are_available(): void
     {
         $this->get('/catalog')->assertStatus(200)->assertSee('Каталог товаров');
-        $this->get('/product/king-tony-7596mr')->assertStatus(200)->assertSee('Набор инструментов King Tony 7596MR');
+        $this->get('/product/king-tony-7596mr')
+            ->assertStatus(200)
+            ->assertSee('Набор инструментов King Tony 7596MR')
+            ->assertSee('Гарантия на товар: 12 месяцев. *Уточняйте по каждому продукту.');
+    }
+
+    public function test_product_specifications_hide_price_metadata_and_warranty(): void
+    {
+        $product = Product::firstOrFail();
+        $product->forceFill([
+            'attributes' => [
+                'Material' => 'Oțel crom-vanadiu',
+                'Retail price' => '100',
+                'Price source' => 'Supplier price',
+                'Гарантия' => '24 месяца',
+                'Garantie' => '24 luni',
+            ],
+        ])->save();
+
+        app()->setLocale('ru');
+        $this->assertSame(
+            ['Материал' => 'Хром-ванадиевая сталь'],
+            $product->fresh()->display_attributes,
+        );
+
+        app()->setLocale('ro');
+        $this->assertSame(
+            ['Material' => 'Oțel crom-vanadiu'],
+            $product->fresh()->display_attributes,
+        );
     }
 
     public function test_out_of_stock_products_are_visible_but_not_purchasable(): void
@@ -1224,7 +1257,8 @@ class ExampleTest extends TestCase
         $this->assertFalse((bool) $product->is_active);
         $this->assertSame('draft', $product->status);
         $this->assertEquals(0, $product->price);
-        $this->assertSame(0, $product->stock_quantity);
+        $this->assertSame(1, $product->stock_quantity);
+        $this->assertSame('in_stock', $product->stock_status);
         $this->assertSame($product->id, $item->fresh()->created_product_id);
     }
 
@@ -1253,6 +1287,7 @@ class ExampleTest extends TestCase
             'found_title' => 'Bulk parser product',
             'found_description' => 'Bulk parser description.',
             'found_specs_json' => ['Brand' => 'King Tony'],
+            'tristools_url' => 'https://tristool.com/product/parser-bulk-1',
         ]);
 
         ProductParserItem::create([
@@ -1276,6 +1311,10 @@ class ExampleTest extends TestCase
         $this->assertSame('draft', $draft->status);
         $this->assertNull(Product::where('sku', 'PARSER-BULK-NEEDS-CAT')->first());
         $this->assertSame($draft->id, $safeItem->fresh()->created_product_id);
+        $this->assertSame('https://tristool.com/product/parser-bulk-1', $draft->source_url);
+        $this->assertSame('tristool.com', $draft->source_domain);
+
+        Queue::fake();
 
         $this
             ->actingAs($admin)
@@ -1288,7 +1327,19 @@ class ExampleTest extends TestCase
         $draft->refresh();
         $this->assertSame('draft', $draft->status);
         $this->assertFalse((bool) $draft->is_active);
-        $this->assertSame('draft_created', $safeItem->fresh()->status);
+        $this->assertSame('image_publish_queued', $safeItem->fresh()->status);
+        Queue::assertPushed(PrepareAndPublishParserDraftJob::class, fn ($job) => $job->itemId === $safeItem->id);
+
+        $preparation = Mockery::mock(ProductParserItemPreparationService::class);
+        $preparation->shouldReceive('prepare')->once()->andReturn(false);
+        (new PrepareAndPublishParserDraftJob($safeItem->id))->handle(
+            $preparation,
+            app(ProductDraftService::class),
+            app(ProductPublicationGuard::class),
+        );
+
+        $this->assertSame('external_check_queued', $safeItem->fresh()->status);
+        Queue::assertPushed(ProcessExternalPriceListRowJob::class, fn ($job) => $job->itemId === $safeItem->id);
     }
 
     public function test_price_list_import_creates_draft_and_keeps_existing_sku_safe(): void

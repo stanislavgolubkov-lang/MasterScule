@@ -279,6 +279,7 @@
                 <label>{{ $ru ? 'Минимум fallback confidence' : 'Incredere fallback minima' }}<input type="number" name="min_fallback_confidence" value="{{ $settings['min_fallback_confidence'] ?? 80 }}" min="70" max="100"></label>
                 <label>{{ $ru ? 'Фото для ready' : 'Imagini pentru ready' }}<input type="number" name="required_images_for_ready" value="{{ $settings['required_images_for_ready'] ?? 1 }}" min="1" max="4"></label>
             </div>
+            <label>{{ $ru ? 'Остаток по умолчанию, если в прайсе отсутствует' : 'Stoc implicit dacă lipsește din listă' }}<input type="number" name="missing_stock_quantity" value="{{ $settings['missing_stock_quantity'] ?? 1 }}" min="1" max="9999"></label>
             <label>{{ __('ui.parser_allowed_domains') }}<textarea name="allowed_domains">{{ implode("\n", $settings['allowed_domains'] ?? []) }}</textarea></label>
             <label>{{ __('ui.parser_blocked_domains') }}<textarea name="blocked_domains">{{ implode("\n", $settings['blocked_domains'] ?? []) }}</textarea></label>
             <details class="admin-details">

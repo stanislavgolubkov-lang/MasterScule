@@ -111,7 +111,7 @@
     <h2>{{ __('ui.recommended_products') }}</h2>
     <a href="{{ route('catalog') }}">{{ __('ui.view_all_products') }}</a>
 </section>
-<section class="shell product-grid">
+<section class="shell product-grid product-grid-compact home-recommended-grid">
     @foreach($featuredProducts as $product)
         <x-product-card :product="$product" />
     @endforeach

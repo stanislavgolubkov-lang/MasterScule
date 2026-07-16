@@ -11,7 +11,9 @@ use Illuminate\Http\Request;
 class ShopController extends Controller
 {
     private const CATALOG_ROOT_SLUG = 'instrumente-si-mobilier';
-    private const NEW_PRODUCTS_PER_BRAND = 4;
+    private const HOME_RECOMMENDED_LIMIT = 50;
+    private const NEW_PRODUCTS_PER_PAGE = 50;
+    private const RELATED_PRODUCTS_LIMIT = 20;
 
     private const MAIN_CATALOG_SLUGS = [
         'mobilier-pentru-service',
@@ -37,14 +39,7 @@ class ShopController extends Controller
                 ->orderBy('sort_order')
                 ->limit(9)
                 ->get(),
-            'featuredProducts' => Product::with(['brand', 'category'])
-                ->availableForSale()
-                ->where('is_featured', true)
-                ->where('main_image', 'not like', '%product-placeholder%')
-                ->orderByDesc('is_bestseller')
-                ->orderByDesc('id')
-                ->limit(12)
-                ->get(),
+            'featuredProducts' => $this->recommendedProducts(),
             'productsCount' => Product::availableForSale()->count(),
             'brands' => Brand::where('is_active', true)->orderByDesc('is_featured')->get(),
         ]);
@@ -149,20 +144,31 @@ class ShopController extends Controller
             ->values()
             ->all();
 
-        return view('shop.product', [
-            'product' => $product,
-            'similarProducts' => Product::with('brand')
+        $similarProducts = Product::with('brand')
+            ->where('id', '!=', $product->id)
+            ->inCatalogCategories($similarCategoryIds)
+            ->availableForSale()
+            ->limit(self::RELATED_PRODUCTS_LIMIT)
+            ->get();
+
+        $remainingSlots = self::RELATED_PRODUCTS_LIMIT - $similarProducts->count();
+        $brandProducts = collect();
+
+        if ($remainingSlots > 0) {
+            $brandProducts = Product::with('brand')
                 ->where('id', '!=', $product->id)
-                ->inCatalogCategories($similarCategoryIds)
-                ->availableForSale()
-                ->limit(4)
-                ->get(),
-            'brandProducts' => Product::with('brand')
-                ->where('id', '!=', $product->id)
+                ->whereNotIn('id', $similarProducts->pluck('id'))
                 ->where('brand_id', $product->brand_id)
                 ->availableForSale()
-                ->limit(4)
-                ->get(),
+                ->limit($remainingSlots)
+                ->get();
+        }
+
+        return view('shop.product', [
+            'product' => $product,
+            'relatedProducts' => $similarProducts
+                ->concat($brandProducts)
+                ->values(),
         ]);
     }
 
@@ -215,21 +221,43 @@ class ShopController extends Controller
 
     public function newProducts()
     {
-        $products = Brand::query()
+        $brands = Brand::query()
             ->where('is_active', true)
             ->whereHas('products', fn ($products) => $products->purchasable())
             ->orderByDesc('is_featured')
             ->orderBy('name')
-            ->get()
-            ->flatMap(fn (Brand $brand) => Product::with(['brand', 'category', 'categories'])
+            ->get();
+
+        $brandCount = $brands->count();
+        $baseQuota = $brandCount > 0 ? intdiv(self::NEW_PRODUCTS_PER_PAGE, $brandCount) : 0;
+        $extraSlots = $brandCount > 0 ? self::NEW_PRODUCTS_PER_PAGE % $brandCount : 0;
+
+        $products = $brands
+            ->flatMap(fn (Brand $brand, int $index) => Product::with(['brand', 'category', 'categories'])
                 ->purchasable()
                 ->where('brand_id', $brand->id)
                 ->orderByDesc('is_new')
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
-                ->limit(self::NEW_PRODUCTS_PER_BRAND)
+                ->limit($baseQuota + ($index < $extraSlots ? 1 : 0))
                 ->get())
             ->values();
+
+        $remainingSlots = self::NEW_PRODUCTS_PER_PAGE - $products->count();
+
+        if ($remainingSlots > 0 && $brands->isNotEmpty()) {
+            $backfillProducts = Product::with(['brand', 'category', 'categories'])
+                ->purchasable()
+                ->whereIn('brand_id', $brands->pluck('id'))
+                ->whereNotIn('id', $products->pluck('id'))
+                ->orderByDesc('is_new')
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->limit($remainingSlots)
+                ->get();
+
+            $products = $products->concat($backfillProducts)->values();
+        }
 
         return view('shop.collection', [
             'title' => __('ui.new_items'),
@@ -273,6 +301,53 @@ class ShopController extends Controller
                 ->orderByDesc('is_featured')
                 ->paginate(12),
         ]);
+    }
+
+    private function recommendedProducts()
+    {
+        $brands = Brand::query()
+            ->where('is_active', true)
+            ->whereHas('products', fn ($products) => $products->availableForSale())
+            ->orderByDesc('is_featured')
+            ->orderBy('name')
+            ->get();
+
+        $brandCount = $brands->count();
+        $baseQuota = $brandCount > 0 ? intdiv(self::HOME_RECOMMENDED_LIMIT, $brandCount) : 0;
+        $extraSlots = $brandCount > 0 ? self::HOME_RECOMMENDED_LIMIT % $brandCount : 0;
+
+        $products = $brands
+            ->flatMap(fn (Brand $brand, int $index) => Product::with(['brand', 'category'])
+                ->availableForSale()
+                ->where('brand_id', $brand->id)
+                ->orderByDesc('is_featured')
+                ->orderByDesc('is_bestseller')
+                ->orderByDesc('is_new')
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->limit($baseQuota + ($index < $extraSlots ? 1 : 0))
+                ->get())
+            ->values();
+
+        $remainingSlots = self::HOME_RECOMMENDED_LIMIT - $products->count();
+
+        if ($remainingSlots > 0 && $brands->isNotEmpty()) {
+            $backfillProducts = Product::with(['brand', 'category'])
+                ->availableForSale()
+                ->whereIn('brand_id', $brands->pluck('id'))
+                ->whereNotIn('id', $products->pluck('id'))
+                ->orderByDesc('is_featured')
+                ->orderByDesc('is_bestseller')
+                ->orderByDesc('is_new')
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->limit($remainingSlots)
+                ->get();
+
+            $products = $products->concat($backfillProducts)->values();
+        }
+
+        return $products;
     }
 
     private function searchTerms(string $value): array

@@ -192,7 +192,16 @@ class ProductParserService
 
         $statuses = $batch->items()->pluck('status');
 
-        if ($statuses->contains(fn ($status) => in_array($status, ['queued', 'searching', 'processing_images'], true))) {
+        if ($statuses->contains(fn ($status) => in_array($status, [
+            'queued',
+            'searching',
+            'tristool_queued',
+            'tristool_searching',
+            'external_check_queued',
+            'external_searching',
+            'image_publish_queued',
+            'processing_images',
+        ], true))) {
             $batch->forceFill(['status' => 'running'])->save();
 
             return;

@@ -284,7 +284,7 @@ class AdminController extends Controller
             'needs_translation_review' => $request->boolean('needs_translation_review'),
             'needs_price_review' => $request->boolean('needs_price_review'),
             'needs_stock_review' => $request->boolean('needs_stock_review'),
-            'warranty' => ($data['warranty'] ?? null) ?: '24 luni',
+            'warranty' => ($data['warranty'] ?? null) ?: '12 luni',
             'weight' => ($data['weight'] ?? null) ?: null,
             'dimensions' => ($data['dimensions'] ?? null) ?: null,
             'meta_title' => ($data['meta_title'] ?? null) ?: ($nameRo ?: $nameRu).' | '.config('store.domain_label'),
