@@ -3,12 +3,9 @@
 namespace App\Services;
 
 use App\Models\Category;
-use Illuminate\Support\Str;
 
 class ProductCategoryProvisioningService
 {
-    public function __construct(private ProductTranslationService $translation) {}
-
     public function resolveOrCreate(array $source, ?Category $suggestedParent = null): ?Category
     {
         $breadcrumbs = collect([
@@ -32,51 +29,28 @@ class ProductCategoryProvisioningService
                 $this->normalize((string) $category->name_ro),
             ], true));
 
-        if ($existing) {
+        if ($existing && $existing->is_active && $existing->is_assignable) {
             return $existing;
         }
 
-        $nameRu = preg_match('/\p{Cyrillic}/u', $leaf) === 1
-            ? $leaf
-            : $this->translation->translate($leaf, 'ru');
-        $nameRo = preg_match('/\p{Cyrillic}/u', $leaf) !== 1
-            ? $leaf
-            : $this->translation->translate($leaf, 'ro');
-        $nameRu = $nameRu ?: $leaf;
-        $nameRo = $nameRo ?: $leaf;
-
-        $slugBase = Str::slug(Str::ascii($nameRo ?: $nameRu));
-        $slugBase = $slugBase !== '' ? $slugBase : 'tristool-'.substr(sha1($leaf), 0, 12);
-        $slug = $slugBase;
-        $suffix = 2;
-        while (Category::where('slug', $slug)->exists()) {
-            $slug = $slugBase.'-'.$suffix++;
-        }
-
-        return Category::create([
-            'parent_id' => $suggestedParent?->id,
-            'name' => $nameRu,
-            'name_ro' => $nameRo,
-            'slug' => $slug,
-            'description' => 'Категория добавлена парсером по структуре TrisTool.',
-            'description_ro' => 'Categorie adaugata automat din structura TrisTool.',
-            'sort_order' => ((int) Category::where('parent_id', $suggestedParent?->id)->max('sort_order')) + 10,
-            'is_active' => true,
-        ]);
+        // Unknown source breadcrumbs must never mutate the public taxonomy.
+        // The canonical category agent handles the product after parsing.
+        return $suggestedParent?->is_active && $suggestedParent?->is_assignable
+            ? $suggestedParent
+            : null;
     }
 
     private function leaf(array $breadcrumb): ?string
     {
         return collect($breadcrumb)
             ->map(fn ($value) => trim((string) $value))
-            ->reject(fn (string $value) => $value === '' || Str::contains(Str::lower($value), [
-                'главная',
+            ->reject(fn (string $value) => $value === '' || str_contains(mb_strtolower($value), 'главная') || collect([
                 'home',
                 'catalog',
                 'каталог оборудования',
                 'instrument si mobilier',
                 'инструмент и мебель',
-            ]))
+            ])->contains(fn (string $ignored) => str_contains(mb_strtolower($value), $ignored)))
             ->last();
     }
 

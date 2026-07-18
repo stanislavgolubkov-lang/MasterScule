@@ -30,7 +30,7 @@
     ];
 @endphp
 
-<section class="hero hero-premium" data-hero-slider>
+<section class="hero hero-premium page-banner" data-hero-slider>
     @foreach([
         ['class' => 'hero-slide-service is-active', 'primary' => route('catalog'), 'secondary' => route('promotions')],
         ['class' => 'hero-slide-king', 'primary' => route('brand.show', 'king-tony'), 'secondary' => route('catalog', 'seturi-de-scule')],

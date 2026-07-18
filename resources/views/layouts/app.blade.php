@@ -89,11 +89,11 @@
             <div><h4>{{ __('ui.footer_clients') }}</h4><a href="{{ route('page', 'delivery-payment') }}">{{ __('ui.how_to_buy') }}</a><a href="{{ route('page', 'delivery-payment') }}">{{ __('ui.delivery_payment') }}</a><a href="{{ route('page', 'returns') }}">{{ __('ui.returns') }}</a></div>
             <div><h4>{{ __('ui.company') }}</h4><a href="{{ route('page', 'about') }}">{{ __('ui.about_us') }}</a><a href="{{ route('page', 'terms') }}">{{ __('ui.terms') }}</a><a href="{{ route('page', 'privacy-policy') }}">{{ __('ui.privacy') }}</a></div>
             <div><h4>{{ __('ui.categories') }}</h4>@foreach($navCategories->take(5) as $category)<a href="{{ route('catalog', $category->slug) }}">{{ $category->display_name }}</a>@endforeach</div>
-            <div><h4>{{ __('ui.contact') }}</h4><span>{{ config('store.phone') }}</span><span>{{ config('store.email') }}</span><span>{{ config('store.address') }}</span></div>
+            <div><h4>{{ __('ui.contact') }}</h4><span>{{ config('store.phone') }}</span><span>{{ config('store.email') }}</span><span>{{ __('ui.store_address') }}</span></div>
             @if($newsletterEnabled)
                 <div><h4>{{ __('ui.newsletter') }}</h4><p>{{ __('ui.newsletter_text') }}</p><form class="newsletter"><input placeholder="{{ __('ui.email_placeholder') }}"><button>{{ __('ui.subscribe') }}</button></form></div>
             @else
-                <div><h4>{{ config('store.legal_name') }}</h4><span>{{ config('store.working_hours.'.app()->getLocale()) }}</span><span>{{ config('store.country') }}</span></div>
+                <div><h4>{{ config('store.legal_name') }}</h4><span>{{ config('store.working_hours.'.app()->getLocale()) }}</span><span>{{ __('ui.store_country') }}</span></div>
             @endif
         </div>
         <div class="footer-bottom shell">{{ __('ui.copyright') }}</div>

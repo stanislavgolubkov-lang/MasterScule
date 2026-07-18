@@ -2,13 +2,17 @@
 
 namespace App\Services;
 
+use App\Services\Catalog\ProductContentLanguage;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
 class ProductTranslationService
 {
-    public function __construct(private ProductParserSettings $settings) {}
+    public function __construct(
+        private ProductParserSettings $settings,
+        private ProductContentLanguage $language,
+    ) {}
 
     public function bilingual(array $source): array
     {
@@ -18,6 +22,15 @@ class ProductTranslationService
         $titleRo = $this->clean((string) ($source['title_ro'] ?? ''));
         $descriptionRu = $this->clean((string) ($source['description_ru'] ?? ''));
         $descriptionRo = $this->clean((string) ($source['description_ro'] ?? ''));
+
+        // A Cyrillic string is not automatically Russian. Never allow source
+        // Ukrainian content to occupy the public RU fields.
+        if ($this->language->containsUkrainian($titleRu)) {
+            $titleRu = '';
+        }
+        if ($this->language->containsUkrainian($descriptionRu)) {
+            $descriptionRu = '';
+        }
 
         // Some TrisTool /ro/ pages return the Russian card unchanged. A locale
         // URL is not proof that the text is actually Romanian.
@@ -53,7 +66,9 @@ class ProductTranslationService
             && $titleRo !== ''
             && $descriptionRu !== ''
             && $descriptionRo !== ''
-            && ! $this->isRussian($titleRo.' '.$descriptionRo);
+            && $this->isRussian($titleRu.' '.$descriptionRu)
+            && $this->isRomanian($titleRo.' '.$descriptionRo)
+            && ! $this->language->containsUkrainian($titleRu.' '.$titleRo.' '.$descriptionRu.' '.$descriptionRo);
 
         return [
             'name_ru' => $titleRu ?: null,
@@ -136,7 +151,9 @@ class ProductTranslationService
 
     private function translateWithFallback(string $text, string $target): string
     {
-        $source = $this->isRussian($text) ? 'ru' : ($this->isRomanian($text) ? 'ro' : 'en');
+        $source = $this->language->containsUkrainian($text)
+            ? 'uk'
+            : ($this->isRussian($text) ? 'ru' : ($this->isRomanian($text) ? 'ro' : 'en'));
         if ($source === $target) {
             return $text;
         }
@@ -169,20 +186,26 @@ class ProductTranslationService
             && filled($source['title_ro'] ?? null)
             && filled($source['description_ru'] ?? null)
             && filled($source['description_ro'] ?? null)
+            && ! $this->language->containsUkrainian(implode(' ', [
+                (string) $source['title_ru'],
+                (string) $source['title_ro'],
+                (string) $source['description_ru'],
+                (string) $source['description_ro'],
+            ]))
+            && $this->isRussian((string) $source['title_ru'].' '.(string) $source['description_ru'])
             && ! $this->isRussian((string) $source['title_ro'])
-            && ! $this->isRussian((string) $source['description_ro']);
+            && ! $this->isRussian((string) $source['description_ro'])
+            && $this->isRomanian((string) $source['title_ro'].' '.(string) $source['description_ro']);
     }
 
     private function isRussian(string $value): bool
     {
-        return $value !== '' && preg_match('/\p{Cyrillic}/u', $value) === 1;
+        return $this->language->isRussian($value);
     }
 
     private function isRomanian(string $value): bool
     {
-        return $value !== ''
-            && preg_match('/\p{Latin}/u', $value) === 1
-            && preg_match('/\p{Cyrillic}/u', $value) !== 1;
+        return $this->language->isRomanian($value);
     }
 
     private function clean(string $value): string

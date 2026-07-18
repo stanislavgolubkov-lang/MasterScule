@@ -53,6 +53,26 @@ class ProductCategoryDetector
             }
         }
 
+        if ($this->isGysCatalog($brand, $group)) {
+            foreach ($this->gysSubgroupRules() as $needle => $slug) {
+                if ($this->contains($this->normalize((string) $subgroup), $needle)) {
+                    $scores[$slug] = ($scores[$slug] ?? 0) + 98;
+                    $notes[] = "GYS subgroup: {$needle} -> {$slug}";
+                    break;
+                }
+            }
+
+            if ($this->contains($this->normalize((string) $subgroup), 'общие')) {
+                foreach ($this->gysGeneralRules() as $slug => $keywords) {
+                    if (collect($keywords)->contains(fn (string $keyword) => $this->contains($productText, $keyword))) {
+                        $scores[$slug] = ($scores[$slug] ?? 0) + 98;
+                        $notes[] = "GYS general item -> {$slug}";
+                        break;
+                    }
+                }
+            }
+        }
+
         foreach (($rules['keywords'] ?? []) as $slug => $keywords) {
             foreach ($keywords as $keyword) {
                 if ($this->contains($productText, $keyword)) {
@@ -202,6 +222,52 @@ class ProductCategoryDetector
             'шланги и разъемы' => 'furtunuri-cuple-accesorii',
             'шлифмашинки ленточные' => 'polizoare-si-slefuitoare-pneumatice',
             'шлифмашинки орбитальные' => 'polizoare-si-slefuitoare-pneumatice',
+        ];
+    }
+
+    private function isGysCatalog(?string $brand, ?string $group): bool
+    {
+        return preg_match('/(^|\W)gys(\W|$)/iu', trim((string) $brand).' '.trim((string) $group)) === 1;
+    }
+
+    private function gysSubgroupRules(): array
+    {
+        return [
+            'аксессуары для mig' => 'sudura-richtuire-vopsire',
+            'расходник для mig' => 'sudura-richtuire-vopsire',
+            'аксессуары mma' => 'sudura-richtuire-vopsire',
+            'запчасти mma' => 'sudura-richtuire-vopsire',
+            'расходник для tig' => 'sudura-richtuire-vopsire',
+            'аксесcуары для tig' => 'sudura-richtuire-vopsire',
+            'аксессуары для tig' => 'sudura-richtuire-vopsire',
+            'индукционные аппараты' => 'sudura-richtuire-vopsire',
+            'pac аппараты плазменной резки' => 'sudura-richtuire-vopsire',
+            'инструменты для куз.ремонта' => 'tinichigerie-si-richtuire',
+            'технология pdr' => 'tinichigerie-si-richtuire',
+            'расходник для куз.ремонта' => 'tinichigerie-si-richtuire',
+            'запчасти к.р.' => 'tinichigerie-si-richtuire',
+            'маски и защита' => 'echipament-protectie',
+            'автономные пусковые устройства' => 'baterii-incarcatoare',
+            'запчасти з.у.' => 'baterii-incarcatoare',
+            'кабеля и акссесуары' => 'baterii-incarcatoare',
+            'тестеры' => 'multimetre-testere',
+        ];
+    }
+
+    private function gysGeneralRules(): array
+    {
+        return [
+            'instrumente-electromontaj' => ['vde', 'изолированных инструмент'],
+            'compresoare' => ['компрессор'],
+            'baterii-incarcatoare' => ['зарядное устройство'],
+            'sudura-richtuire-vopsire' => [
+                'охлаждающая жидкость для сварочных',
+                'паста против сварочных',
+                'спрей против сварочных',
+                'контактной смазкой',
+            ],
+            'echipamente-pentru-service' => ['пылесос', 'стул автослесаря', 'мешков для пыли'],
+            'accesorii-universale' => ['фонарь', 'лампа диодная', 'прожектор'],
         ];
     }
 

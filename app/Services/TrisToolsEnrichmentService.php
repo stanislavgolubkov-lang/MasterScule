@@ -35,13 +35,21 @@ class TrisToolsEnrichmentService
         $candidate = collect($this->cards($html, $baseUrl))
             ->map(function (array $card) use ($sku, $brand) {
                 $exactSku = $this->normalizeSku($card['sku']) === $this->normalizeSku($sku);
+                $imageSku = collect([$card['image'] ?? null, $card['image_full'] ?? null])
+                    ->filter()
+                    ->map(fn (string $url) => pathinfo((string) parse_url($url, PHP_URL_PATH), PATHINFO_FILENAME))
+                    ->contains(fn (string $filename) => $this->normalizeSku($filename) === $this->normalizeSku($sku));
                 $brandMatch = ! filled($brand) || Str::contains(
                     Str::lower($card['title'].' '.$card['brand']),
                     Str::lower((string) $brand),
                 );
                 // Exact SKU is the product identity. TrisTool cards often omit
-                // the brand text even when the product page is correct.
-                $card['confidence'] = $exactSku ? ($brandMatch ? 98 : 96) : 40;
+                // the brand text even when the product page is correct. Some
+                // GYS cards expose a model code as the article while keeping the
+                // supplier reference in the product image filename.
+                $card['confidence'] = $exactSku
+                    ? ($brandMatch ? 98 : 96)
+                    : ($imageSku && $brandMatch ? 94 : 40);
 
                 return $card;
             })
@@ -158,7 +166,19 @@ class TrisToolsEnrichmentService
                 : $xpath->query('.//a[@href]', $node)?->item(0);
             $image = $xpath->query('.//img[@src or @data-src]', $node)?->item(0);
             $title = $this->text($xpath->query('.//h6', $node)?->item(0));
-            $sku = $this->text($xpath->query(".//*[contains(concat(' ', normalize-space(@class), ' '), ' article ')]", $node)?->item(0));
+            $sku = '';
+            $skuNodes = $xpath->query(
+                ".//*[contains(concat(' ', normalize-space(@class), ' '), ' article ')"
+                ." or contains(concat(' ', normalize-space(@class), ' '), ' card-special-clamp-name ')]",
+                $node,
+            );
+            foreach ($skuNodes ?: [] as $skuNode) {
+                $sku = $this->text($skuNode);
+                if ($sku !== '') {
+                    break;
+                }
+            }
+            $brand = $this->text($xpath->query('.//p', $node)?->item(0));
 
             if (! $link || $title === '' || $sku === '') {
                 continue;
@@ -175,7 +195,7 @@ class TrisToolsEnrichmentService
                 'image_full' => $image ? $this->fullImageUrl($this->absoluteUrl($baseUrl, $this->bestImageAttribute($image))) : null,
                 'title' => $title,
                 'sku' => $sku,
-                'brand' => '',
+                'brand' => $brand,
             ];
         }
 

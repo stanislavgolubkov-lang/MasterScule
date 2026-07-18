@@ -30,6 +30,7 @@
 /storage/app/private/
 /storage/app/public/
 !/storage/app/public/.gitignore
+/storage/backups/
 *.zip
 *.tar
 *.gz

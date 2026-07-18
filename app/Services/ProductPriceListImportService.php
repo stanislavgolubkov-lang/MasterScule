@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Jobs\ProcessExternalPriceListRowJob;
 use App\Jobs\ProcessPriceListRowJob;
+use App\Jobs\PrepareAndPublishParserDraftJob;
 use App\Models\Product;
 use App\Models\ProductParserBatch;
 use App\Models\ProductParserItem;
@@ -74,6 +75,8 @@ class ProductPriceListImportService
             return;
         }
 
+        $hasStockColumn = array_key_exists('stock', $parsed['mapping'] ?? []);
+
         $rowLimit = $dryRun ? 0 : max(0, (int) ($options['row_limit'] ?? 0));
         $context = $this->initialContext($batch);
         $seenSkus = [];
@@ -136,6 +139,9 @@ class ProductPriceListImportService
                 $name = trim((string) $row['name']);
                 $price = $this->parsePrice($row['price'] ?? null);
                 $stock = $this->parseStock($row['stock'] ?? null);
+                if ($stock === null && $hasStockColumn) {
+                    $stock = 0;
+                }
                 $needsPriceReview = $price === null;
                 $needsStockReview = $stock === null;
                 $existing = $this->findExistingProduct($sku, $brand, $existingProducts);
@@ -386,6 +392,19 @@ class ProductPriceListImportService
         $item->forceFill(['tristool_checked_at' => now()])->save();
 
         if (! $sourceFound || ! $this->itemIsAutomaticallyComplete($item)) {
+            if (($batch->options_json['source_mode'] ?? null) === 'tristool_only') {
+                $item->forceFill([
+                    'status' => 'needs_manual_review',
+                    'processing_stage' => 'tristool_manual',
+                    'needs_source_review' => ! $sourceFound || $item->needs_source_review,
+                    'error_message' => $sourceFound
+                        ? 'TrisTool-only search returned an incomplete product card. External recovery is disabled.'
+                        : 'TrisTool-only search did not return an acceptable product card. External recovery is disabled.',
+                ])->save();
+
+                return;
+            }
+
             $this->queueExternalCheck($item);
 
             return;
@@ -417,6 +436,12 @@ class ProductPriceListImportService
         $item->forceFill(['external_checked_at' => now()])->save();
 
         if (! $sourceFound) {
+            if ($this->applyGysBrandFallback($item)) {
+                $this->finalizeResolvedItem($item->fresh(), $existing, 'brand_logo_ready');
+
+                return;
+            }
+
             $item->forceFill([
                 'status' => 'needs_manual_review',
                 'processing_stage' => 'external_manual',
@@ -442,6 +467,30 @@ class ProductPriceListImportService
         }
         $item->refresh();
 
+        $approvedGysRecovery = Str::contains(Str::upper((string) $item->brand), 'GYS')
+            && (bool) ($batch->options_json['approve_gys_ordered_recovery'] ?? false);
+
+        if ($approvedGysRecovery && $item->imageAssets()->doesntExist()) {
+            if ($this->applyGysBrandFallback($item)) {
+                $this->finalizeResolvedItem($item->fresh(), $existing, 'brand_logo_ready');
+            }
+
+            return;
+        }
+
+        if ($approvedGysRecovery) {
+            $reviewedAt = now();
+            $item->forceFill([
+                'needs_source_review' => false,
+                'needs_content_review' => false,
+                'needs_translation_review' => false,
+                'needs_image_review' => false,
+                'source_reviewed_at' => $reviewedAt,
+                'image_reviewed_at' => $reviewedAt,
+                'translation_reviewed_at' => $reviewedAt,
+            ])->save();
+        }
+
         $item = $this->freshActiveItem($item);
         if (! $item) {
             return;
@@ -462,6 +511,65 @@ class ProductPriceListImportService
         $this->finalizeResolvedItem($item, $existing, 'external_ready');
     }
 
+    public function prepareApprovedGysRecovery(ProductParserItem $item, bool $forceLogo = false): void
+    {
+        $item = ProductParserItem::with(['batch', 'imageAssets', 'category'])->findOrFail($item->id);
+        if (! Str::contains(Str::upper((string) $item->brand), 'GYS')) {
+            throw new \RuntimeException('Only GYS parser rows can use this approved recovery flow.');
+        }
+
+        $existing = Product::where('sku', $item->sku)->first();
+        if ($existing?->status === 'published' && $existing->is_active) {
+            $item->forceFill([
+                'status' => 'approved',
+                'processing_stage' => 'published',
+                'approval_status' => 'approved',
+                'existing_product_id' => $existing->id,
+                'error_message' => null,
+            ])->save();
+
+            return;
+        }
+
+        if (! $forceLogo && $item->imageAssets->isEmpty() && ! $item->external_checked_at) {
+            $this->enrichImages($item, $item->brand, 'external');
+            $item->refresh()->load('imageAssets');
+            $item->forceFill(['external_checked_at' => now()])->save();
+        }
+
+        if ($forceLogo || $item->imageAssets->isEmpty()) {
+            $this->applyGysBrandFallback($item);
+            $item->refresh()->load('imageAssets');
+        }
+
+        $reviewedAt = now();
+        $item->forceFill([
+            'needs_source_review' => false,
+            'needs_content_review' => false,
+            'needs_translation_review' => false,
+            'needs_image_review' => false,
+            'source_reviewed_at' => $reviewedAt,
+            'image_reviewed_at' => $reviewedAt,
+            'translation_reviewed_at' => $reviewedAt,
+            'error_message' => null,
+        ])->save();
+
+        $stage = $item->image_source_type === 'brand_logo_fallback'
+            ? 'brand_logo_ready'
+            : 'external_ready';
+        $this->finalizeResolvedItem($item->fresh(), $existing, $stage);
+
+        $item->refresh()->load(['createdProduct', 'existingProduct']);
+        $draft = $item->createdProduct ?: $item->existingProduct;
+        if ($draft?->status === 'draft') {
+            $item->forceFill([
+                'status' => 'image_publish_queued',
+                'processing_stage' => 'image_publish_queued',
+            ])->save();
+            PrepareAndPublishParserDraftJob::dispatch($item->id);
+        }
+    }
+
     private function finalizeResolvedItem(ProductParserItem $item, ?Product $existing, string $processingStage): void
     {
         $item->loadMissing(['batch', 'imageAssets', 'category']);
@@ -477,7 +585,7 @@ class ProductPriceListImportService
 
         if ($existing) {
             $isParserDraft = $existing->status === 'draft'
-                && (int) $existing->source_import_batch_id === (int) $batch->id;
+                && $existing->source_import_batch_id !== null;
 
             if (! $dryRun && ($options['add_photos_to_existing'] ?? true) === true) {
                 $fresh = $this->freshActiveItem($item);
@@ -493,8 +601,15 @@ class ProductPriceListImportService
             if ($isParserDraft) {
                 $fresh = $this->freshActiveItem($item, ['imageAssets', 'category', 'batch']);
                 if ($fresh) {
-                    $this->drafts->refreshParserDraft($fresh, $existing);
-                    $fresh->forceFill(['processing_stage' => $processingStage])->save();
+                    if ((int) $existing->source_import_batch_id === (int) $batch->id) {
+                        $this->drafts->refreshParserDraft($fresh, $existing);
+                    } else {
+                        $this->drafts->refreshDraftFromSearch($fresh, $existing);
+                    }
+                    $fresh->forceFill([
+                        'processing_stage' => $processingStage,
+                        'existing_product_id' => $existing->id,
+                    ])->save();
                 }
 
                 return;
@@ -547,6 +662,82 @@ class ProductPriceListImportService
             && $item->imageAssets->isNotEmpty();
     }
 
+    private function applyGysBrandFallback(ProductParserItem $item): bool
+    {
+        if (! Str::contains(Str::upper((string) $item->brand), 'GYS')) {
+            return false;
+        }
+
+        $sourceUrl = '/images/products/gys-product.svg';
+        if (! is_file(public_path(ltrim($sourceUrl, '/')))) {
+            return false;
+        }
+
+        $contentSku = strtr($item->sku, [
+            'А' => 'A', 'В' => 'B', 'Е' => 'E', 'К' => 'K', 'М' => 'M', 'Н' => 'H',
+            'О' => 'O', 'Р' => 'P', 'С' => 'C', 'Т' => 'T', 'Х' => 'X', 'У' => 'Y',
+            'а' => 'a', 'в' => 'b', 'е' => 'e', 'к' => 'k', 'м' => 'm', 'н' => 'h',
+            'о' => 'o', 'р' => 'p', 'с' => 'c', 'т' => 't', 'х' => 'x', 'у' => 'y',
+        ]);
+        $content = $this->contentBuilder->ensureComplete(
+            [],
+            $contentSku,
+            (string) ($item->raw_name ?: $item->parsed_name ?: $item->sku),
+            'GYS',
+        );
+
+        $item->imageAssets()->delete();
+        $item->imageAssets()->create([
+            'source_url' => $sourceUrl,
+            'source_domain' => (string) config('store.domain_label', 'masterscule.ro'),
+            'processed_path' => $sourceUrl,
+            'preview_path' => $sourceUrl,
+            'thumb_path' => $sourceUrl,
+            'width' => 320,
+            'height' => 152,
+            'mime_type' => 'image/svg+xml',
+            'status' => 'processed',
+            'is_selected' => true,
+            'is_main' => true,
+            'has_watermark' => false,
+            'needs_review' => false,
+        ]);
+
+        $reviewedAt = now();
+        $item->forceFill([
+            'found_title' => $item->raw_name ?: $item->parsed_name ?: 'GYS '.$item->sku,
+            'found_description' => $content['description_ru'],
+            'found_images_json' => [$sourceUrl],
+            'selected_images_json' => [$sourceUrl],
+            'processed_images_json' => [$sourceUrl],
+            'source_urls_json' => ['https://www.gys.com.ua/'],
+            'fallback_source_url' => 'https://www.gys.com.ua/',
+            'fallback_source_domain' => 'gys.com.ua',
+            'fallback_source_used' => true,
+            'source_match_confidence' => 100,
+            'content_source_type' => 'price_list_approved_fallback',
+            'image_source_type' => 'brand_logo_fallback',
+            'translation_source_type' => 'approved_generated_content',
+            'name_ru' => $content['name_ru'],
+            'name_ro' => $content['name_ro'],
+            'short_description_ru' => $content['short_description_ru'],
+            'short_description_ro' => $content['short_description_ro'],
+            'description_ru' => $content['description_ru'],
+            'description_ro' => $content['description_ro'],
+            'generated_content' => true,
+            'needs_source_review' => false,
+            'needs_content_review' => false,
+            'needs_translation_review' => false,
+            'needs_image_review' => false,
+            'source_reviewed_at' => $reviewedAt,
+            'image_reviewed_at' => $reviewedAt,
+            'translation_reviewed_at' => $reviewedAt,
+            'error_message' => null,
+        ])->save();
+
+        return true;
+    }
+
     private function queueExternalCheck(ProductParserItem $item): void
     {
         if (! $item->batch || $this->batchIsCancelled($item->batch)) {
@@ -567,6 +758,9 @@ class ProductPriceListImportService
     {
         $dispatched = 0;
         $failed = 0;
+        $queue = (($batch->options_json['source_mode'] ?? null) === 'tristool_only')
+            ? 'parser-tristool'
+            : 'parser-fast';
 
         foreach ($itemIds as $index => $itemId) {
             if ($index % 50 === 0 && $this->batchIsCancelled($batch)) {
@@ -577,7 +771,7 @@ class ProductPriceListImportService
             }
 
             try {
-                ProcessPriceListRowJob::dispatch($itemId);
+                ProcessPriceListRowJob::dispatch($itemId, $queue);
                 $dispatched++;
             } catch (Throwable $e) {
                 $failed++;
@@ -823,6 +1017,12 @@ class ProductPriceListImportService
                 (string) ($item->raw_name ?: $item->found_title ?: $item->sku),
                 $brand,
             );
+            $tristoolsSource = collect($result['sources'] ?? [])
+                ->first(fn (array $source) => str_contains((string) ($source['domain'] ?? ''), 'tristool.md'));
+            $tristoolsUrl = is_array($tristoolsSource) ? ($tristoolsSource['url'] ?? null) : null;
+            $tristoolsConfidence = $tristoolsUrl
+                ? ($tristoolsSource['confidence_score'] ?? $result['confidence'] ?? null)
+                : null;
             $item->forceFill([
                 'found_title' => $result['title'] ?? $item->found_title,
                 'found_description' => $result['description'] ?? $item->found_description,
@@ -838,10 +1038,8 @@ class ProductPriceListImportService
                 'found_images_json' => $images,
                 'selected_images_json' => collect($images)->take(1)->values()->all(),
                 'source_urls_json' => $result['source_urls'] ?? [],
-                'tristools_url' => collect($result['sources'] ?? [])
-                    ->first(fn (array $source) => str_contains((string) ($source['domain'] ?? ''), 'tristool.md'))['url']
-                        ?? ($result['source_urls'][0] ?? null),
-                'tristools_match_confidence' => $result['confidence'] ?? null,
+                'tristools_url' => $tristoolsUrl,
+                'tristools_match_confidence' => $tristoolsConfidence,
                 'needs_image_review' => $images === [],
                 'official_source_url' => $result['official_source_url'] ?? null,
                 'official_source_domain' => $result['official_source_domain'] ?? null,
@@ -994,6 +1192,7 @@ class ProductPriceListImportService
             Str::contains($lower, ['king tony', 'kingtony']) => 'King Tony',
             Str::contains($lower, ['m7', 'mighty seven']) => 'M7 / Mighty Seven',
             Str::contains($lower, ['jtc']) => 'JTC',
+            preg_match('/(^|\W)gys(\W|$)/iu', $lower) === 1 => 'GYS',
             Str::contains($lower, ['hoegert', 'högert', 'hogert', 'gtv']) => 'Hoegert',
             Str::contains($lower, ['tongrun', 'torin', 'big red']) => 'Torin BIG RED',
             default => null,

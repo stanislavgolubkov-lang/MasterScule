@@ -76,15 +76,15 @@ class ProductCategoryResolverService
                     'detected_category_id' => $category->id,
                     'detected_category_path' => $this->categoryPath($category),
                     'confidence' => max(90, min(98, (int) ($result['confidence'] ?? 90))),
-                    'method' => 'tristools_category_created',
-                    'notes' => ['Category resolved/created from TrisTool and verified source breadcrumbs.'],
+                    'method' => 'tristools_canonical_fallback',
+                    'notes' => ['Unknown source breadcrumb mapped to an existing canonical category; public taxonomy was not mutated.'],
                     'needs_review' => false,
                 ];
             }
         }
 
         if (! $category || $detected['needs_review'] || ! $this->apply($item, $detected)) {
-            $this->appendNote($item, 'TrisTool product was found, but its category could not be mapped or created safely.');
+            $this->appendNote($item, 'TrisTool product was found, but its category could not be mapped to the canonical taxonomy safely.');
 
             return false;
         }

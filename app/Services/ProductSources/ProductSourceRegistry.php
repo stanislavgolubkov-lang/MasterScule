@@ -48,6 +48,7 @@ class ProductSourceRegistry
             Str::contains($brand, 'KING') => 'KING_TONY',
             Str::contains($brand, ['M7', 'MIGHTY']) => 'M7',
             Str::contains($brand, 'JTC') => 'JTC',
+            preg_match('/(^|_)GYS($|_)/', preg_replace('/[^A-Z0-9]+/', '_', $brand) ?: '') === 1 => 'GYS',
             Str::contains($brand, ['HOEGERT', 'HOGERT']) => 'HOEGERT',
             Str::contains($brand, ['TORIN', 'BIG RED']) => 'TORIN',
             Str::contains($brand, 'TONGRUN') => 'TONGRUN',

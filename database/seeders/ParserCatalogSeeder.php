@@ -22,6 +22,7 @@ class ParserCatalogSeeder extends Seeder
             ['JTC', 'jtc', '/images/brand/jtc.jpg'],
             ['Hoegert', 'hoegert', '/images/brand/hoegert.png'],
             ['Torin BIG RED', 'torin-big-red', '/images/brand/torin-big-red.png'],
+            ['GYS', 'gys', '/images/brand/gys.svg'],
         ] as [$name, $slug, $logo]) {
             Brand::updateOrCreate(
                 ['slug' => $slug],
@@ -29,7 +30,7 @@ class ParserCatalogSeeder extends Seeder
                     'name' => $name,
                     'description' => 'Brand importat pentru catalogul MasterScule.',
                     'logo' => $logo,
-                    'is_featured' => in_array($slug, ['king-tony', 'm7-mighty-seven', 'torin-big-red'], true),
+                    'is_featured' => in_array($slug, ['king-tony', 'm7-mighty-seven', 'torin-big-red', 'gys'], true),
                     'is_active' => true,
                 ]
             );
@@ -114,7 +115,10 @@ class ParserCatalogSeeder extends Seeder
             'name_ro' => $row[3],
             'description' => $row[2],
             'description_ro' => $row[3],
-            'image' => '/images/categories/echipamente-service.svg',
+            'image' => match ($row[0]) {
+                'echipament-protectie' => '/images/categories/echipament-protectie.png',
+                default => '/images/categories/echipamente-service.svg',
+            },
         ])->all();
     }
 }

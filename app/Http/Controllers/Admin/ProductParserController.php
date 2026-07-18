@@ -859,7 +859,7 @@ class ProductParserController extends Controller
             'search_images' => ['nullable', 'boolean'],
             'translate_descriptions' => ['nullable', 'boolean'],
             'create_drafts_automatically' => ['nullable', 'boolean'],
-            'missing_stock_quantity' => ['required', 'integer', 'min:1', 'max:9999'],
+            'missing_stock_quantity' => ['required', 'integer', 'min:0', 'max:9999'],
             'update_existing_prices' => ['nullable', 'boolean'],
             'update_existing_stock' => ['nullable', 'boolean'],
             'official_sources_enabled' => ['nullable', 'boolean'],

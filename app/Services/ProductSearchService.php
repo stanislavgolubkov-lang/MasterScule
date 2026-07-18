@@ -42,7 +42,7 @@ class ProductSearchService
 
     public function searchExternalForParser(string $sku, ?string $brand = null, ?string $name = null): array
     {
-        return $this->sourceDiscovery->search(trim($sku), trim((string) $brand), $name);
+        return $this->sourceDiscovery->search(trim($sku), trim((string) $brand), $name, allowFallback: false);
     }
 
     public function searchOfficialForParser(string $sku, ?string $brand = null): array

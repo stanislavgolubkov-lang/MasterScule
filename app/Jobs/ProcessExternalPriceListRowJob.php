@@ -51,10 +51,11 @@ class ProcessExternalPriceListRowJob implements ShouldQueue
         ])->save();
         $importer->processExternalQueuedItem($item);
 
-        $item = ProductParserItem::with('createdProduct')->find($this->itemId);
+        $item = ProductParserItem::with(['createdProduct', 'existingProduct'])->find($this->itemId);
+        $draft = $item?->createdProduct ?: $item?->existingProduct;
         if ($item
-            && $item->processing_stage === 'external_ready'
-            && $item->createdProduct?->status === 'draft') {
+            && in_array($item->processing_stage, ['external_ready', 'brand_logo_ready'], true)
+            && $draft?->status === 'draft') {
             $item->forceFill([
                 'status' => 'image_publish_queued',
                 'processing_stage' => 'image_publish_queued',

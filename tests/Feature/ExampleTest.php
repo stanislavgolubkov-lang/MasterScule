@@ -83,6 +83,73 @@ class ExampleTest extends TestCase
             ->assertSee('Гарантия на товар: 12 месяцев. *Уточняйте по каждому продукту.');
     }
 
+    public function test_catalog_subcategories_and_pagination_follow_selected_locale(): void
+    {
+        $parent = Category::where('slug', 'mobilier-pentru-service')->firstOrFail();
+
+        foreach ([
+            ['slug' => 'carucioare-de-scule', 'name' => 'Инструментальные тележки', 'name_ro' => 'Cărucioare de scule'],
+            ['slug' => 'sisteme-de-depozitare-si-transport', 'name' => 'Системы хранения и транспортировки', 'name_ro' => 'Sisteme de depozitare și transport'],
+            ['slug' => 'accesorii-pentru-bancuri-de-lucru', 'name' => 'Оснастка для верстаков', 'name_ro' => 'Accesorii pentru bancuri de lucru'],
+            ['slug' => 'carucioare-pentru-rafturi', 'name' => 'Полочные тележки', 'name_ro' => 'Cărucioare pentru rafturi'],
+        ] as $index => $category) {
+            $createdCategory = Category::updateOrCreate(['slug' => $category['slug']], $category + [
+                'parent_id' => $parent->id,
+                'sort_order' => 20 + $index,
+                'is_active' => true,
+            ]);
+
+            $product = Product::firstOrFail()->replicate();
+            $product->forceFill([
+                'category_id' => $createdCategory->id,
+                'name' => 'Тестовый товар '.$index,
+                'name_ru' => 'Тестовый товар '.$index,
+                'name_ro' => 'Produs de test '.$index,
+                'slug' => 'locale-navigation-product-'.$index,
+                'sku' => 'LOCALE-NAV-'.$index,
+            ])->save();
+        }
+
+        $this->withSession(['locale' => 'ru'])
+            ->get('/catalog/mobilier-pentru-service')
+            ->assertOk()
+            ->assertSee('Инструментальные тележки')
+            ->assertSee('Системы хранения и транспортировки')
+            ->assertSee('Оснастка для верстаков')
+            ->assertSee('Полочные тележки')
+            ->assertDontSee('Cărucioare de scule')
+            ->assertDontSee('Showing');
+
+        $this->withSession(['locale' => 'ro'])
+            ->get('/catalog/mobilier-pentru-service')
+            ->assertOk()
+            ->assertSee('Cărucioare de scule')
+            ->assertSee('Sisteme de depozitare și transport')
+            ->assertSee('Accesorii pentru bancuri de lucru')
+            ->assertSee('Cărucioare pentru rafturi')
+            ->assertDontSee('Инструментальные тележки')
+            ->assertDontSee('Showing');
+    }
+
+    public function test_public_romanian_pages_do_not_render_cyrillic_text(): void
+    {
+        foreach ([
+            '/',
+            '/catalog',
+            '/catalog/mobilier-pentru-service',
+            '/product/king-tony-7596mr',
+            '/brands',
+            '/promotions',
+            '/new',
+            '/contacts',
+        ] as $url) {
+            $response = $this->withSession(['locale' => 'ro'])->get($url)->assertOk();
+            $visibleText = html_entity_decode(strip_tags($response->getContent()), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+            $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', $visibleText, $url);
+        }
+    }
+
     public function test_product_specifications_hide_price_metadata_and_warranty(): void
     {
         $product = Product::firstOrFail();
@@ -114,9 +181,9 @@ class ExampleTest extends TestCase
         $product = Product::create([
             'brand_id' => Brand::firstOrFail()->id,
             'category_id' => Category::firstOrFail()->id,
-            'name' => 'Visible out of stock product',
-            'name_ru' => 'Visible out of stock product',
-            'name_ro' => 'Visible out of stock product',
+            'name' => 'Видимый товар без остатка',
+            'name_ru' => 'Видимый товар без остатка',
+            'name_ro' => 'Produs vizibil fără stoc',
             'slug' => 'visible-out-of-stock-product',
             'sku' => 'OOS-1',
             'price' => 100,
@@ -135,7 +202,7 @@ class ExampleTest extends TestCase
             'gallery' => ['/storage/products/seed-product.png'],
         ]);
 
-        $this->get('/catalog?q=OOS-1')->assertOk()->assertSee('Visible out of stock product');
+        $this->get('/catalog?q=OOS-1')->assertOk()->assertSee('Видимый товар без остатка');
         $this->get('/product/'.$product->slug)->assertOk()->assertSee(__('ui.out_of_stock'));
 
         $this
@@ -161,12 +228,12 @@ class ExampleTest extends TestCase
         $product = Product::create([
             'brand_id' => Brand::firstOrFail()->id,
             'category_id' => Category::firstOrFail()->id,
-            'name' => 'Missing image visible product',
-            'name_ru' => 'Missing image visible product',
-            'name_ro' => 'Missing image visible product',
+            'name' => 'Товар без доступного изображения',
+            'name_ru' => 'Товар без доступного изображения',
+            'name_ro' => 'Produs fără imagine disponibilă',
             'slug' => 'missing-image-visible-product',
             'sku' => 'MISS-IMG-1',
-            'description_ru' => 'Visible product description.',
+            'description_ru' => 'Описание товара отображается.',
             'description_ro' => 'Descriere produs vizibil.',
             'price' => 100,
             'currency' => 'MDL',
@@ -187,13 +254,54 @@ class ExampleTest extends TestCase
         $this
             ->get('/catalog?q=MISS-IMG-1')
             ->assertOk()
-            ->assertSee('Missing image visible product')
+            ->assertSee('Товар без доступного изображения')
             ->assertSee(__('ui.product_photo_pending_short'));
 
         $this
             ->get('/product/'.$product->slug)
             ->assertOk()
-            ->assertSee('Visible product description.');
+            ->assertSee('Описание товара отображается.');
+    }
+
+    public function test_photo_pending_product_is_visible_and_purchasable_when_in_stock(): void
+    {
+        $product = Product::create([
+            'brand_id' => Brand::firstOrFail()->id,
+            'category_id' => Category::firstOrFail()->id,
+            'name' => 'Photo pending product',
+            'name_ru' => 'Photo pending product',
+            'name_ro' => 'Produs cu fotografie in asteptare',
+            'slug' => 'photo-pending-visible-product',
+            'sku' => 'PHOTOPENDINGZZ1',
+            'description_ru' => 'Описание товара доступно, фотография ожидается.',
+            'description_ro' => 'Descrierea este disponibila, fotografia este in asteptare.',
+            'price' => 100,
+            'currency' => 'MDL',
+            'stock_quantity' => 1,
+            'stock_status' => 'in_stock',
+            'status' => 'published',
+            'approval_status' => 'approved',
+            'needs_review' => false,
+            'needs_image_review' => true,
+            'needs_category_review' => false,
+            'needs_translation_review' => false,
+            'needs_price_review' => false,
+            'is_active' => true,
+            'main_image' => '/images/products/product-placeholder-toolbox.svg',
+            'gallery' => [],
+        ]);
+
+        $this->assertTrue(Product::availableForSale()->whereKey($product->id)->exists());
+        $this->assertTrue(Product::purchasable()->whereKey($product->id)->exists());
+        $this->get('/product/'.$product->slug)
+            ->assertOk()
+            ->assertSee('PHOTOPENDINGZZ1')
+            ->assertSee(__('ui.product_photo_pending'))
+            ->assertSee(__('ui.add_to_cart'));
+
+        $this->post('/cart/add/'.$product->id, ['quantity' => 1])
+            ->assertSessionHasNoErrors();
+        $this->assertSame(1, session('cart')[$product->id] ?? null);
     }
 
     public function test_product_can_be_added_to_cart(): void
@@ -803,6 +911,55 @@ class ExampleTest extends TestCase
         $this->assertSame(2, $batch->items()->where('status', 'ready_for_review')->count());
     }
 
+    public function test_gys_price_list_infers_brand_and_maps_supplier_subgroups(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        Storage::disk('local')->put('parser/test/gys.csv', implode("\n", [
+            'sku;name;price;stock;group;subgroup',
+            '063754;Горелка MIG-MAG 150 A с воздушным охлаждением;1290;4;GYS;Аксессуары для MIG',
+            '059948;Фонарь диодный водонепроницаемый с аккумулятором;490;3;GYS;ОБЩИЕ',
+        ]));
+
+        $batch = ProductParserBatch::create([
+            'title' => 'GYS dry-run test',
+            'source_type' => 'price_list',
+            'file_name' => 'GYS (зарядное и кузовной ремонт).csv',
+            'file_path' => 'parser/test/gys.csv',
+            'file_type' => 'csv',
+            'price_type' => 'retail_price',
+            'import_mode' => 'dry_run',
+            'status' => 'pending',
+            'options_json' => [
+                'search_images' => false,
+                'process_images' => false,
+                'create_drafts_automatically' => false,
+            ],
+        ]);
+
+        app(ProductPriceListImportService::class)->dryRun($batch);
+
+        $item = $batch->items()->where('sku', '063754')->firstOrFail();
+        $this->assertSame('GYS', $item->brand);
+        $this->assertSame(
+            'sudura-richtuire-vopsire',
+            $item->category?->slug,
+            json_encode($item->only([
+                'brand',
+                'detected_group',
+                'detected_subgroup',
+                'category_confidence_score',
+                'category_detection_notes_json',
+            ]), JSON_UNESCAPED_UNICODE),
+        );
+        $this->assertFalse((bool) $item->needs_category_review);
+
+        $generalItem = $batch->items()->where('sku', '059948')->firstOrFail();
+        $this->assertSame('GYS', $generalItem->brand);
+        $this->assertSame('accesorii-universale', $generalItem->category?->slug);
+        $this->assertFalse((bool) $generalItem->needs_category_review);
+    }
+
     public function test_queued_import_schedules_rows_that_need_category_resolution(): void
     {
         Queue::fake();
@@ -844,7 +1001,7 @@ class ExampleTest extends TestCase
         Queue::fake();
         config()->set('product_parser.official_sources_enabled', true);
         $tristools = Mockery::mock(TrisToolsEnrichmentService::class);
-        $tristools->shouldReceive('enrich')->once()->with('KT-MISSING-1', 'King Tony')->andReturn([
+        $tristools->shouldReceive('enrich')->times(3)->with('KT-MISSING-1', 'King Tony')->andReturn([
             'found' => false,
             'confidence' => 0,
         ]);
@@ -874,7 +1031,44 @@ class ExampleTest extends TestCase
         Queue::assertPushed(ProcessExternalPriceListRowJob::class, 1);
     }
 
-    public function test_queued_import_learns_unknown_category_from_tristool_and_reuses_it(): void
+    public function test_tristool_only_batch_never_queues_external_recovery(): void
+    {
+        Queue::fake();
+        $tristools = Mockery::mock(TrisToolsEnrichmentService::class);
+        $tristools->shouldReceive('enrich')->times(3)->with('GYS-ONLY-404', 'GYS')->andReturn([
+            'found' => false,
+            'confidence' => 0,
+        ]);
+        $this->app->instance(TrisToolsEnrichmentService::class, $tristools);
+
+        $batch = ProductParserBatch::create([
+            'title' => 'GYS TrisTool only',
+            'source_type' => 'price_list',
+            'import_mode' => 'create_drafts',
+            'status' => 'processing',
+            'options_json' => [
+                'staging_complete' => true,
+                'source_mode' => 'tristool_only',
+            ],
+        ]);
+        $item = ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'GYS-ONLY-404',
+            'brand' => 'GYS',
+            'status' => 'tristool_queued',
+            'processing_stage' => 'tristool_queued',
+        ]);
+
+        (new ProcessPriceListRowJob($item->id))->handle(app(ProductPriceListImportService::class));
+
+        $item->refresh();
+        $this->assertSame('needs_manual_review', $item->status);
+        $this->assertSame('tristool_manual', $item->processing_stage);
+        $this->assertStringContainsString('External recovery is disabled', $item->error_message);
+        Queue::assertNotPushed(ProcessExternalPriceListRowJob::class);
+    }
+
+    public function test_queued_import_does_not_reuse_unverified_tristool_category_learning(): void
     {
         Queue::fake();
         Storage::fake('local');
@@ -942,21 +1136,10 @@ class ExampleTest extends TestCase
         $this->assertFalse((bool) $items[0]->needs_category_review);
         $this->assertFalse((bool) $items[1]->needs_category_review);
         $this->assertSame('tristools_category', $items[0]->category_detection_method);
-        $this->assertSame('learned_tristools_breadcrumb', $items[1]->category_detection_method);
+        $this->assertSame('tristools_category', $items[1]->category_detection_method);
         $this->assertSame('completed', $batch->fresh()->status);
         $this->assertSame(0, $batch->fresh()->dry_run_report_json['queued_rows']);
-        $this->assertDatabaseHas('product_parser_category_learnings', [
-            'key_type' => 'sku',
-            'key_value' => '6216-06A',
-            'category_id' => $category->id,
-            'source' => 'tristools',
-        ]);
-        $this->assertDatabaseHas('product_parser_category_learnings', [
-            'key_type' => 'group',
-            'key_value' => 'VDE',
-            'category_id' => $category->id,
-        ]);
-        $this->assertSame(4, ProductParserCategoryLearning::count());
+        $this->assertSame(0, ProductParserCategoryLearning::count());
     }
 
     public function test_cancellation_before_staging_preserves_the_dry_run_snapshot(): void
@@ -1057,13 +1240,13 @@ class ExampleTest extends TestCase
             'status' => 'searching',
             'needs_category_review' => true,
         ]);
-        ProductParserItem::create([
+        $finalCategory = ProductParserItem::create([
             'batch_id' => $batch->id,
             'sku' => 'FINAL-CATEGORY',
             'status' => 'needs_category_review',
             'needs_category_review' => true,
         ]);
-        ProductParserItem::create([
+        $failedParser = ProductParserItem::create([
             'batch_id' => $batch->id,
             'sku' => 'FAILED-PARSER',
             'status' => 'failed',
@@ -1072,12 +1255,26 @@ class ExampleTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.parser.batches.show', $batch))
             ->assertOk()
+            ->assertSee('Открыть товары для доработки')
+            ->assertSee(route('admin.parser.batches.show', ['batch' => $batch, 'exceptions' => 1]), false)
             ->assertViewHas('bulkStats', fn (array $stats) => $stats['exceptions'] === 2)
             ->assertViewHas('filterCounts', fn (array $counts) => $counts['processing'] === 2
                 && $counts['completed'] === 2
                 && $counts['progress_percent'] === 50
                 && $counts['needs_category'] === 1
                 && $counts['failed'] === 1);
+
+        $this->actingAs($admin)
+            ->get(route('admin.parser.batches.show', ['batch' => $batch, 'exceptions' => 1]))
+            ->assertOk()
+            ->assertSee('Товары, не прошедшие автоматическую проверку')
+            ->assertSee('Откройте любую позицию')
+            ->assertSee(route('admin.parser.items.show', $finalCategory), false)
+            ->assertSee(route('admin.parser.items.show', $failedParser), false)
+            ->assertViewHas('items', fn ($items) => $items->pluck('sku')->sort()->values()->all() === [
+                'FAILED-PARSER',
+                'FINAL-CATEGORY',
+            ]);
 
         $this->actingAs($admin)
             ->get(route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'processing_auto']))
@@ -1257,8 +1454,8 @@ class ExampleTest extends TestCase
         $this->assertFalse((bool) $product->is_active);
         $this->assertSame('draft', $product->status);
         $this->assertEquals(0, $product->price);
-        $this->assertSame(1, $product->stock_quantity);
-        $this->assertSame('in_stock', $product->stock_status);
+        $this->assertSame(0, $product->stock_quantity);
+        $this->assertSame('out_of_stock', $product->stock_status);
         $this->assertSame($product->id, $item->fresh()->created_product_id);
     }
 
@@ -1356,7 +1553,7 @@ class ExampleTest extends TestCase
             'key_value' => 'NC-4233-TEST',
             'brand_key' => '*',
             'category_id' => $pneumaticCategory->id,
-            'source' => 'test',
+            'source' => 'admin_verified',
             'confidence' => 99,
             'observations' => 1,
         ]);

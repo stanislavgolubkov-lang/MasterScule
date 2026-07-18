@@ -75,6 +75,8 @@ class ParserDraftsPageTest extends TestCase
             ->assertOk()
             ->assertSee('Всего черновиков: 1')
             ->assertSee('VISIBLE-PARSER-DRAFT')
+            ->assertSee('Товар')
+            ->assertSee('Парсер')
             ->assertDontSee('PUBLISHED-PARSER-PRODUCT');
     }
 }

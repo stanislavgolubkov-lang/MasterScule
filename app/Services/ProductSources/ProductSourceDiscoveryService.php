@@ -4,6 +4,7 @@ namespace App\Services\ProductSources;
 
 use App\Services\ProductParserSettings;
 use App\Services\ProductSources\Adapters\HoegertOfficialAdapter;
+use App\Services\ProductSources\Adapters\GysOfficialAdapter;
 use App\Services\ProductSources\Adapters\JtcOfficialAdapter;
 use App\Services\ProductSources\Adapters\KingTonyOfficialAdapter;
 use App\Services\ProductSources\Adapters\MightySevenOfficialAdapter;
@@ -20,6 +21,7 @@ class ProductSourceDiscoveryService
         private readonly MightySevenOfficialAdapter $mightySeven,
         private readonly JtcOfficialAdapter $jtc,
         private readonly HoegertOfficialAdapter $hoegert,
+        private readonly GysOfficialAdapter $gys,
         private readonly TorinOfficialAdapter $torin,
         private readonly TongrunOfficialAdapter $tongrun,
         private readonly ReviewedCatalogSourceService $reviewedCatalog,
@@ -56,11 +58,7 @@ class ProductSourceDiscoveryService
 
     public function searchTrisTool(string $sku, ?string $brand, ?string $name = null): array
     {
-        $result = $this->searchOnce($sku, $brand, $name, true, true);
-        $result['automation_attempts'] = 1;
-        $result['automation_exhausted'] = ! $this->automaticallyComplete($result);
-
-        return $result;
+        return $this->search($sku, $brand, $name, forceFallback: true, allowFallback: true);
     }
 
     private function searchOnce(string $sku, ?string $brand, ?string $name, bool $forceFallback, bool $allowFallback): array
@@ -80,7 +78,13 @@ class ProductSourceDiscoveryService
         }
 
         if (! $allowFallback) {
-            return $this->officialResult($sku, $brand, $name) ?: $this->emptyResult();
+            $official = $this->officialResult($sku, $brand, $name);
+
+            if ($catalog = $this->reviewedCatalog->find($sku, $brand, $name)) {
+                $official = $this->mergeReviewedCatalog($official, $catalog);
+            }
+
+            return $official ?: $this->emptyResult();
         }
 
         // TrisTool is the required first stage. It supplies the local product
@@ -214,6 +218,7 @@ class ProductSourceDiscoveryService
             str_contains($text, 'king tony') => 'King Tony',
             str_contains($text, 'mighty seven'), preg_match('/(^|\W)m7(\W|$)/iu', $text) === 1 => 'M7 / Mighty Seven',
             str_contains($text, 'jtc') => 'JTC',
+            preg_match('/(^|\W)gys(\W|$)/iu', $text) === 1 => 'GYS',
             str_contains($text, 'hoegert'), str_contains($text, 'högert'), str_contains($text, 'hogert') => 'Hoegert',
             str_contains($text, 'tongrun') => 'Tongrun',
             str_contains($text, 'torin'), str_contains($text, 'big red') => 'Torin',
@@ -295,7 +300,7 @@ class ProductSourceDiscoveryService
 
     private function officialAdapters(): array
     {
-        return [$this->kingTony, $this->mightySeven, $this->jtc, $this->hoegert, $this->torin, $this->tongrun];
+        return [$this->kingTony, $this->mightySeven, $this->jtc, $this->hoegert, $this->gys, $this->torin, $this->tongrun];
     }
 
     private function mergeReviewedCatalog(?array $official, array $catalog): array

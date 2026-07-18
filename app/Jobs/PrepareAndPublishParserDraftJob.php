@@ -38,8 +38,9 @@ class PrepareAndPublishParserDraftJob implements ShouldQueue
         ProductDraftService $drafts,
         ProductPublicationGuard $publicationGuard,
     ): void {
-        $item = ProductParserItem::with(['createdProduct', 'imageAssets', 'category', 'batch'])->find($this->itemId);
-        if (! $item || ! $item->createdProduct || $item->createdProduct->status !== 'draft') {
+        $item = ProductParserItem::with(['createdProduct', 'existingProduct', 'imageAssets', 'category', 'batch'])->find($this->itemId);
+        $targetDraft = $item?->createdProduct ?: $item?->existingProduct;
+        if (! $item || ! $targetDraft || $targetDraft->status !== 'draft') {
             return;
         }
 
@@ -74,8 +75,11 @@ class PrepareAndPublishParserDraftJob implements ShouldQueue
             return;
         }
 
-        $item->refresh()->load(['createdProduct', 'imageAssets', 'category', 'batch']);
-        $product = $drafts->refreshParserDraft($item, $item->createdProduct);
+        $item->refresh()->load(['createdProduct', 'existingProduct', 'imageAssets', 'category', 'batch']);
+        $targetDraft = $item->createdProduct ?: $item->existingProduct;
+        $product = (int) $targetDraft->source_import_batch_id === (int) $item->batch_id
+            ? $drafts->refreshParserDraft($item, $targetDraft)
+            : $drafts->refreshDraftFromSearch($item, $targetDraft);
         $result = $publicationGuard->publish($product->fresh(), true, self::APPROVAL_FLAGS);
 
         if (! $result['allowed']) {

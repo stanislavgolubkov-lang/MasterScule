@@ -2,7 +2,8 @@
     $productImage = trim((string) $product->main_image);
     $imageAvailable = app(\App\Services\Catalog\ProductImageAvailabilityService::class)->isAvailable($productImage);
     $missingProductImage = ! $imageAvailable;
-    $inStock = $product->is_purchasable;
+    $inStock = $product->stock_status === 'in_stock' && (int) $product->stock_quantity > 0;
+    $canOrder = $inStock;
 @endphp
 <article class="product-card {{ $missingProductImage ? 'product-card-no-photo' : '' }}">
     <div class="product-image">
@@ -13,7 +14,7 @@
             <span class="product-image-missing-content" @if(! $missingProductImage) hidden @endif>
                 <span class="product-image-missing-mark" aria-hidden="true"></span>
                 <strong>{{ __('ui.product_photo_pending_short') }}</strong>
-                <small>SKU {{ $product->sku }}</small>
+                <small>{{ __('ui.product_code') }}: {{ $product->sku }}</small>
             </span>
             @if(! $missingProductImage)
                 <img src="{{ $productImage }}" alt="{{ $product->display_name }}" loading="lazy" decoding="async" onerror="this.hidden=true;this.previousElementSibling.hidden=false;this.closest('.product-card').classList.add('product-card-no-photo');">
@@ -36,7 +37,7 @@
             <div class="stock {{ $inStock ? '' : 'stock-out' }}"><span aria-hidden="true">&#9679;</span> {{ $inStock ? __('ui.in_stock') : __('ui.out_of_stock') }}</div>
             <form action="{{ route('cart.add', $product) }}" method="post">
                 @csrf
-                <button class="btn small product-card-button" @disabled(! $inStock)>{{ $inStock ? __('ui.add_to_cart') : __('ui.out_of_stock') }}</button>
+                <button class="btn small product-card-button" @disabled(! $canOrder)>{{ $inStock ? __('ui.add_to_cart') : __('ui.out_of_stock') }}</button>
             </form>
         </div>
     </div>

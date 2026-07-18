@@ -139,9 +139,15 @@ class ProductPriceListReader
         $sheetInfo = collect($worksheetInfo)->firstWhere('worksheetName', 'TDSheet') ?: $worksheetInfo[0];
         $sheetName = (string) $sheetInfo['worksheetName'];
         $totalPhysicalRows = (int) ($sheetInfo['totalRows'] ?? 0);
+        // PhpSpreadsheet reports lastColumnIndex as zero-based (D = 3), while
+        // spreadsheetRow() expects a one-based column count. Prefer the
+        // explicit totalColumns value so the final column is not dropped.
+        $reportedColumnCount = (int) ($sheetInfo['totalColumns'] ?? 0);
         $highestColumn = min(
             self::MAX_COLUMNS,
-            (int) ($sheetInfo['lastColumnIndex'] ?? Coordinate::columnIndexFromString((string) ($sheetInfo['lastColumnLetter'] ?? 'A')))
+            $reportedColumnCount > 0
+                ? $reportedColumnCount
+                : Coordinate::columnIndexFromString((string) ($sheetInfo['lastColumnLetter'] ?? 'A'))
         );
 
         if ($totalPhysicalRows < 1) {

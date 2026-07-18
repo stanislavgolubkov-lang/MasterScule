@@ -81,10 +81,6 @@ class ProductFallbackImageService
             : $this->imageFromPath($product->category?->image);
 
         if (! $source) {
-            $source = $this->imageFromPath('/images/products/product-placeholder-toolbox.svg');
-        }
-
-        if (! $source) {
             $this->drawToolShape($image, $variant);
 
             return;

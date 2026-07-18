@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 152" role="img" aria-labelledby="title">
+  <title id="title">GYS</title>
+  <rect width="320" height="152" rx="2" fill="#0b2d5c"/>
+  <rect y="124" width="320" height="28" fill="#f7c900"/>
+  <g fill="#fff" transform="skewX(-10)">
+    <path d="M54 35h74v20H73c-7 0-13 5-13 12v24c0 7 6 12 13 12h28V88H79V70h48v53H70c-22 0-39-14-39-34V69c0-20 10-34 23-34Z"/>
+    <path d="M129 35h28l19 31 20-31h28l-35 53v35h-27V88Z"/>
+    <path d="M226 35h69v20h-54c-5 0-8 3-8 7 0 5 3 7 8 7h25c21 0 34 10 34 27 0 18-13 27-36 27h-63v-20h59c7 0 11-2 11-7 0-4-4-7-11-7h-25c-19 0-31-10-31-27 0-15 8-27 22-27Z"/>
+  </g>
+  <rect x="38" y="70" width="19" height="18" fill="#f7c900"/>
+</svg>

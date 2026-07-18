@@ -265,7 +265,7 @@ class ProductCatalogClassifier
             $add('instrumente-de-masurare', 60, 'measuring tester');
         }
 
-        if ($has(['рулетка', 'уровень', 'laser', 'лазер', 'nivele', 'ruleta'])) {
+        if ($has(['рулетка измерительная', 'строительный уровень', 'лазерный уровень', 'spirit level', 'tape measure', 'nivele', 'ruleta'])) {
             $add('rulete-nivele', 90, 'tape/level/laser measuring');
             $add('instrumente-de-masurare', 70, 'measuring tool');
         }

@@ -116,7 +116,7 @@ return [
     'list_view' => 'Список',
     'all' => 'Все',
     'in_stock' => 'В наличии',
-    'out_of_stock' => 'Out of stock',
+    'out_of_stock' => 'Нет в наличии',
     'apply_filters' => 'Показать товары',
     'filters' => 'Фильтры',
     'choose_category' => 'Выберите категорию',
@@ -474,4 +474,9 @@ return [
     'admin_with_photo' => 'С фотографией',
     'admin_without_photo' => 'Без фотографии',
     'bestsellers' => 'Топ продаж',
+    'product_description_fallback' => ':name — профессиональный товар для автосервиса, мастерской или гаража. Артикул: :sku.',
+    'product_name_fallback' => 'Товар :sku',
+    'store_address' => 'ул. Александру чел Бун, 103/A, Кишинёв, Республика Молдова',
+    'store_country' => 'Молдова',
+    'placeholder_text' => 'Этот раздел подготовлен и будет дополнен на следующем этапе.',
 ];

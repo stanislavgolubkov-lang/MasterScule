@@ -119,9 +119,17 @@
             <label>{{ $ru ? 'Лимит' : 'Limita' }}<input type="number" name="limit" value="20000" min="1" max="20000"></label>
             <button class="btn outline small" @disabled($bulkStats['existing'] === 0)>{{ $ru ? 'Обновить цену и остаток' : 'Actualizeaza pret si stoc' }}</button>
         </form>
-        <a class="parser-bulk-exceptions" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'exceptions' => 1]) }}">
+        <a
+            class="parser-bulk-exceptions"
+            href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'exceptions' => 1]) }}"
+            aria-label="{{ $ru ? 'Открыть товары, не прошедшие автопроверку' : 'Deschide produsele care nu au trecut verificarea automata' }}"
+        >
             <strong>{{ $bulkStats['exceptions'] }}</strong>
             <span>{{ $ru ? 'окончательных исключений после автопроверки' : 'exceptii finale dupa verificarea automata' }}</span>
+            <span class="parser-bulk-exceptions-action">
+                {{ $ru ? 'Открыть товары для доработки' : 'Deschide produsele pentru completare' }}
+                <b aria-hidden="true">→</b>
+            </span>
         </a>
     </div>
 </section>
@@ -158,6 +166,7 @@
         <a class="{{ $activeFilter === 'existing_product_found' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'existing_product_found']) }}">{{ $ru ? 'Существующие' : 'Existente' }} <span>{{ $filterCounts['existing_product_found'] }}</span></a>
         <a class="{{ $activeFilter === 'needs_category' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'needs_category' => 1]) }}">{{ $ru ? 'Нужна категория' : 'Necesita categorie' }} <span>{{ $filterCounts['needs_category'] }}</span></a>
         <a class="{{ $activeFilter === 'no_images' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'no_images' => 1]) }}">{{ $ru ? 'Нет фото' : 'Fara imagini' }} <span>{{ $filterCounts['no_images'] }}</span></a>
+        <a class="{{ $activeFilter === 'exceptions' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'exceptions' => 1]) }}">{{ $ru ? 'Исключения' : 'Exceptii' }} <span>{{ $bulkStats['exceptions'] }}</span></a>
         <a class="{{ $activeFilter === 'failed' ? 'active' : '' }}" href="{{ route('admin.parser.batches.show', ['batch' => $batch, 'status' => 'failed']) }}">{{ __('ui.parser_failed') }} <span>{{ $filterCounts['failed'] }}</span></a>
     </div>
     <div class="parser-actions">
@@ -183,6 +192,15 @@
 </section>
 
 <section class="shell panel parser-card parser-table-panel">
+    @if(request('exceptions'))
+        <div class="parser-exceptions-intro">
+            <div>
+                <strong>{{ $ru ? 'Товары, не прошедшие автоматическую проверку' : 'Produse care nu au trecut verificarea automata' }}</strong>
+                <span>{{ $ru ? 'Они сохранены и не опубликованы. Откройте любую позицию, чтобы дополнить источник, категорию, описание или фотографии.' : 'Sunt salvate si nepublicate. Deschideti orice pozitie pentru a completa sursa, categoria, descrierea sau imaginile.' }}</span>
+            </div>
+            <a class="btn outline small" href="{{ route('admin.parser.batches.show', $batch) }}">{{ $ru ? 'Показать все товары' : 'Arata toate produsele' }}</a>
+        </div>
+    @endif
     <div class="parser-table-wrap">
         <table class="parser-table">
             <thead>

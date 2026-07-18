@@ -47,7 +47,7 @@
     </section>
 @endif
 
-<section class="shell product-grid {{ $collectionClass ?? '' }} {{ ($emptyState ?? null) === 'promotions' && count($products) === 0 ? 'promotions-empty-layout' : '' }}">
+<section class="shell product-grid {{ $collectionClass ?? '' }} {{ ($emptyState ?? null) === 'promotions' && count($products) === 0 ? 'promotions-empty-layout page-banner-shell' : '' }}">
     @forelse($products as $product)
         <x-product-card :product="$product" />
     @empty

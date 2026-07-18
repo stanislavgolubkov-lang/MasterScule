@@ -2,26 +2,17 @@
 
 @php
     $catalogRoot = $categories->firstWhere('slug', 'instrumente-si-mobilier');
-    $menuOrder = [
-        'mobilier-pentru-service',
-        'scule-speciale-auto',
-        'instrument-manual',
-        'scule-pneumatice',
-        'electroinstrumente',
-        'instrumente-cu-acumulator',
-        'instrumente-electromontaj',
-        'instrumente-de-masurare',
-        'accesorii-si-consumabile',
-    ];
+    $menuOrder = config('catalog_taxonomy.main_sections', []);
 
     $sections = collect($catalogRoot?->childrenRecursive ?? [])
-        ->filter(fn ($category) => in_array($category->slug, $menuOrder, true))
+        ->filter(fn ($category) => $category->is_menu_visible && in_array($category->slug, $menuOrder, true))
         ->sortBy(fn ($category) => array_search($category->slug, $menuOrder, true))
         ->values();
 
     $flatten = function ($items) use (&$flatten) {
         return collect($items)->flatMap(function ($item) use (&$flatten) {
-            return collect([$item])->merge($flatten($item->childrenRecursive ?? collect()));
+            $children = collect($item->childrenRecursive ?? collect())->filter->is_menu_visible;
+            return collect([$item])->merge($flatten($children));
         });
     };
 
@@ -70,7 +61,8 @@
 
             <div class="mega-center">
                 @foreach($sections as $section)
-                    @php($children = $section->childrenRecursive->isNotEmpty() ? $section->childrenRecursive : collect([$section]))
+                    @php($visibleChildren = $section->childrenRecursive->filter->is_menu_visible)
+                    @php($children = $visibleChildren->isNotEmpty() ? $visibleChildren : collect([$section]))
                     <div
                         id="mega-panel-{{ $section->slug }}"
                         class="mega-subcategory-panel {{ $section->slug === $activeSlug ? 'active' : '' }}"
@@ -88,7 +80,7 @@
                                     <a class="mega-text-parent" href="{{ route('catalog', $child->slug) }}">
                                         {{ $child->display_name }}
                                     </a>
-                                    @foreach($child->childrenRecursive as $leaf)
+                                    @foreach($child->childrenRecursive->filter->is_menu_visible as $leaf)
                                         <a class="mega-text-leaf" href="{{ route('catalog', $leaf->slug) }}">
                                             {{ $leaf->display_name }}
                                         </a>

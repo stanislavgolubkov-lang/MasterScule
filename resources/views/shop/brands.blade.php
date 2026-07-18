@@ -49,6 +49,7 @@
                 'jtc' => 'JTC',
                 'hoegert' => 'Högert Technik',
                 'torin-big-red' => 'Torin BIG RED',
+                'gys' => 'GYS',
             ];
             $brandDisplayName = $brandDisplayNames[$brand->slug] ?? $brand->name;
         @endphp

@@ -6,14 +6,33 @@ use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Page;
 use App\Models\Product;
+use App\Services\Catalog\CatalogStorefrontNavigation;
+use App\Services\Catalog\ProductImageAvailabilityService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 class ShopController extends Controller
 {
+    public function __construct(
+        private CatalogStorefrontNavigation $catalogNavigation,
+        private ProductImageAvailabilityService $productImages,
+    ) {}
+
     private const CATALOG_ROOT_SLUG = 'instrumente-si-mobilier';
+
     private const HOME_RECOMMENDED_LIMIT = 50;
+
     private const NEW_PRODUCTS_PER_PAGE = 50;
+
     private const RELATED_PRODUCTS_LIMIT = 20;
+
+    private const HOME_HIDDEN_QUICK_CATEGORY_SLUGS = [
+        'echipamente-pentru-service',
+        'sudura-richtuire-vopsire',
+        'vulcanizare',
+        'echipament-protectie',
+    ];
 
     private const TASK_CATALOG_RULES = [
         'garage' => [
@@ -108,45 +127,6 @@ class ShopController extends Controller
         ],
     ];
 
-    private const EMPTY_CATEGORY_FALLBACKS = [
-        'pistoale-pneumatice-si-impact' => ['chei-pneumatice'],
-        'pistoale-pentru-silicon-si-gresare' => ['scule-pneumatice'],
-        'accesorii-pneumatice' => ['furtunuri-cuple-accesorii', 'consumabile-pentru-scule-pneumatice'],
-        'alte-scule-pneumatice' => ['scule-pneumatice'],
-        'compresoare' => ['scule-pneumatice'],
-        'extractoare-si-scule-speciale' => ['extractoare-si-prese'],
-        'clesti-si-instrumente-taiere' => ['instrument-manual'],
-        'electroinstrumente' => ['instrumente-cu-acumulator'],
-        'masini-gaurit-insurubat' => ['instrumente-cu-acumulator'],
-        'polizoare' => ['instrumente-cu-acumulator'],
-        'accesorii-scule-electrice' => ['instrumente-cu-acumulator', 'accesorii-si-consumabile'],
-        'pistoale-impact-cu-acumulator' => ['instrumente-cu-acumulator'],
-        'chei-cu-acumulator' => ['instrumente-cu-acumulator'],
-        'baterii-incarcatoare' => ['instrumente-cu-acumulator'],
-        'testere-electrice-si-indicatoare' => ['instrumente-electromontaj'],
-        'clesti-electrician-si-cabluri' => ['instrumente-electromontaj'],
-        'lipire-si-consumabile' => ['instrumente-electromontaj'],
-        'multimetre-testere' => ['instrumente-de-masurare'],
-        'instrumente-control-verificare' => ['instrumente-de-masurare'],
-        'discuri-perii-abrazive' => ['accesorii-si-consumabile'],
-        'burghie-freze' => ['accesorii-si-consumabile'],
-        'cutite-lame-rezerve' => ['accesorii-si-consumabile'],
-        'scule-vehicule-grele' => ['scule-speciale-auto'],
-        'diagnoza-auto' => ['scule-speciale-auto'],
-    ];
-
-    private const MAIN_CATALOG_SLUGS = [
-        'mobilier-pentru-service',
-        'scule-speciale-auto',
-        'instrument-manual',
-        'scule-pneumatice',
-        'electroinstrumente',
-        'instrumente-cu-acumulator',
-        'instrumente-electromontaj',
-        'instrumente-de-masurare',
-        'accesorii-si-consumabile',
-    ];
-
     public function home()
     {
         $instrumentRoot = Category::where('slug', self::CATALOG_ROOT_SLUG)->first();
@@ -157,7 +137,8 @@ class ShopController extends Controller
                 ->when($instrumentRoot, fn ($query) => $query->where('parent_id', $instrumentRoot->id))
                 ->when(! $instrumentRoot, fn ($query) => $query->whereNull('parent_id'))
                 ->orderBy('sort_order')
-                ->limit(9)
+                ->whereIn('slug', config('catalog_taxonomy.main_sections', []))
+                ->whereNotIn('slug', self::HOME_HIDDEN_QUICK_CATEGORY_SLUGS)
                 ->get(),
             'featuredProducts' => $this->recommendedProducts(),
             'productsCount' => Product::availableForSale()->count(),
@@ -170,32 +151,35 @@ class ShopController extends Controller
         $activeCategory = $category
             ? Category::with(['parent.parent', 'childrenRecursive'])->where('slug', $category)->firstOrFail()
             : null;
+
+        $isEditorialMainSection = $activeCategory
+            && in_array($activeCategory->slug, config('catalog_taxonomy.main_sections', []), true);
+
+        if ($activeCategory
+            && ! $isEditorialMainSection
+            && ! $request->filled('task')
+            && ! $this->catalogNavigation->isVisible($activeCategory)) {
+            $fallback = $this->catalogNavigation->nearestVisibleAncestor($activeCategory->parent);
+
+            return $fallback
+                ? redirect()->route('catalog', $fallback->slug)
+                : redirect()->route('catalog');
+        }
         $categoryIds = $activeCategory?->descendantsAndSelfIds();
         $requestedTask = $request->string('task')->toString();
-        $taskKey = array_key_exists($requestedTask, self::TASK_CATALOG_RULES)
-            ? $requestedTask
-            : $this->defaultTaskForCategory($activeCategory?->slug);
+        $taskKey = array_key_exists($requestedTask, self::TASK_CATALOG_RULES) ? $requestedTask : null;
         $taskRule = $taskKey ? self::TASK_CATALOG_RULES[$taskKey] : null;
-
-        if ($taskKey && $requestedTask !== $taskKey) {
-            $request->query->set('task', $taskKey);
-        }
 
         $taskCategoryIds = $taskRule
             ? $this->categoryIdsForSlugs($taskRule['categories'] ?? [])
             : [];
-        $catalogCategoryIds = $categoryIds;
-
-        if ($activeCategory && ! $taskRule && ! $this->categoryHasAvailableProducts($categoryIds)) {
-            $catalogCategoryIds = $this->fallbackCategoryIds($activeCategory);
-        }
 
         $showProducts = $this->shouldShowProducts($request, $activeCategory);
 
         $products = Product::with(['brand', 'category', 'categories'])
             ->availableForSale()
             ->when(! $showProducts, fn ($query) => $query->whereRaw('1 = 0'))
-            ->when($activeCategory && ! $taskRule, fn ($query) => $query->inCatalogCategories($catalogCategoryIds))
+            ->when($activeCategory && ! $taskRule, fn ($query) => $query->inCatalogCategories($categoryIds ?? []))
             ->when($taskRule, function ($query) use ($taskRule, $taskCategoryIds) {
                 $query->where(function ($taskQuery) use ($taskRule, $taskCategoryIds) {
                     if ($taskCategoryIds !== []) {
@@ -445,14 +429,14 @@ class ShopController extends Controller
             $products = $products->concat($backfillProducts)->values();
         }
 
-          return view('shop.collection', [
-              'title' => __('ui.new_items'),
-              'subtitle' => __('ui.collection_text'),
-              'products' => $products,
-              'collectionClass' => 'product-grid-compact new-arrivals-grid',
-              'collectionHero' => 'new',
-          ]);
-      }
+        return view('shop.collection', [
+            'title' => __('ui.new_items'),
+            'subtitle' => __('ui.collection_text'),
+            'products' => $products,
+            'collectionClass' => 'product-grid-compact new-arrivals-grid',
+            'collectionHero' => 'new',
+        ]);
+    }
 
     public function bestsellers()
     {
@@ -504,37 +488,80 @@ class ShopController extends Controller
         $extraSlots = $brandCount > 0 ? self::HOME_RECOMMENDED_LIMIT % $brandCount : 0;
 
         $products = $brands
-            ->flatMap(fn (Brand $brand, int $index) => Product::with(['brand', 'category'])
-                ->availableForSale()
-                ->where('brand_id', $brand->id)
-                ->orderByDesc('is_featured')
-                ->orderByDesc('is_bestseller')
-                ->orderByDesc('is_new')
-                ->orderByDesc('created_at')
-                ->orderByDesc('id')
-                ->limit($baseQuota + ($index < $extraSlots ? 1 : 0))
-                ->get())
+            ->flatMap(fn (Brand $brand, int $index) => $this->productsWithAvailableImages(
+                Product::with(['brand', 'category'])
+                    ->availableForSale()
+                    ->where('brand_id', $brand->id)
+                    ->orderByDesc('is_featured')
+                    ->orderByDesc('is_bestseller')
+                    ->orderByDesc('is_new')
+                    ->orderByDesc('created_at')
+                    ->orderByDesc('id'),
+                $baseQuota + ($index < $extraSlots ? 1 : 0),
+            ))
             ->values();
 
         $remainingSlots = self::HOME_RECOMMENDED_LIMIT - $products->count();
 
         if ($remainingSlots > 0 && $brands->isNotEmpty()) {
-            $backfillProducts = Product::with(['brand', 'category'])
-                ->availableForSale()
-                ->whereIn('brand_id', $brands->pluck('id'))
-                ->whereNotIn('id', $products->pluck('id'))
-                ->orderByDesc('is_featured')
-                ->orderByDesc('is_bestseller')
-                ->orderByDesc('is_new')
-                ->orderByDesc('created_at')
-                ->orderByDesc('id')
-                ->limit($remainingSlots)
-                ->get();
+            $backfillProducts = $this->productsWithAvailableImages(
+                Product::with(['brand', 'category'])
+                    ->availableForSale()
+                    ->whereIn('brand_id', $brands->pluck('id'))
+                    ->whereNotIn('id', $products->pluck('id'))
+                    ->orderByDesc('is_featured')
+                    ->orderByDesc('is_bestseller')
+                    ->orderByDesc('is_new')
+                    ->orderByDesc('created_at')
+                    ->orderByDesc('id'),
+                $remainingSlots,
+            );
 
             $products = $products->concat($backfillProducts)->values();
         }
 
         return $products;
+    }
+
+    private function productsWithAvailableImages(Builder $query, int $limit): Collection
+    {
+        if ($limit <= 0) {
+            return collect();
+        }
+
+        $products = collect();
+        $offset = 0;
+        $batchSize = max(30, $limit * 3);
+
+        $query
+            ->whereNotNull('main_image')
+            ->where('main_image', '!=', '')
+            ->where('main_image', 'not like', '%placeholder%')
+            ->where('main_image', 'not like', '%no-image%')
+            ->where('main_image', 'not like', '%no_image%')
+            ->where('main_image', 'not like', '%missing-image%')
+            ->where('main_image', 'not like', 'http%');
+
+        do {
+            $batch = (clone $query)
+                ->offset($offset)
+                ->limit($batchSize)
+                ->get();
+
+            foreach ($batch as $product) {
+                if ($this->productImages->isAvailable($product->main_image)) {
+                    $products->push($product);
+                }
+
+                if ($products->count() >= $limit) {
+                    break 2;
+                }
+            }
+
+            $offset += $batch->count();
+        } while ($batch->count() === $batchSize);
+
+        return $products->take($limit)->values();
     }
 
     private function searchTerms(string $value): array
@@ -629,75 +656,9 @@ class ShopController extends Controller
         $query->orderByRaw('case when '.implode(' or ', $conditions).' then 0 else 1 end', $bindings);
     }
 
-    private function categoryHasAvailableProducts(?array $categoryIds): bool
-    {
-        return $categoryIds !== null
-            && $categoryIds !== []
-            && Product::inCatalogCategories($categoryIds)->availableForSale()->exists();
-    }
-
-    private function fallbackCategoryIds(Category $category): array
-    {
-        $fallbackSlugs = self::EMPTY_CATEGORY_FALLBACKS[$category->slug] ?? [];
-        $fallbackIds = $this->categoryIdsForSlugs($fallbackSlugs);
-
-        if ($fallbackIds !== []) {
-            return $fallbackIds;
-        }
-
-        $parent = $category->parent;
-
-        while ($parent) {
-            $parent->loadMissing('childrenRecursive');
-            $parentIds = $parent->descendantsAndSelfIds();
-
-            if ($this->categoryHasAvailableProducts($parentIds)) {
-                return $parentIds;
-            }
-
-            $parent = $parent->parent;
-        }
-
-        return $category->descendantsAndSelfIds();
-    }
-
-    private function defaultTaskForCategory(?string $slug): ?string
-    {
-        return match ($slug) {
-            'echipamente-pentru-service',
-            'echipamente-service',
-            'cricuri-si-ridicare',
-            'prese-hidraulice',
-            'cricuri-hidraulice',
-            'capre-auto-si-suporturi',
-            'pompe-si-cilindri-hidraulici',
-            'echipamente-schimb-ulei',
-            'echipamente-spalare-piese',
-            'echipamente-depozitare-manipulare',
-            'macarale-standuri-suporti-motor' => 'service',
-            'vulcanizare' => 'tires',
-            'scule-motor-frane-suspensie' => 'auto-repair',
-            'mobilier-pentru-service',
-            'dulapuri-si-organizare',
-            'sisteme-de-depozitare-si-transport',
-            'carucioare-pentru-rafturi',
-            'accesorii-pentru-bancuri-de-lucru' => 'workshop',
-            default => null,
-        };
-    }
-
     private function catalogMainSections()
     {
-        $catalogRoot = Category::where('slug', self::CATALOG_ROOT_SLUG)->first();
-
-        return Category::with('childrenRecursive')
-            ->where('is_active', true)
-            ->when($catalogRoot, fn ($query) => $query->where('parent_id', $catalogRoot->id))
-            ->when(! $catalogRoot, fn ($query) => $query->whereNull('parent_id'))
-            ->whereIn('slug', self::MAIN_CATALOG_SLUGS)
-            ->get()
-            ->sortBy(fn ($category) => array_search($category->slug, self::MAIN_CATALOG_SLUGS, true))
-            ->values();
+        return $this->catalogNavigation->mainSections();
     }
 
     private function subcategories(?Category $category)
@@ -706,10 +667,7 @@ class ShopController extends Controller
             return collect();
         }
 
-        return collect($category->childrenRecursive ?? [])
-            ->where('is_active', true)
-            ->sortBy('sort_order')
-            ->values();
+        return $this->catalogNavigation->children($category);
     }
 
     private function categoryPathIds(?Category $category): array

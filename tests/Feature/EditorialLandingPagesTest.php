@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Brand;
 use App\Models\Category;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -21,6 +22,27 @@ class EditorialLandingPagesTest extends TestCase
             ->assertSee('brands-section-head', false);
 
         $this->assertFileExists(public_path('images/brands-hero.webp'));
+    }
+
+    public function test_brands_page_shows_the_gys_brand_card_with_its_logo(): void
+    {
+        Brand::updateOrCreate([
+            'slug' => 'gys',
+        ], [
+            'name' => 'GYS',
+            'logo' => '/images/brand/gys.svg',
+            'is_featured' => true,
+            'is_active' => true,
+        ]);
+
+        $this
+            ->get('/brands')
+            ->assertOk()
+            ->assertSee('brand-card-gys', false)
+            ->assertSee('/images/brand/gys.svg', false)
+            ->assertSee(route('brand.show', 'gys'), false);
+
+        $this->assertFileExists(public_path('images/brand/gys.svg'));
     }
 
     public function test_service_and_garage_catalog_pages_use_their_editorial_heroes(): void

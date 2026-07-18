@@ -12,7 +12,7 @@ class HomeTaskCatalogTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_task_cards_open_filled_collections_even_when_landing_category_is_empty(): void
+    public function test_task_collections_are_only_used_when_explicitly_requested(): void
     {
         $brand = Brand::create([
             'name' => 'Task brand',
@@ -47,8 +47,8 @@ class HomeTaskCatalogTest extends TestCase
         $this
             ->get(route('catalog', ['category' => $tiresLanding->slug]))
             ->assertOk()
-            ->assertSee($tireProduct->display_name)
-            ->assertSee('name="task" value="tires"', false);
+            ->assertDontSee($tireProduct->display_name)
+            ->assertDontSee('name="task" value="tires"', false);
 
         $this
             ->get(route('catalog', ['category' => $tiresLanding->slug, 'task' => 'tires']))
@@ -75,7 +75,7 @@ class HomeTaskCatalogTest extends TestCase
             ->assertSee(route('catalog', ['category' => 'dulapuri-si-organizare', 'task' => 'workshop']));
     }
 
-    public function test_empty_visible_subcategory_uses_products_from_its_nearest_filled_parent(): void
+    public function test_empty_visible_subcategory_redirects_to_its_populated_parent(): void
     {
         $brand = Brand::create([
             'name' => 'Fallback brand',
@@ -99,8 +99,7 @@ class HomeTaskCatalogTest extends TestCase
 
         $this
             ->get(route('catalog', $emptyChild->slug))
-            ->assertOk()
-            ->assertSee($product->display_name);
+            ->assertRedirect(route('catalog', $parent->slug));
     }
 
     private function createProduct(Brand $brand, Category $category, string $name, string $sku): Product

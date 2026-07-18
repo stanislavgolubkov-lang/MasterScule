@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Order;
 use App\Models\PaymentTransaction;
 use App\Models\Product;
-use App\Services\Catalog\ProductImageAvailabilityService;
 use App\Services\MaibHostedCheckout;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -383,7 +382,6 @@ class CheckoutController extends Controller
             ->whereIn('id', $cart->keys())
             ->purchasable()
             ->get()
-            ->filter(fn (Product $product) => app(ProductImageAvailabilityService::class)->isAvailable($product->main_image))
             ->keyBy('id');
 
         $items = $cart

@@ -83,6 +83,12 @@ class ProductParserItemPreparationService
 
     private function sourceIsTrusted(ProductParserItem $item): bool
     {
+        if ($item->image_source_type === 'brand_logo_fallback'
+            && $item->source_reviewed_at
+            && $item->image_reviewed_at) {
+            return true;
+        }
+
         if (filled($item->tristools_url) && (int) $item->tristools_match_confidence >= 90) {
             return true;
         }

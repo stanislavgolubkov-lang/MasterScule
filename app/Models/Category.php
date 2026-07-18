@@ -8,7 +8,14 @@ class Category extends Model
 {
     protected $fillable = [
         'parent_id', 'name', 'name_ro', 'slug', 'description', 'description_ro', 'icon', 'image',
-        'sort_order', 'is_active', 'meta_title', 'meta_description',
+        'sort_order', 'is_active', 'is_assignable', 'is_menu_visible', 'source', 'taxonomy_version',
+        'meta_title', 'meta_description',
+    ];
+
+    protected $casts = [
+        'is_active' => 'boolean',
+        'is_assignable' => 'boolean',
+        'is_menu_visible' => 'boolean',
     ];
 
     public function products()
@@ -46,7 +53,9 @@ class Category extends Model
             return $translated;
         }
 
-        return $this->name_ro ?: $this->name;
+        return app()->isLocale('ru')
+            ? ($this->name ?: $this->slug)
+            : ($this->name_ro ?: $this->slug);
     }
 
     public function descendantsAndSelfIds(): array

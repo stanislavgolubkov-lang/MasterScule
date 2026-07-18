@@ -5,7 +5,7 @@
     $heroBreadcrumbs = collect($hero['breadcrumbs'] ?? []);
 @endphp
 
-<section class="shell editorial-hero editorial-hero-{{ $heroTone }}">
+<section class="shell editorial-hero editorial-hero-{{ $heroTone }} page-banner">
     <div class="editorial-hero-copy">
         @if($heroBreadcrumbs->isNotEmpty())
             <nav class="editorial-hero-breadcrumbs" aria-label="{{ __('ui.catalog') }}">

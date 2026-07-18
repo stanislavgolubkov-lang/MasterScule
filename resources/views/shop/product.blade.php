@@ -14,7 +14,8 @@
         ->unique()
         ->values();
     $mainProductImage = $productGallery->first();
-    $inStock = $product->is_purchasable;
+    $inStock = $product->stock_status === 'in_stock' && (int) $product->stock_quantity > 0;
+    $canOrder = $inStock;
     $productDescription = $product->display_description;
     $productAttributes = $product->display_attributes;
     $productContents = $product->display_package_contents;
@@ -41,7 +42,7 @@
             <div class="product-main-missing" @if($mainProductImage) hidden @endif>
                 <span class="product-image-missing-mark" aria-hidden="true"></span>
                 <strong>{{ __('ui.product_photo_pending') }}</strong>
-                <small>SKU {{ $product->sku }}</small>
+                <small>{{ __('ui.product_code') }}: {{ $product->sku }}</small>
             </div>
         </div>
         @if($productGallery->count() > 1)
@@ -73,7 +74,7 @@
         <div class="meta"><span>{{ __('ui.brand') }}: <a href="{{ route('brand.show', $product->brand->slug) }}">{{ $product->brand->name }}</a></span><span>{{ __('ui.product_code') }}: {{ $product->sku }}</span><span class="stock {{ $inStock ? '' : 'stock-out' }}">● {{ $inStock ? __('ui.in_stock') : __('ui.out_of_stock') }}</span></div>
         <div class="rating">★★★★★ <span>({{ $product->reviews_count }} {{ __('ui.reviews') }})</span></div>
         <div class="product-price">{{ money($product->price) }} @if($product->old_price)<del>{{ money($product->old_price) }}</del>@endif</div>
-        @if($inStock)
+        @if($canOrder)
             <form action="{{ route('cart.add', $product) }}" method="post" class="buy-actions">
                 @csrf
                 <input type="number" name="quantity" min="1" value="1">

@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\RefreshDraftProductBySkuJob;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\PaymentTransaction;
 use App\Models\Product;
 use App\Models\ProductImage;
+use App\Models\ProductParserBatch;
 use App\Models\ProductParserItem;
 use App\Models\User;
 use App\Services\Catalog\ProductPublicationGuard;
@@ -126,6 +128,7 @@ class AdminController extends Controller
     {
         $this->guard();
         $publishRequested = $request->boolean('is_active');
+        $confirmedReview = $request->input('confirm_review');
 
         $product->forceFill($this->productData($request, $product) + [
             'status' => 'draft',
@@ -136,6 +139,30 @@ class AdminController extends Controller
         $this->syncProductImages($product);
         $this->syncProductCategories($request, $product);
 
+        if ($confirmedReview === 'image') {
+            $imageCheck = $publicationGuard->evaluate($product->refresh(), true)['image'];
+
+            if (! $imageCheck['available']) {
+                return back()->with(
+                    'warning',
+                    app()->isLocale('ru')
+                        ? 'Фото не подтверждено: файл изображения недоступен или является заглушкой.'
+                        : 'Imaginea nu a fost confirmata: fisierul nu este disponibil sau este un placeholder.'
+                );
+            }
+
+            $product->forceFill(['needs_image_review' => false])->save();
+            $product->parserItem?->forceFill([
+                'needs_image_review' => false,
+                'image_reviewed_at' => now(),
+            ])->save();
+        }
+
+        if ($confirmedReview === 'stock') {
+            $product->forceFill(['needs_stock_review' => false])->save();
+            $product->parserItem?->forceFill(['needs_stock_review' => false])->save();
+        }
+
         if ($publishRequested) {
             $result = $publicationGuard->publish($product->refresh(), true);
             if (! $result['allowed']) {
@@ -145,7 +172,117 @@ class AdminController extends Controller
             }
         }
 
-        return back()->with('success', app()->isLocale('ru') ? 'Товар обновлён.' : 'Produsul a fost actualizat.');
+        $success = match ($confirmedReview) {
+            'image' => app()->isLocale('ru') ? 'Фото подтверждено.' : 'Imaginea a fost confirmata.',
+            'stock' => app()->isLocale('ru') ? 'Остаток подтверждён.' : 'Stocul a fost confirmat.',
+            default => app()->isLocale('ru') ? 'Товар обновлён.' : 'Produsul a fost actualizat.',
+        };
+
+        return back()->with('success', $success);
+    }
+
+    public function repeatProductSearch(Request $request, Product $product)
+    {
+        $this->guard();
+        abort_unless($product->status === 'draft', 422);
+
+        $batch = ProductParserBatch::create([
+            'user_id' => $request->user()->id,
+            'title' => 'Repeat SKU search '.$product->sku,
+            'source_type' => 'single',
+            'sku_count' => 1,
+            'status' => 'pending',
+            'options_json' => [
+                'language' => 'auto',
+                'image_limit' => 4,
+                'mode' => 'refresh_draft',
+                'search_priority' => ['tristool', 'external'],
+            ],
+        ]);
+
+        $item = ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => trim((string) $product->sku),
+            'normalized_sku' => Str::upper(preg_replace('/[^A-Z0-9]+/i', '', (string) $product->sku)),
+            'brand' => $product->brand?->name,
+            'category_id' => $product->category_id,
+            'status' => 'queued',
+            'raw_name' => $product->name_ru ?: $product->name,
+            'parsed_name' => $product->name_ru ?: $product->name,
+            'parsed_price' => $product->price,
+            'parsed_stock' => $product->stock_quantity,
+            'created_product_id' => $product->id,
+            'existing_product_id' => $product->id,
+            'needs_image_review' => true,
+            'approval_status' => 'pending_review',
+        ]);
+
+        $batch->addLog('Admin queued repeat SKU search for product draft', [
+            'sku' => $product->sku,
+            'product_id' => $product->id,
+        ]);
+        RefreshDraftProductBySkuJob::dispatch($product->id, $item->id);
+
+        return back()->with(
+            'success',
+            app()->isLocale('ru')
+                ? "Повторный поиск по SKU {$product->sku} поставлен в очередь. Сначала проверяется TrisTool, затем остальные источники."
+                : "Cautarea repetata dupa SKU {$product->sku} a fost adaugata in coada. TrisTool este verificat primul."
+        );
+    }
+
+    public function uploadProductImages(Request $request, Product $product)
+    {
+        $this->guard();
+        abort_unless($product->status === 'draft', 422);
+
+        $data = $request->validate([
+            'photos' => ['required', 'array', 'min:1', 'max:8'],
+            'photos.*' => ['required', 'image', 'max:8192'],
+            'set_first_as_main' => ['nullable', 'boolean'],
+        ]);
+
+        $uploadedPaths = [];
+        foreach ($data['photos'] as $index => $photo) {
+            $uploadedPaths[] = $this->storeManualProductImage($photo, $product, $index);
+        }
+
+        $currentGallery = collect($product->gallery ?: [$product->main_image])
+            ->filter()
+            ->reject(fn ($path) => Str::contains(Str::lower((string) $path), 'placeholder'))
+            ->values();
+        $makeMain = $request->boolean('set_first_as_main')
+            || ! filled($product->main_image)
+            || Str::contains(Str::lower((string) $product->main_image), ['placeholder', 'fallback']);
+        $mainImage = $makeMain ? $uploadedPaths[0] : $product->main_image;
+        $gallery = collect($makeMain ? $uploadedPaths : $currentGallery->all())
+            ->merge($makeMain ? $currentGallery : $uploadedPaths)
+            ->prepend($mainImage)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $product->forceFill([
+            'main_image' => $mainImage,
+            'gallery' => $gallery,
+            'needs_image_review' => false,
+        ])->save();
+        $this->syncProductImages($product);
+
+        if ($item = $product->parserItem) {
+            $item->forceFill([
+                'needs_image_review' => false,
+                'image_reviewed_at' => now(),
+            ])->save();
+        }
+
+        return back()->with(
+            'success',
+            app()->isLocale('ru')
+                ? 'Фотографии загружены. '.($makeMain ? 'Первое фото назначено главным.' : 'Фотографии добавлены в галерею.')
+                : 'Imaginile au fost incarcate. '.($makeMain ? 'Prima imagine a fost setata ca principala.' : 'Imaginile au fost adaugate in galerie.')
+        );
     }
 
     public function orders()
@@ -234,6 +371,7 @@ class AdminController extends Controller
             'needs_translation_review' => ['nullable', 'boolean'],
             'needs_price_review' => ['nullable', 'boolean'],
             'needs_stock_review' => ['nullable', 'boolean'],
+            'confirm_review' => ['nullable', Rule::in(['image', 'stock'])],
         ]);
 
         $nameRu = ($data['name_ru'] ?? null) ?: $data['name'];
@@ -245,9 +383,10 @@ class AdminController extends Controller
             $mainImage = $this->storeUploadedImage($request, $data['sku']);
         }
 
-        $mainImage = $mainImage ?: '/images/products/product-placeholder-toolbox.svg';
         $gallery = $this->lines($data['gallery_text'] ?? '');
-        array_unshift($gallery, $mainImage);
+        if ($mainImage) {
+            array_unshift($gallery, $mainImage);
+        }
         $gallery = array_values(array_unique(array_filter($gallery)));
 
         return [
@@ -279,7 +418,9 @@ class AdminController extends Controller
             'is_new' => $request->boolean('is_new'),
             'is_bestseller' => $request->boolean('is_bestseller'),
             'is_discounted' => $request->boolean('is_discounted') || (float) ($data['old_price'] ?? 0) > (float) $data['price'],
-            'needs_image_review' => $request->boolean('needs_image_review') || Str::contains(Str::lower($mainImage), ['placeholder', 'fallback']),
+            'needs_image_review' => $request->boolean('needs_image_review')
+                || ! filled($mainImage)
+                || Str::contains(Str::lower((string) $mainImage), ['placeholder', 'fallback']),
             'needs_category_review' => $request->boolean('needs_category_review'),
             'needs_translation_review' => $request->boolean('needs_translation_review'),
             'needs_price_review' => $request->boolean('needs_price_review'),
@@ -305,6 +446,19 @@ class AdminController extends Controller
         return '/images/products/admin/'.$filename;
     }
 
+    private function storeManualProductImage($file, Product $product, int $index): string
+    {
+        $folder = Str::slug((string) $product->sku) ?: 'product-'.$product->id;
+        $directory = public_path('images/products/admin/'.$folder);
+        File::ensureDirectoryExists($directory);
+
+        $extension = strtolower($file->getClientOriginalExtension() ?: 'jpg');
+        $filename = now()->format('YmdHis').'-'.($index + 1).'-'.Str::lower(Str::random(8)).'.'.$extension;
+        $file->move($directory, $filename);
+
+        return '/images/products/admin/'.$folder.'/'.$filename;
+    }
+
     private function deleteUploadedImage(?string $path): void
     {
         if (! $path || ! Str::startsWith($path, '/images/products/admin/')) {
@@ -319,16 +473,40 @@ class AdminController extends Controller
 
     private function syncProductImages(Product $product): void
     {
-        $gallery = $product->gallery ?: [$product->main_image];
-        ProductImage::where('product_id', $product->id)->delete();
+        $gallery = collect($product->gallery ?: [$product->main_image])
+            ->prepend($product->main_image)
+            ->filter()
+            ->unique()
+            ->values();
 
-        foreach (array_values(array_filter($gallery)) as $index => $path) {
-            ProductImage::create([
+        ProductImage::where('product_id', $product->id)
+            ->whereNotIn('path', $gallery->all())
+            ->delete();
+
+        foreach ($gallery as $index => $path) {
+            $image = ProductImage::firstOrNew([
                 'product_id' => $product->id,
                 'path' => $path,
+            ]);
+            $image->fill([
                 'alt' => $product->display_name,
                 'sort_order' => $index + 1,
             ]);
+
+            $localPath = Str::startsWith((string) $path, '/storage/')
+                ? storage_path('app/public/'.Str::after((string) $path, '/storage/'))
+                : public_path(ltrim((string) $path, '/'));
+            if (is_file($localPath)) {
+                $size = @getimagesize($localPath);
+                $image->fill([
+                    'mime_type' => is_array($size) ? ($size['mime'] ?? null) : null,
+                    'width' => is_array($size) ? ($size[0] ?? null) : null,
+                    'height' => is_array($size) ? ($size[1] ?? null) : null,
+                    'file_size' => filesize($localPath) ?: null,
+                ]);
+            }
+
+            $image->save();
         }
     }
 

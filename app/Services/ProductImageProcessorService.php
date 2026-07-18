@@ -21,9 +21,19 @@ class ProductImageProcessorService
         'jtc.com.tw',
         'jtcautotools.com',
         'hoegert.com',
+        'maximum.md',
+        'simpalsmedia.com',
+        'clickoutil.com',
+        'groupe-mlv-france.fr',
+        'gys.com.ua',
+        'gys-ukraine.com',
+        'gysusa.com',
+        'gysweldingusa.com',
         'torinjacks.com',
         'torin-usa.com',
         'tongrunjacks.com',
+        'thefastimg.com',
+        'images.prom.ua',
     ];
 
     public function __construct(
@@ -67,9 +77,11 @@ class ProductImageProcessorService
 
     private function processAsset(ProductParserImageAsset $asset, ProductParserItem $item, int $index): string
     {
-        $isFallbackAsset = $this->isFallbackRemoteImageHost(
+        $isTrisToolsHost = $this->isFallbackRemoteImageHost(
             Str::lower((string) parse_url($asset->source_url, PHP_URL_HOST))
         );
+        $isTrisToolsPrimary = $isTrisToolsHost && $item->image_source_type === 'tristools_primary';
+        $isFallbackAsset = $isTrisToolsHost && ! $isTrisToolsPrimary;
 
         [$bytes, $mime] = $this->readSource($asset->source_url);
         $source = @imagecreatefromstring($bytes);
@@ -96,7 +108,7 @@ class ProductImageProcessorService
 
         $safeSku = Str::slug($item->sku) ?: 'sku';
         $brandDir = Str::slug($item->brand ?: 'unknown-brand') ?: 'unknown-brand';
-        $sourceDir = $isFallbackAsset ? 'fallback' : 'official';
+        $sourceDir = $isFallbackAsset ? 'fallback' : ($isTrisToolsPrimary ? 'tristools' : 'official');
         $baseDir = "products/{$sourceDir}/{$brandDir}/{$safeSku}";
         $suffix = $index === 0 ? 'main' : 'gallery-'.$index;
         $processedPath = "{$baseDir}/{$safeSku}-{$suffix}.webp";

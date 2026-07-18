@@ -50,6 +50,8 @@ Route::middleware('admin.only')->group(function () {
     Route::get('/admin/products', [AdminController::class, 'products'])->name('admin.products');
     Route::post('/admin/products', [AdminController::class, 'storeProduct'])->name('admin.products.store');
     Route::patch('/admin/products/{product}', [AdminController::class, 'updateProduct'])->name('admin.products.update');
+    Route::post('/admin/products/{product}/repeat-search', [AdminController::class, 'repeatProductSearch'])->name('admin.products.repeat-search');
+    Route::post('/admin/products/{product}/images', [AdminController::class, 'uploadProductImages'])->name('admin.products.images.upload');
     Route::get('/admin/orders', [AdminController::class, 'orders'])->name('admin.orders');
     Route::patch('/admin/orders/{order}', [AdminController::class, 'updateOrder'])->name('admin.orders.update');
     Route::get('/admin/payments', [AdminController::class, 'payments'])->name('admin.payments');

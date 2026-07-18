@@ -19,9 +19,9 @@ class ProcessPriceListRowJob implements ShouldQueue
 
     public array $backoff = [30, 120];
 
-    public function __construct(public int $itemId)
+    public function __construct(public int $itemId, string $queue = 'parser-fast')
     {
-        $this->onQueue('parser-fast');
+        $this->onQueue($queue);
     }
 
     public function handle(ProductPriceListImportService $importer): void

@@ -67,4 +67,57 @@ class HomeRecommendedProductsTest extends TestCase
             })
             ->assertSee('product-grid-compact home-recommended-grid', false);
     }
+
+    public function test_homepage_replaces_recent_products_without_real_images_with_older_products(): void
+    {
+        $category = Category::create([
+            'name' => 'Image category',
+            'name_ro' => 'Categorie imagini',
+            'slug' => 'image-category',
+        ]);
+        $brand = Brand::create([
+            'name' => 'King Tony test',
+            'slug' => 'king-tony-test',
+            'is_featured' => true,
+            'is_active' => true,
+        ]);
+
+        foreach (range(1, 55) as $productNumber) {
+            Product::create([
+                'brand_id' => $brand->id,
+                'category_id' => $category->id,
+                'name' => "Image product {$productNumber}",
+                'name_ru' => "Товар с изображением {$productNumber}",
+                'name_ro' => "Produs cu imagine {$productNumber}",
+                'slug' => "image-product-{$productNumber}",
+                'sku' => "IMG-{$productNumber}",
+                'price' => 100 + $productNumber,
+                'currency' => 'MDL',
+                'stock_quantity' => 5,
+                'stock_status' => 'in_stock',
+                'status' => 'published',
+                'approval_status' => 'approved',
+                'needs_review' => false,
+                'needs_stock_review' => false,
+                'needs_image_review' => false,
+                'needs_category_review' => false,
+                'needs_translation_review' => false,
+                'needs_price_review' => false,
+                'is_active' => true,
+                'main_image' => $productNumber > 50
+                    ? '/images/products/product-placeholder-toolbox.svg'
+                    : '/images/parser-catalog/m7/sc-9337r.png',
+            ]);
+        }
+
+        $this
+            ->get('/')
+            ->assertOk()
+            ->assertViewHas('featuredProducts', function ($products) {
+                return $products->count() === 50
+                    && $products->every(fn (Product $product) => $product->sku !== null
+                        && ! str_contains((string) $product->main_image, 'placeholder'))
+                    && $products->pluck('sku')->contains('IMG-1');
+            });
+    }
 }

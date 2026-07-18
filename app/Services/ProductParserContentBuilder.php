@@ -2,14 +2,18 @@
 
 namespace App\Services;
 
+use App\Services\Catalog\ProductContentLanguage;
+
 class ProductParserContentBuilder
 {
+    public function __construct(private ProductContentLanguage $language) {}
+
     public function build(string $sku, string $sourceName, ?string $brand = null, ?string $group = null, array $category = []): array
     {
         $sourceName = $this->clean($sourceName);
         $fallback = trim(implode(' ', array_filter([$brand, $sku])));
         $sourceName = $sourceName !== '' ? $sourceName : $fallback;
-        $isCyrillic = $this->containsCyrillic($sourceName);
+        $isCyrillic = $this->isRussian($sourceName);
         $brandLabel = $this->brandLabel($brand);
         $labels = $this->categoryLabels((string) ($category['category_slug'] ?? ''));
         $categoryRu = $labels['ru'] ?: $this->clean((string) ($category['category_name_ru'] ?? '')) ?: 'Профессиональный инструмент';
@@ -50,7 +54,7 @@ class ProductParserContentBuilder
         $usedOfficialTranslation = false;
 
         if ($title !== '') {
-            if ($this->containsCyrillic($title)) {
+            if ($this->isRussian($title)) {
                 $content['name_ru'] = $title;
                 $usedOfficialTranslation = true;
             } elseif ($this->looksRomanian($title)) {
@@ -60,7 +64,7 @@ class ProductParserContentBuilder
         }
 
         if ($description !== '') {
-            if ($this->containsCyrillic($description)) {
+            if ($this->isRussian($description)) {
                 $content['description_ru'] = $description;
                 $content['short_description_ru'] = mb_strimwidth($description, 0, 240, '');
                 $usedOfficialTranslation = true;
@@ -136,7 +140,12 @@ class ProductParserContentBuilder
 
     private function containsCyrillic(string $value): bool
     {
-        return $value !== '' && preg_match('/\p{Cyrillic}/u', $value) === 1;
+        return $this->language->containsCyrillic($value);
+    }
+
+    private function isRussian(string $value): bool
+    {
+        return $this->language->isRussian($value);
     }
 
     private function looksRomanian(string $value): bool

@@ -7,6 +7,8 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\ProductParserItem;
+use App\Services\Catalog\CategoryTaxonomy;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -15,9 +17,15 @@ class ProductDraftService
     public function __construct(
         private ProductParserContentBuilder $contentBuilder,
         private ProductParserSettings $settings,
+        private CategoryTaxonomy $taxonomy,
     ) {}
 
     public function createDraft(ProductParserItem $item): Product
+    {
+        return DB::transaction(fn (): Product => $this->createDraftTransaction($item));
+    }
+
+    private function createDraftTransaction(ProductParserItem $item): Product
     {
         if ($existing = Product::where('sku', $item->sku)->first()) {
             $item->forceFill(['existing_product_id' => $existing->id])->save();
@@ -25,14 +33,14 @@ class ProductDraftService
         }
 
         $brand = $this->brand($item->brand ?: ($item->found_specs_json['Brand'] ?? 'Unknown brand'));
-        $category = $item->category ?: ($item->category_id ? Category::find($item->category_id) : null);
+        $category = $this->canonicalCategory($item->category ?: ($item->category_id ? Category::find($item->category_id) : null));
 
         if (! $category || $item->needs_category_review) {
             throw new RuntimeException('Category must be reviewed before creating a product draft.');
         }
 
         $images = $this->imagePaths($item);
-        $mainImage = $images[0] ?? '/images/products/product-placeholder-toolbox.svg';
+        $mainImage = $images[0] ?? null;
         $content = $this->contentForItem($item);
         $titleRu = $content['name_ru'];
         $titleRo = $content['name_ro'];
@@ -202,11 +210,21 @@ class ProductDraftService
 
     public function refreshParserDraft(ProductParserItem $item, Product $product): Product
     {
-        if ($product->status !== 'draft' || (int) $product->source_import_batch_id !== (int) $item->batch_id) {
+        return DB::transaction(fn (): Product => $this->refreshParserDraftTransaction($item, $product, true));
+    }
+
+    public function refreshDraftFromSearch(ProductParserItem $item, Product $product): Product
+    {
+        return DB::transaction(fn (): Product => $this->refreshParserDraftTransaction($item, $product, false));
+    }
+
+    private function refreshParserDraftTransaction(ProductParserItem $item, Product $product, bool $requireSameBatch): Product
+    {
+        if ($product->status !== 'draft' || ($requireSameBatch && (int) $product->source_import_batch_id !== (int) $item->batch_id)) {
             throw new RuntimeException('Only a draft created by this parser batch can be refreshed automatically.');
         }
 
-        $category = $item->category ?: ($item->category_id ? Category::find($item->category_id) : null);
+        $category = $this->canonicalCategory($item->category ?: ($item->category_id ? Category::find($item->category_id) : null));
         if (! $category || $item->needs_category_review) {
             throw new RuntimeException('Category must be reviewed before refreshing the parser draft.');
         }
@@ -290,7 +308,7 @@ class ProductDraftService
 
     private function contentForItem(ProductParserItem $item, ?Product $product = null): array
     {
-        $category = $item->category ?: ($item->category_id ? Category::find($item->category_id) : null);
+        $category = $this->canonicalCategory($item->category ?: ($item->category_id ? Category::find($item->category_id) : null));
 
         return $this->contentBuilder->ensureComplete([
             'name_ru' => $item->name_ru ?: $product?->name_ru ?: $product?->name,
@@ -315,6 +333,15 @@ class ProductDraftService
         return collect($item->found_specs_json ?: [])
             ->reject(fn ($value, $key) => Str::startsWith((string) $key, '_')
                 || in_array(Str::lower(trim((string) preg_replace('/[\s:_-]+/u', ' ', (string) $key))), [
+                    'brand',
+                    'бренд',
+                    'marca',
+                    'sku',
+                    'артикул',
+                    'cod produs',
+                    'group',
+                    'группа',
+                    'grup',
                     'retail price',
                     'price retail',
                     'розничная цена',
@@ -325,12 +352,26 @@ class ProductDraftService
                     'источник цены',
                     'sursa pretului',
                     'sursa prețului',
+                    'select all',
+                    'выбрать все',
+                    'selecteaza tot',
+                    'selectează tot',
                     'warranty',
                     'гарантия',
                     'garantie',
                     'garanție',
                 ], true))
             ->all();
+    }
+
+    private function canonicalCategory(?Category $category): ?Category
+    {
+        if (! $category) {
+            return null;
+        }
+
+        return $this->taxonomy->findAssignable($category->slug)
+            ?: ($category->is_active && $category->is_assignable ? $category : null);
     }
 
     private function packageContents(ProductParserItem $item): array
@@ -416,6 +457,6 @@ class ProductDraftService
             return max(0, (int) $item->parsed_stock);
         }
 
-        return max(1, (int) $this->settings->get('missing_stock_quantity', 1));
+        return max(0, (int) $this->settings->get('missing_stock_quantity', 0));
     }
 }

@@ -16,7 +16,7 @@
         $mapUrl = 'https://www.google.com/maps/search/?api=1&query='.urlencode(config('store.address'));
     @endphp
 
-    <section class="shell contact-hero">
+    <section class="shell contact-hero page-banner">
         <div class="contact-hero-copy">
             <span class="contact-eyebrow">{{ $isRussian ? 'Всегда на связи' : 'Suntem aproape' }}</span>
             <h1>{{ $title }}</h1>
@@ -83,7 +83,7 @@
             </span>
             <div>
                 <small>{{ $isRussian ? 'Адрес' : 'Adresă' }}</small>
-                <a href="{{ $mapUrl }}" target="_blank" rel="noopener">{{ config('store.address') }}</a>
+                <a href="{{ $mapUrl }}" target="_blank" rel="noopener">{{ __('ui.store_address') }}</a>
                 <p>{{ $isRussian ? 'Открыть маршрут в Google Maps' : 'Deschide ruta în Google Maps' }}</p>
             </div>
         </article>

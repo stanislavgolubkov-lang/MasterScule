@@ -105,7 +105,7 @@ class CatalogStructureSeeder extends Seeder
                 'slug' => 'echipamente-pentru-service',
                 'name' => 'Echipamente pentru service',
                 'description' => 'Utilaje si echipamente pentru service auto.',
-                'image' => '/images/categories/echipamente-service.svg',
+                'image' => '/images/categories/echipamente-pentru-service.png',
                 'children' => [
                     [
                         'slug' => 'echipamente-service',
@@ -343,7 +343,7 @@ class CatalogStructureSeeder extends Seeder
                 'slug' => 'sudura-richtuire-vopsire',
                 'name' => 'Sudura, tinichigerie si vopsire',
                 'description' => 'Echipamente pentru sudura, tinichigerie, pregatire si vopsire.',
-                'image' => '/images/categories/echipamente-service.svg',
+                'image' => '/images/categories/sudura-richtuire-vopsire.png',
                 'children' => [
                     [
                         'slug' => 'tinichigerie-si-richtuire',
@@ -357,7 +357,7 @@ class CatalogStructureSeeder extends Seeder
                 'slug' => 'vulcanizare',
                 'name' => 'Vulcanizare',
                 'description' => 'Scule si echipamente pentru roti, anvelope si vulcanizare.',
-                'image' => '/images/categories/cric-ridicare.svg',
+                'image' => '/images/categories/vulcanizare.png',
             ],
         ];
     }

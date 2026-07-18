@@ -11,8 +11,32 @@ class ProductParserSettings
     {
         $stored = Setting::where('key', 'product_parser')->value('value');
         $stored = $stored ? (json_decode($stored, true) ?: []) : [];
+        $defaults = config('product_parser');
+        $settings = array_replace_recursive($defaults, $stored);
 
-        return array_replace_recursive(config('product_parser'), $stored);
+        if (isset($defaults['source_registry'])) {
+            $sourceRegistry = collect($defaults['source_registry'])
+                ->keyBy('domain')
+                ->all();
+
+            foreach ($stored['source_registry'] ?? [] as $source) {
+                $domain = $source['domain'] ?? null;
+                if ($domain) {
+                    $sourceRegistry[$domain] = array_replace($sourceRegistry[$domain] ?? [], $source);
+                }
+            }
+
+            $settings['source_registry'] = array_values($sourceRegistry);
+        }
+
+        if (isset($defaults['allowed_domains'])) {
+            $settings['allowed_domains'] = array_values(array_unique(array_merge(
+                $defaults['allowed_domains'],
+                $stored['allowed_domains'] ?? [],
+            )));
+        }
+
+        return $settings;
     }
 
     public function update(array $settings): array

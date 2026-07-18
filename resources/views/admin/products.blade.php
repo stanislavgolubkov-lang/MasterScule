@@ -203,6 +203,7 @@
                     $linkedCategoryIds = $product->categories->pluck('id')->push($product->category_id)->filter()->unique()->values()->all();
                     $categoryList = $product->categories->pluck('display_name')->push($product->category?->display_name)->filter()->unique()->implode(', ');
                     $publicationCheck = $publicationChecks[$product->id] ?? ['allowed' => false, 'errors' => []];
+                    $canConfirmImage = $product->needs_image_review && ($publicationCheck['image']['available'] ?? false);
                 @endphp
 
                 <details class="admin-product-card">
@@ -225,6 +226,32 @@
                         </span>
                     </summary>
 
+                    @if($product->status === 'draft')
+                        <div class="admin-product-draft-tools">
+                            <div>
+                                <strong>{{ app()->isLocale('ru') ? 'Инструменты черновика' : 'Instrumente draft' }}</strong>
+                                <span>{{ app()->isLocale('ru') ? 'Сначала проверяется TrisTool, затем внешние источники.' : 'Se verifica mai intai TrisTool, apoi sursele externe.' }}</span>
+                            </div>
+                            <form method="post" action="{{ route('admin.products.repeat-search', $product) }}">
+                                @csrf
+                                <button class="btn outline" type="submit">{{ app()->isLocale('ru') ? 'Повторный поиск по SKU' : 'Repeta cautarea dupa SKU' }}</button>
+                            </form>
+                            <form method="post" action="{{ route('admin.products.images.upload', $product) }}" enctype="multipart/form-data" class="admin-product-photo-upload">
+                                @csrf
+                                <label>
+                                    <span>{{ app()->isLocale('ru') ? 'Загрузить свои фото' : 'Incarca imagini proprii' }}</span>
+                                    <input type="file" name="photos[]" accept="image/*" multiple required>
+                                </label>
+                                <label class="admin-inline-check">
+                                    <input type="hidden" name="set_first_as_main" value="0">
+                                    <input type="checkbox" name="set_first_as_main" value="1" checked>
+                                    {{ app()->isLocale('ru') ? 'Первое сделать главным' : 'Prima devine principala' }}
+                                </label>
+                                <button class="btn" type="submit">{{ app()->isLocale('ru') ? 'Загрузить фото' : 'Incarca imaginile' }}</button>
+                            </form>
+                        </div>
+                    @endif
+
                     <form method="post" action="{{ route('admin.products.update', $product) }}" enctype="multipart/form-data" class="admin-product-edit">
                         @csrf
                         @method('PATCH')
@@ -244,18 +271,37 @@
                             @endif
                         </div>
 
-                        @if(!$publicationCheck['allowed'])
-                            <div class="admin-publication-warning">
-                                <strong>{{ app()->isLocale('ru') ? 'Публикация заблокирована' : 'Publicarea este blocata' }}</strong>
-                                <ul>
-                                    @foreach($publicationCheck['errors'] as $publicationError)
-                                        <li>{{ $publicationError }}</li>
-                                    @endforeach
-                                </ul>
-                            </div>
-                        @endif
-
                         <div class="admin-product-fields">
+                            @if(!$publicationCheck['allowed'])
+                                <div class="admin-publication-warning">
+                                    <strong>{{ app()->isLocale('ru') ? 'Публикация заблокирована' : 'Publicarea este blocata' }}</strong>
+                                    <ul>
+                                        @foreach($publicationCheck['errors'] as $publicationError)
+                                            <li>{{ $publicationError }}</li>
+                                        @endforeach
+                                    </ul>
+                                    @if($canConfirmImage || $product->needs_stock_review)
+                                        <div class="admin-publication-review-actions">
+                                            @if($canConfirmImage)
+                                                <button class="btn" type="submit" name="confirm_review" value="image">
+                                                    {{ app()->isLocale('ru') ? 'Подтвердить фото' : 'Confirma imaginea' }}
+                                                </button>
+                                            @endif
+                                            @if($product->needs_stock_review)
+                                                <button class="btn" type="submit" name="confirm_review" value="stock">
+                                                    {{ app()->isLocale('ru') ? 'Подтвердить остаток' : 'Confirma stocul' }}
+                                                </button>
+                                            @endif
+                                        </div>
+                                    @endif
+                                    @if($product->needs_image_review && !$canConfirmImage)
+                                        <small class="admin-publication-review-note">
+                                            {{ app()->isLocale('ru') ? 'Сначала загрузите настоящее фото товара.' : 'Incarcati mai intai o imagine reala a produsului.' }}
+                                        </small>
+                                    @endif
+                                </div>
+                            @endif
+
                             <label>{{ app()->isLocale('ru') ? 'Название RU' : 'Denumire RU' }}
                                 <input name="name" value="{{ old('name', $product->name) }}" required>
                             </label>

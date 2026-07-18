@@ -2,20 +2,10 @@
 
 @php
     $catalogRoot = $categories->firstWhere('slug', 'instrumente-si-mobilier');
-    $menuOrder = [
-        'mobilier-pentru-service',
-        'scule-speciale-auto',
-        'instrument-manual',
-        'scule-pneumatice',
-        'electroinstrumente',
-        'instrumente-cu-acumulator',
-        'instrumente-electromontaj',
-        'instrumente-de-masurare',
-        'accesorii-si-consumabile',
-    ];
+    $menuOrder = config('catalog_taxonomy.main_sections', []);
 
     $sections = collect($catalogRoot?->childrenRecursive ?? [])
-        ->filter(fn ($category) => in_array($category->slug, $menuOrder, true))
+        ->filter(fn ($category) => $category->is_menu_visible && in_array($category->slug, $menuOrder, true))
         ->sortBy(fn ($category) => array_search($category->slug, $menuOrder, true))
         ->values();
 @endphp
@@ -51,7 +41,7 @@
                     </button>
                     <div id="mobile-catalog-panel-{{ $section->slug }}" class="mobile-catalog-sublist" hidden>
                         <a class="mobile-catalog-view-all" href="{{ route('catalog', $section->slug) }}">{{ __('ui.view_all_in_category') }}</a>
-                        @foreach($section->childrenRecursive as $child)
+                        @foreach($section->childrenRecursive->filter->is_menu_visible as $child)
                             <a href="{{ route('catalog', $child->slug) }}">{{ $child->display_name }}</a>
                         @endforeach
                     </div>

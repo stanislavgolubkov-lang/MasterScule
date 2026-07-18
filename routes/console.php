@@ -8,7 +8,6 @@ use App\Models\ProductParserBatch;
 use App\Models\ProductParserItem;
 use App\Models\ProductParserSource;
 use App\Services\Catalog\ProductPublicationGuard;
-use App\Services\ProductCatalogClassifier;
 use App\Services\ProductFallbackImageService;
 use App\Services\ProductImageCollectorService;
 use App\Services\ProductImageProcessorService;
@@ -20,12 +19,26 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+Schedule::command('masterscule:reclassify-catalog --apply --force --changed')
+    ->hourly()
+    ->withoutOverlapping()
+    ->when(fn () => (bool) config('catalog_ai.enabled') && (bool) config('catalog_ai.auto_apply'));
+
+Schedule::command('masterscule:sync-catalog-taxonomy --apply')
+    ->dailyAt('03:10')
+    ->withoutOverlapping();
+
+Schedule::command('masterscule:audit-catalog-taxonomy --json')
+    ->dailyAt('03:40')
+    ->withoutOverlapping();
 
 Artisan::command('masterscule:import-tristool-products {--king=200} {--m7=100}', function () {
     $this->error('Direct TrisTools catalog import is disabled. Use the admin parser enrichment workflow.');
@@ -263,73 +276,19 @@ Artisan::command('masterscule:localize-products', function () {
     $this->info("Updated {$updated} product texts in RO.");
 })->purpose('Normalize product display text for RO locale');
 
-Artisan::command('masterscule:audit-product-categories {--apply} {--limit=0}', function (ProductCatalogClassifier $classifier) {
+Artisan::command('masterscule:audit-product-categories {--apply} {--limit=0}', function () {
     $apply = (bool) $this->option('apply');
     $limit = max(0, (int) $this->option('limit'));
-    $query = Product::with(['brand', 'category', 'categories'])->orderBy('id');
 
-    if ($limit > 0) {
-        $query->limit($limit);
-    }
+    $this->warn('Deprecated classifier redirected to the validated canonical category agent.');
 
-    $stats = [
-        'checked' => 0,
-        'changed_primary' => 0,
-        'linked_multi_category' => 0,
-        'missing_primary_category' => 0,
-        'by_primary_slug' => [],
-        'apply' => $apply,
-    ];
-    $samples = [];
-
-    foreach ($query->get() as $product) {
-        $stats['checked']++;
-        $result = $classifier->classify($product);
-        $primary = Category::where('slug', $result['primary_slug'])->first();
-
-        if (! $primary) {
-            $stats['missing_primary_category']++;
-
-            continue;
-        }
-
-        $categoryIds = $classifier->idsForSlugs($result['category_slugs']);
-        $confidenceById = $classifier->confidenceById($result['scores']);
-        $oldSlug = $product->category?->slug;
-
-        $stats['by_primary_slug'][$primary->slug] = ($stats['by_primary_slug'][$primary->slug] ?? 0) + 1;
-
-        if ($oldSlug !== $primary->slug) {
-            $stats['changed_primary']++;
-
-            if (count($samples) < 30) {
-                $samples[] = [
-                    'sku' => $product->sku,
-                    'brand' => $product->brand?->name,
-                    'old' => $oldSlug,
-                    'new' => $primary->slug,
-                    'name' => $product->name,
-                ];
-            }
-        }
-
-        if (count($categoryIds) > 1) {
-            $stats['linked_multi_category']++;
-        }
-
-        if ($apply) {
-            $product->forceFill(['category_id' => $primary->id])->save();
-            $product->syncCategoryLinks($categoryIds, $primary->id, 'catalog_audit', $confidenceById);
-        }
-    }
-
-    arsort($stats['by_primary_slug']);
-
-    $this->info(json_encode([
-        'stats' => $stats,
-        'primary_change_samples' => $samples,
-    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-})->purpose('Audit and optionally reassign products into primary and additional catalog categories');
+    return $this->call('masterscule:reclassify-catalog', array_filter([
+        '--apply' => $apply,
+        '--force' => $apply,
+        '--limit' => $limit,
+        '--no-ai' => true,
+    ], fn ($value) => $value !== false));
+})->purpose('Run the validated canonical category audit (legacy alias)');
 
 Artisan::command('masterscule:enrich-product-images {--apply} {--limit=0} {--min=3} {--quiet-output} {--fallback-only}', function (
     ProductSearchService $search,

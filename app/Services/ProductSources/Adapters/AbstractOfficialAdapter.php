@@ -37,16 +37,28 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
             if (! $html) {
                 continue;
             }
+            $decoded = json_decode($html, true);
+            if (is_array($decoded)) {
+                $html = collect($decoded)
+                    ->flatten()
+                    ->filter(fn ($value) => is_string($value))
+                    ->implode(' ');
+            }
+            $html = str_replace('\\/', '/', $html);
 
             preg_match_all('/<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>([\s\S]*?)<\/a>/iu', $html, $links, PREG_SET_ORDER);
             foreach ($links as $link) {
-                $candidate = html_entity_decode((string) ($link[1] ?? ''), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                $candidate = str_replace(
+                    '\\/',
+                    '/',
+                    html_entity_decode((string) ($link[1] ?? ''), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+                );
+                $candidate = $this->absoluteUrl($url, $candidate);
                 $text = strip_tags((string) ($link[2] ?? ''));
-                if ($needle === '' || ! Str::contains($this->normalizeSku($candidate.' '.$text), $needle)) {
+                if ($needle === '' || ! $this->candidateMatchesSku($candidate, $text, $sku)) {
                     continue;
                 }
 
-                $candidate = $this->absoluteUrl($url, $candidate);
                 $domain = (string) parse_url($candidate, PHP_URL_HOST);
                 if (! $this->registry->isOfficialDomain($domain, $brand)) {
                     continue;
@@ -69,6 +81,10 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
                         payload: ['direct_image' => $candidate],
                     );
 
+                    continue;
+                }
+
+                if (! $this->isCandidateProductUrl($candidate)) {
                     continue;
                 }
 
@@ -206,6 +222,19 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
         $root = ($parts['scheme'] ?? 'https').'://'.($parts['host'] ?? '');
 
         return $root.'/'.ltrim($url, '/');
+    }
+
+    protected function isCandidateProductUrl(string $url): bool
+    {
+        return true;
+    }
+
+    protected function candidateMatchesSku(string $candidate, string $text, string $sku): bool
+    {
+        $needle = $this->normalizeSku($sku);
+
+        return $needle !== ''
+            && Str::contains($this->normalizeSku($candidate.' '.$text), $needle);
     }
 
     private function isDirectImageUrl(string $url): bool

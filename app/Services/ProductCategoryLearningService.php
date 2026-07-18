@@ -18,8 +18,6 @@ class ProductCategoryLearningService
     ): ?array {
         $candidates = array_filter([
             ['sku', $sku, 99],
-            ['subgroup', $subgroup, 96],
-            ['group', $group, 90],
         ], fn (array $candidate) => filled($candidate[1]));
 
         foreach ($candidates as [$type, $value, $confidence]) {
@@ -38,19 +36,7 @@ class ProductCategoryLearningService
 
     public function resolveBreadcrumb(array $breadcrumb, ?string $brand = null): ?array
     {
-        $value = $this->breadcrumbValue($breadcrumb);
-        if ($value === '') {
-            return null;
-        }
-
-        $learning = $this->bestLearning('tristools_breadcrumb', $value, $brand);
-
-        return $learning ? [
-            'category' => $learning->category,
-            'confidence' => max(96, (int) $learning->confidence),
-            'method' => 'learned_tristools_breadcrumb',
-            'note' => "learned TrisTool breadcrumb -> {$learning->category->slug}",
-        ] : null;
+        return null;
     }
 
     public function learnFromItem(
@@ -60,6 +46,10 @@ class ProductCategoryLearningService
         int $confidence,
         array $breadcrumb = [],
     ): void {
+        if (! in_array($source, ['admin_verified', 'catalog_agent_verified'], true)) {
+            return;
+        }
+
         $brand = $item->brand;
         $context = array_filter([
             'sku' => $item->sku,
@@ -135,6 +125,7 @@ class ProductCategoryLearningService
             ->where('key_type', $type)
             ->where('key_hash', sha1($normalized))
             ->whereIn('brand_key', array_unique([$this->brandKey($brand), '*']))
+            ->whereIn('source', ['admin_verified', 'catalog_agent_verified'])
             ->orderByDesc('observations')
             ->orderByDesc('confidence')
             ->get()

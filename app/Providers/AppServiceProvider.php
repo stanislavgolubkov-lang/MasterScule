@@ -4,8 +4,11 @@ namespace App\Providers;
 
 use App\Models\Brand;
 use App\Models\Category;
-use Illuminate\Support\ServiceProvider;
+use App\Models\Product;
+use App\Observers\ProductObserver;
+use App\Services\Catalog\CatalogStorefrontNavigation;
 use Illuminate\Support\Facades\View;
+use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -14,7 +17,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->scoped(CatalogStorefrontNavigation::class);
     }
 
     /**
@@ -22,12 +25,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Product::observe(ProductObserver::class);
+
         View::composer('*', function ($view): void {
-            $view->with('navCategories', Category::with('childrenRecursive')
-                ->whereNull('parent_id')
-                ->where('is_active', true)
-                ->orderBy('sort_order')
-                ->get());
+            $view->with('navCategories', app(CatalogStorefrontNavigation::class)->roots());
             $view->with('navBrands', Brand::where('is_active', true)->orderBy('name')->get());
             $view->with('cartCount', array_sum(session('cart', [])));
         });

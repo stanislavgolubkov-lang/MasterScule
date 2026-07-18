@@ -6,6 +6,74 @@ use Illuminate\Database\Eloquent\Model;
 
 class Product extends Model
 {
+    private const ATTRIBUTE_KEYS_RU = [
+        'Numar piese' => 'Количество предметов',
+        'Număr piese' => 'Количество предметов',
+        'Material' => 'Материал',
+        'Utilizare' => 'Применение',
+        'Greutate' => 'Вес',
+        'Dimensiuni' => 'Размеры',
+    ];
+
+    private const ATTRIBUTE_KEYS_RO = [
+        'Numar piese' => 'Număr de piese',
+        'Număr piese' => 'Număr de piese',
+        'Material' => 'Material',
+        'Utilizare' => 'Utilizare',
+        'Greutate' => 'Greutate',
+        'Dimensiuni' => 'Dimensiuni',
+        'Вес' => 'Greutate',
+        'Подгруппа' => 'Subgrup',
+        'Габариты (ШxВxД)' => 'Dimensiuni (L×Î×A)',
+        'Габариты (ШxВxГ)' => 'Dimensiuni (L×Î×A)',
+        'Габаритные размеры' => 'Dimensiuni',
+        'Длина' => 'Lungime',
+        'Рабочая длина' => 'Lungime de lucru',
+        'Общая длина' => 'Lungime totală',
+        'Посадочный квадрат' => 'Pătrat de antrenare',
+        'Размер квадрата' => 'Dimensiunea pătratului',
+        'Размер' => 'Dimensiune',
+        'Материал' => 'Material',
+        'Рабочее давление' => 'Presiune de lucru',
+        'Материал ложемента' => 'Materialul inserției',
+        'Размер ложемента (ШxД)' => 'Dimensiunea inserției (L×A)',
+        'Уровень шума' => 'Nivel de zgomot',
+        'Уровень вибрации' => 'Nivel de vibrații',
+        'Количество зубцов' => 'Număr de dinți',
+        'Количество граней' => 'Număr de laturi',
+        'Размер для вставок' => 'Dimensiune pentru inserții',
+        'Расход воздуха' => 'Consum de aer',
+        'Среднее потребление воздуха' => 'Consum mediu de aer',
+        'Тип системы' => 'Tip de sistem',
+        'Макс. усилие на откручивание' => 'Cuplu maxim la desfacere',
+        'Скорость свободного вращения' => 'Turație în gol',
+        'Скорость вращения' => 'Turație',
+        'Посадочное место' => 'Prindere',
+        'Размер воздушного штуцера' => 'Dimensiunea racordului de aer',
+        'Мощность' => 'Putere',
+        'Диаметр шланга (рекомендуется)' => 'Diametrul recomandat al furtunului',
+        'Диапазон крутящего момента' => 'Interval de cuplu',
+        'Цвет' => 'Culoare',
+        'Допустимая погрешность' => 'Toleranță admisă',
+        'Цена деления' => 'Diviziune',
+    ];
+
+    private const ATTRIBUTE_VALUES_RU = [
+        'Otel crom-vanadiu' => 'Хром-ванадиевая сталь',
+        'Oțel crom-vanadiu' => 'Хром-ванадиевая сталь',
+        'Profesional' => 'Профессиональное',
+        'Service' => 'Сервис',
+        '12 luni' => '12 месяцев',
+    ];
+
+    private const ATTRIBUTE_VALUES_RO = [
+        'есть' => 'da',
+        'Да' => 'Da',
+        'Нет' => 'Nu',
+        'Хром-ванадиевая сталь' => 'Oțel crom-vanadiu',
+        'Профессиональное' => 'Profesional',
+    ];
+
     protected $fillable = [
         'brand_id', 'category_id', 'name', 'name_ru', 'name_ro', 'slug', 'sku', 'short_description',
         'short_description_ru', 'short_description_ro', 'description', 'description_ru', 'description_ro',
@@ -70,6 +138,16 @@ class Product extends Model
         return $this->hasMany(ProductImage::class);
     }
 
+    public function parserItem()
+    {
+        return $this->belongsTo(ProductParserItem::class, 'source_parser_item_id');
+    }
+
+    public function categoryDecisions()
+    {
+        return $this->hasMany(ProductCategoryDecision::class);
+    }
+
     public function scopeAvailableForSale($query)
     {
         return $query
@@ -77,13 +155,9 @@ class Product extends Model
             ->where('status', 'published')
             ->where('approval_status', 'approved')
             ->where('needs_review', false)
-            ->where('needs_image_review', false)
             ->where('needs_category_review', false)
             ->where('needs_translation_review', false)
-            ->where('needs_price_review', false)
-            ->whereNotNull('main_image')
-            ->where('main_image', '!=', '')
-            ->where('main_image', 'not like', '%placeholder%');
+            ->where('needs_price_review', false);
     }
 
     public function scopePurchasable($query)
@@ -133,6 +207,10 @@ class Product extends Model
             ];
         })->all();
 
+        if ($primaryCategoryId && (int) $this->category_id !== (int) $primaryCategoryId) {
+            $this->forceFill(['category_id' => (int) $primaryCategoryId])->saveQuietly();
+        }
+
         $this->categories()->sync($sync);
     }
 
@@ -146,61 +224,55 @@ class Product extends Model
     public function getDisplayNameAttribute(): string
     {
         if (app()->isLocale('ru')) {
-            return $this->name_ru ?: $this->name ?: $this->name_ro ?: $this->sku;
+            foreach ([$this->name_ru, $this->name] as $candidate) {
+                $name = trim((string) $candidate);
+
+                if ($name !== '' && preg_match('/\p{Cyrillic}/u', $name) === 1) {
+                    return $name;
+                }
+            }
+
+            return __('ui.product_name_fallback', ['sku' => $this->sku]);
         }
 
-        return $this->name_ro ?: $this->name_ru ?: $this->name ?: $this->sku;
+        return $this->name_ro ?: __('ui.product_name_fallback', ['sku' => $this->sku]);
     }
 
     public function getDisplayDescriptionAttribute(): string
     {
         $candidates = app()->isLocale('ru')
-            ? [$this->description_ru, $this->description, $this->short_description_ru, $this->short_description, $this->description_ro, $this->short_description_ro]
-            : [$this->description_ro, $this->short_description_ro, $this->description, $this->description_ru, $this->short_description, $this->short_description_ru];
+            ? [$this->description_ru, $this->description, $this->short_description_ru, $this->short_description]
+            : [$this->description_ro, $this->short_description_ro];
 
         foreach ($candidates as $candidate) {
             $description = trim((string) $candidate);
 
-            if ($description !== '') {
+            if ($description !== '' && (! app()->isLocale('ru') || preg_match('/\p{Cyrillic}/u', $description) === 1)) {
                 return $description;
             }
         }
 
-        return app()->isLocale('ru')
-            ? "{$this->display_name} — профессиональный товар для автосервиса, мастерской или гаража. Артикул: {$this->sku}."
-            : "{$this->display_name} este un produs profesional pentru service auto, atelier sau garaj. Cod produs: {$this->sku}.";
+        return __('ui.product_description_fallback', [
+            'name' => $this->display_name,
+            'sku' => $this->sku,
+        ]);
     }
 
     public function getDisplayAttributesAttribute(): array
     {
-        $keys = [
-            'Numar piese' => 'Количество предметов',
-            'Număr piese' => 'Количество предметов',
-            'Material' => 'Материал',
-            'Utilizare' => 'Применение',
-            'Greutate' => 'Вес',
-            'Dimensiuni' => 'Размеры',
-        ];
-
-        $values = [
-            'Otel crom-vanadiu' => 'Хром-ванадиевая сталь',
-            'Oțel crom-vanadiu' => 'Хром-ванадиевая сталь',
-            'Profesional' => 'Профессиональное',
-            'Service' => 'Сервис',
-            '12 luni' => '12 месяцев',
-        ];
-
         $attributes = collect($this->getAttributeValue('attributes') ?? [])
-            ->filter(fn ($value, $key) => trim((string) $key) !== ''
+            ->filter(fn ($value, $key) => is_scalar($value)
+                && trim((string) $key) !== ''
                 && trim((string) $value) !== ''
-                && ! $this->isHiddenDisplayAttribute((string) $key));
+                && ! $this->isHiddenDisplayAttribute((string) $key))
+            ->mapWithKeys(function ($value, $key) {
+                $localizedKey = $this->localizedAttributeKey(trim((string) $key));
+                $localizedValue = $this->localizedAttributeValue(trim((string) $value));
 
-        if (app()->isLocale('ru')) {
-            $attributes = $attributes
-                ->mapWithKeys(fn ($value, $key) => [
-                    $keys[$key] ?? $key => $values[$value] ?? $value,
-                ]);
-        }
+                return $localizedKey !== null && $localizedValue !== null
+                    ? [$localizedKey => $localizedValue]
+                    : [];
+            });
 
         $attributes = $attributes->all();
 
@@ -221,6 +293,15 @@ class Product extends Model
         $key = mb_strtolower(trim((string) preg_replace('/[\s:_-]+/u', ' ', $key)));
 
         return in_array($key, [
+            'brand',
+            'бренд',
+            'marca',
+            'sku',
+            'артикул',
+            'cod produs',
+            'group',
+            'группа',
+            'grup',
             'retail price',
             'price retail',
             'розничная цена',
@@ -231,6 +312,10 @@ class Product extends Model
             'источник цены',
             'sursa pretului',
             'sursa prețului',
+            'select all',
+            'выбрать все',
+            'selecteaza tot',
+            'selectează tot',
             'warranty',
             'гарантия',
             'garantie',
@@ -242,7 +327,11 @@ class Product extends Model
     {
         return collect($this->getAttributeValue('package_contents') ?? [])
             ->map(fn ($value) => trim((string) $value))
-            ->filter()
+            ->filter(fn ($value) => $value !== ''
+                && ! preg_match('/draft parser preview|lorem ipsum|\btodo\b|\btbd\b/i', $value)
+                && (! app()->isLocale('ro') || preg_match('/\p{Cyrillic}/u', $value) !== 1)
+                && (preg_match('/\p{Cyrillic}/u', $value) === 1
+                    || preg_match('/\b[a-z]{3,}\b/', $value) !== 1))
             ->values()
             ->all();
     }
@@ -256,5 +345,39 @@ class Product extends Model
         }
 
         return $warranty;
+    }
+
+    private function localizedAttributeKey(string $key): ?string
+    {
+        if (app()->isLocale('ru')) {
+            if (preg_match('/\p{Cyrillic}/u', $key) === 1) {
+                return $key;
+            }
+
+            return self::ATTRIBUTE_KEYS_RU[$key] ?? null;
+        }
+
+        return self::ATTRIBUTE_KEYS_RO[$key] ?? null;
+    }
+
+    private function localizedAttributeValue(string $value): ?string
+    {
+        if (app()->isLocale('ru')) {
+            return self::ATTRIBUTE_VALUES_RU[$value] ?? $value;
+        }
+
+        $value = self::ATTRIBUTE_VALUES_RO[$value] ?? $value;
+        $value = strtr($value, [
+            'об/мин' => 'rot/min',
+            'ход/мин' => 'curse/min',
+            'л/мин' => 'l/min',
+            'мм' => 'mm',
+            'см' => 'cm',
+            'кг' => 'kg',
+            'литр' => 'litri',
+            'бар' => 'bar',
+        ]);
+
+        return preg_match('/\p{Cyrillic}/u', $value) === 1 ? null : $value;
     }
 }

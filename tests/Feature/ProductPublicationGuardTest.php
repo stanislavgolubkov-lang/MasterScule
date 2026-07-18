@@ -5,6 +5,9 @@ namespace Tests\Feature;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\ProductParserBatch;
+use App\Models\ProductParserImageAsset;
+use App\Models\ProductParserItem;
 use App\Services\Catalog\ProductImageAvailabilityService;
 use App\Services\Catalog\ProductPublicationGuard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -72,6 +75,31 @@ class ProductPublicationGuardTest extends TestCase
         $this->assertGuardBlocked($product, 'ro_contains_cyrillic');
     }
 
+    public function test_product_with_ukrainian_text_cannot_be_published_as_russian(): void
+    {
+        $product = $this->validProduct([
+            'name' => 'Домкрат підкатний Torin',
+            'name_ru' => 'Домкрат підкатний Torin',
+            'description' => 'Професійний гідравлічний домкрат для автосервісу.',
+            'description_ru' => 'Професійний гідравлічний домкрат для автосервісу.',
+        ]);
+
+        $this->assertGuardBlocked($product, 'language_ukrainian_not_supported');
+    }
+
+    public function test_common_russian_catalog_words_do_not_trigger_ukrainian_guard(): void
+    {
+        $product = $this->validProduct([
+            'description' => 'Проверьте технические характеристики инструмента перед применением.',
+            'description_ru' => 'Проверьте технические характеристики инструмента перед применением.',
+        ]);
+
+        $result = app(ProductPublicationGuard::class)->evaluate($product, true);
+
+        $this->assertTrue($result['allowed']);
+        $this->assertNotContains('language_ukrainian_not_supported', $result['error_codes']);
+    }
+
     public function test_product_with_image_review_flag_cannot_be_published(): void
     {
         $product = $this->validProduct(['needs_image_review' => true]);
@@ -122,6 +150,51 @@ class ProductPublicationGuardTest extends TestCase
         ]);
 
         $this->assertGuardBlocked($product, 'fallback_not_approved');
+    }
+
+    public function test_parser_search_page_cannot_be_used_as_a_product_source(): void
+    {
+        $product = $this->validProduct([
+            'source_import_batch_id' => 77,
+            'source_url' => 'https://torinjacks.com/search?q=TRW05001',
+            'source_domain' => 'torinjacks.com',
+            'parser_confidence' => 100,
+            'source_reviewed_at' => now(),
+        ]);
+
+        $this->assertGuardBlocked($product, 'image_search_page_source');
+    }
+
+    public function test_logo_cannot_be_used_as_a_parser_product_image(): void
+    {
+        $batch = ProductParserBatch::create(['title' => 'Logo guard test']);
+        $item = ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'LOGO-GUARD-1',
+            'brand' => 'Torin BIG RED',
+        ]);
+        ProductParserImageAsset::create([
+            'parser_item_id' => $item->id,
+            'source_url' => 'https://torinjacks.com/cdn/shop/files/tce300x300.png',
+            'source_domain' => 'torinjacks.com',
+            'processed_path' => '/storage/products/valid.png',
+            'preview_path' => '/storage/products/valid.png',
+            'thumb_path' => '/storage/products/valid.png',
+            'status' => 'processed',
+            'is_selected' => true,
+            'is_main' => true,
+            'has_watermark' => true,
+        ]);
+        $product = $this->validProduct([
+            'source_import_batch_id' => $batch->id,
+            'source_parser_item_id' => $item->id,
+            'source_url' => 'https://torinjacks.com/products/example',
+            'source_domain' => 'torinjacks.com',
+            'parser_confidence' => 100,
+            'source_reviewed_at' => now(),
+        ]);
+
+        $this->assertGuardBlocked($product, 'image_asset_non_product');
     }
 
     public function test_valid_product_can_be_published(): void
