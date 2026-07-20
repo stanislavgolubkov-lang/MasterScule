@@ -47,6 +47,13 @@ class ProductPublicationGuardTest extends TestCase
         $this->assertGuardBlocked($product, 'invalid_image_placeholder');
     }
 
+    public function test_product_with_generic_gys_brand_image_cannot_be_published(): void
+    {
+        $product = $this->validProduct(['main_image' => '/images/products/gys-product.svg']);
+
+        $this->assertGuardBlocked($product, 'invalid_image_placeholder');
+    }
+
     public function test_processed_fallback_directory_is_not_treated_as_placeholder(): void
     {
         UploadedFile::fake()->image('fallback.webp', 40, 40)

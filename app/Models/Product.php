@@ -6,6 +6,22 @@ use Illuminate\Database\Eloquent\Model;
 
 class Product extends Model
 {
+    protected static function booted(): void
+    {
+        static::saving(function (self $product): void {
+            foreach (['name', 'name_ru', 'name_ro', 'meta_title'] as $attribute) {
+                if (! $product->isDirty($attribute)) {
+                    continue;
+                }
+
+                $value = $product->getAttribute($attribute);
+                if (is_string($value)) {
+                    $product->setAttribute($attribute, self::withoutSourceStoreName($value));
+                }
+            }
+        });
+    }
+
     private const ATTRIBUTE_KEYS_RU = [
         'Numar piese' => 'Количество предметов',
         'Număr piese' => 'Количество предметов',
@@ -225,7 +241,7 @@ class Product extends Model
     {
         if (app()->isLocale('ru')) {
             foreach ([$this->name_ru, $this->name] as $candidate) {
-                $name = trim((string) $candidate);
+                $name = self::withoutSourceStoreName((string) $candidate);
 
                 if ($name !== '' && preg_match('/\p{Cyrillic}/u', $name) === 1) {
                     return $name;
@@ -235,7 +251,20 @@ class Product extends Model
             return __('ui.product_name_fallback', ['sku' => $this->sku]);
         }
 
-        return $this->name_ro ?: __('ui.product_name_fallback', ['sku' => $this->sku]);
+        $name = self::withoutSourceStoreName((string) $this->name_ro);
+
+        return $name !== '' ? $name : __('ui.product_name_fallback', ['sku' => $this->sku]);
+    }
+
+    private static function withoutSourceStoreName(string $value): string
+    {
+        $value = preg_replace(
+            '/\b(?:https?:\/\/)?(?:www\.)?tristool(?:\.md)?\b\s*(?:[-–—:|]\s*)?/iu',
+            '',
+            $value,
+        ) ?? $value;
+
+        return trim(preg_replace('/\s+/u', ' ', $value) ?? $value, " \t\n\r\0\x0B-–—:|");
     }
 
     public function getDisplayDescriptionAttribute(): string

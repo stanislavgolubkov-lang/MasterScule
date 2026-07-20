@@ -113,6 +113,41 @@ class ProductParserQualityTest extends TestCase
         $this->assertStringNotContainsStringIgnoringCase('tristool.md', $content['name_ru']);
     }
 
+    public function test_product_removes_tristool_from_names_when_saved(): void
+    {
+        $brand = Brand::create([
+            'name' => 'Title cleanup brand',
+            'slug' => 'title-cleanup-brand',
+            'is_active' => true,
+        ]);
+        $category = Category::create([
+            'name' => 'Title cleanup category',
+            'name_ro' => 'Categorie pentru curatarea titlului',
+            'slug' => 'title-cleanup-category',
+            'is_active' => true,
+        ]);
+
+        $product = Product::create([
+            'brand_id' => $brand->id,
+            'category_id' => $category->id,
+            'name' => 'TrisTool.md - Фонарь диодный с магнитом',
+            'name_ru' => 'TrisTool.md - Фонарь диодный с магнитом',
+            'name_ro' => 'TrisTool - Lampa LED cu magnet',
+            'slug' => 'test-tristool-title-cleanup',
+            'sku' => 'TITLE-CLEANUP-1',
+            'price' => 100,
+            'currency' => 'MDL',
+            'stock_quantity' => 1,
+            'stock_status' => 'in_stock',
+            'meta_title' => 'TrisTool.md - Фонарь диодный с магнитом | MasterScule.md',
+        ]);
+
+        $this->assertSame('Фонарь диодный с магнитом', $product->name);
+        $this->assertSame('Фонарь диодный с магнитом', $product->name_ru);
+        $this->assertSame('Lampa LED cu magnet', $product->name_ro);
+        $this->assertSame('Фонарь диодный с магнитом | MasterScule.md', $product->meta_title);
+    }
+
     public function test_content_builder_keeps_both_languages_when_official_content_is_partial(): void
     {
         $content = app(ProductParserContentBuilder::class)->build(

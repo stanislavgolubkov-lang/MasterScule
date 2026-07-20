@@ -74,7 +74,7 @@
         <span>{{ __('ui.main_categories') }}</span>
         <h2>{{ __('ui.quick_work_area') }}</h2>
     </div>
-    <div class="quick-categories">
+    <div class="quick-categories" style="--quick-category-columns: {{ max(1, min(9, $categories->count())) }}">
     @foreach($categories as $category)
         <a href="{{ route('catalog', $category->slug) }}">
             <span class="category-visual category-photo category-{{ $category->slug }}" aria-hidden="true">

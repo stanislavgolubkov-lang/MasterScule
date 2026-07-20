@@ -105,7 +105,9 @@ class HomeRecommendedProductsTest extends TestCase
                 'needs_price_review' => false,
                 'is_active' => true,
                 'main_image' => $productNumber > 50
-                    ? '/images/products/product-placeholder-toolbox.svg'
+                    ? ($productNumber === 55
+                        ? '/images/products/gys-product.svg'
+                        : '/images/products/product-placeholder-toolbox.svg')
                     : '/images/parser-catalog/m7/sc-9337r.png',
             ]);
         }
@@ -116,7 +118,8 @@ class HomeRecommendedProductsTest extends TestCase
             ->assertViewHas('featuredProducts', function ($products) {
                 return $products->count() === 50
                     && $products->every(fn (Product $product) => $product->sku !== null
-                        && ! str_contains((string) $product->main_image, 'placeholder'))
+                        && ! str_contains((string) $product->main_image, 'placeholder')
+                        && ! str_contains((string) $product->main_image, 'gys-product.svg'))
                     && $products->pluck('sku')->contains('IMG-1');
             });
     }

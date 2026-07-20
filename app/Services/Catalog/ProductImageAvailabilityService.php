@@ -15,6 +15,7 @@ class ProductImageAvailabilityService
         'no_image',
         'missing-image',
         'product-placeholder',
+        'gys-product.svg',
     ];
 
     public function inspect(?string $path): array
