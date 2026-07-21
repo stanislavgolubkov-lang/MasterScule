@@ -24,6 +24,7 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 - Rebuilt 33 KING TONY drive-tool cards: 17 ratchets, seven handles, five universal joints, one adapter, two articulated spark-plug sockets, and one extension now have normalized RU/RO content and explicit drive, length, mechanism, and fitment characteristics.
 - Corrected and reclassified 25 KING TONY products that had been placed under torque wrenches or an inconsistent bits category, including Phillips socket bits, T-handle and truck wrenches, adapters, screwdriver and wheel-wrench sets, a diesel compression kit, and a utility cutter.
 - Rebuilt 32 GYS accessory cards by explicit SKU family: welding magnets and clamps, wire and slag-cleaning tools, induction-heater conductors, plastic repair rods, TIG filler materials and electrodes, and torch/charger consumables now have normalized RU/RO content and SKU-specific characteristics.
+- Rebuilt 19 KING TONY terminal-release and key-set cards: 12 individual `9DT11-*` tools no longer copy the parent set title, seven HEX/TORX sets now expose verified size, profile, material, finish, count, and execution data, and the terminal tools were moved into the electrical/cable-tool category.
 
 ## Current automated audit results
 
@@ -42,8 +43,8 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 | Marketplace domains/contact copy in product text | 0 |
 | Exact copied descriptions pointing to another catalog SKU | 0 |
 | Marketplace source links in product/parser records | 0 |
-| Products passing all publication rules | 4,758 |
-| Products blocked by one or more publication rules | 981 |
+| Products passing all publication rules | 4,746 |
+| Products blocked by one or more publication rules | 993 |
 
 ## Remaining work requiring source review
 
@@ -51,7 +52,7 @@ These counts are review queues, not automatically proven content errors:
 
 - 290 products need content review (down from 833 before the KING TONY passes).
 - 806 products need source review; the increase is intentional because 27 Maximum-derived records were returned to the verification queue.
-- 303 products have only one characteristic (down from 910); no products are left without characteristics. The GYS portion of this queue fell from 156 to 124.
+- 284 products have only one characteristic (down from 910); no products are left without characteristics. The GYS portion is 124 and the KING TONY portion fell from 122 to 103.
 - Short generic catalog descriptions remain concentrated in JTC, Hoegert, M7, and the unreviewed KING TONY imports.
 - 704 products are assigned to broad non-leaf categories; 683 of them are published. The largest broad buckets are now `scule-speciale-auto` (409), `instrument-manual` (139), and `echipamente-pentru-service` (43).
 
@@ -59,6 +60,7 @@ These counts are review queues, not automatically proven content errors:
 
 - 697 products have no main image: 632 KING TONY products and 65 JTC drafts.
 - 46 GYS products still use the shared placeholder `/images/products/gys-product.svg`.
+- 736 products are explicitly queued for image review. This includes 12 individual KING TONY `9DT11-*` tools that all use the same parent-set photo; the files were visually checked and confirmed byte-identical, so these products now require exact-SKU images before publication.
 - 678 published products therefore have no valid unique main image.
 - The 4,996 available product images passed the technical size checks: none are below 300 px or 500 px, and none have an extreme aspect ratio.
 - 1,179 products share an exact image file with another product. Most are legitimate size/model families, so these must be compared by SKU rather than deleted automatically.
