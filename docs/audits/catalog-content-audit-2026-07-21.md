@@ -27,6 +27,7 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 - Rebuilt 19 KING TONY terminal-release and key-set cards: 12 individual `9DT11-*` tools no longer copy the parent set title, seven HEX/TORX sets now expose verified size, profile, material, finish, count, and execution data, and the terminal tools were moved into the electrical/cable-tool category.
 - Rebuilt 16 KING TONY SQUAD and lighting cards with normalized RU/RO content and SKU-specific dimensions, compatibility, power, light output, protection, and battery data. Removed the copied 400-lumen AAA headlamp description from `9TA56`; that SKU is a 170-lumen rechargeable LED beanie with a 3.7 V / 250 mAh battery.
 - Rebuilt 16 HOEGERT cards: eight CrV combination wrenches, six CrMo TORX impact sockets, and two polyurethane spiral air hoses now have normalized RU/RO descriptions and SKU-specific specifications instead of generic category text or producer contact details.
+- Rebuilt all 21 remaining one-characteristic M7 cards across cordless tools, impact wrenches, sanders, pneumatic consumables, hose reels, hammer kits, and couplings. Added explicit SKU data and removed generic catalog copy; the M7 one-characteristic queue is now empty.
 
 ## Current automated audit results
 
@@ -45,16 +46,16 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 | Marketplace domains/contact copy in product text | 0 |
 | Exact copied descriptions pointing to another catalog SKU | 0 |
 | Marketplace source links in product/parser records | 0 |
-| Products passing all publication rules | 4,742 |
-| Products blocked by one or more publication rules | 997 |
+| Products passing all publication rules | 4,753 |
+| Products blocked by one or more publication rules | 986 |
 
 ## Remaining work requiring source review
 
 These counts are review queues, not automatically proven content errors:
 
-- 286 products need content review (down from 833 before the KING TONY passes).
+- 270 products need content review (down from 833 before the curated family passes).
 - 806 products need source review; the increase is intentional because 27 Maximum-derived records were returned to the verification queue.
-- 252 products have only one characteristic (down from 910); no products are left without characteristics. The GYS portion is 124, the KING TONY portion is 87, and the HOEGERT portion fell from 23 to 7.
+- 231 products have only one characteristic (down from 910); no products are left without characteristics. The GYS portion is 124, the KING TONY portion is 87, the HOEGERT portion is 7, and the M7 portion fell from 21 to 0.
 - Short generic catalog descriptions remain concentrated in JTC, Hoegert, M7, and the unreviewed KING TONY imports.
 - 704 products are assigned to broad non-leaf categories; 683 of them are published. The largest broad buckets are now `scule-speciale-auto` (409), `instrument-manual` (139), and `echipamente-pentru-service` (43).
 
@@ -62,7 +63,7 @@ These counts are review queues, not automatically proven content errors:
 
 - 697 products have no main image: 632 KING TONY products and 65 JTC drafts.
 - 46 GYS products still use the shared placeholder `/images/products/gys-product.svg`.
-- 740 products are explicitly queued for image review. This includes 12 individual KING TONY `9DT11-*` tools that all use the same parent-set photo and four HOEGERT products whose stored source image belongs to a neighboring SKU (`HT1W441`, `HT1W446`, `HT4R041`, and `HT4R892`).
+- 742 products are explicitly queued for image review. This includes 12 individual KING TONY `9DT11-*` tools that all use the same parent-set photo, four HOEGERT products whose stored source image belongs to a neighboring SKU, and M7 `SC-2A`/`SC-2B`, whose distinct official source images were processed into one identical local file.
 - 678 published products therefore have no valid unique main image.
 - The 4,996 available product images passed the technical size checks: none are below 300 px or 500 px, and none have an extreme aspect ratio.
 - 1,179 products share an exact image file with another product. Most are legitimate size/model families, so these must be compared by SKU rather than deleted automatically.
@@ -87,7 +88,7 @@ Suspicious exact characteristic groups spanning unrelated products or categories
 ## Recommended next pass
 
 1. Recover exact-SKU official images for the 632 KING TONY products, then replace the 46 GYS placeholders.
-2. Review the remaining 286 content and 806 source queues by brand, beginning with JTC and the unreviewed KING TONY families.
+2. Review the remaining 270 content and 806 source queues by brand, beginning with JTC and the unreviewed KING TONY families.
 3. Reclassify the remaining 683 published products in broad categories after checking product semantics and official source data.
 4. Review duplicate images and characteristic groups only with SKU-level source confirmation; do not mass-delete shared family assets.
 
