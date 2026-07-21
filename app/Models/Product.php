@@ -167,6 +167,22 @@ class Product extends Model
         'Напряжение' => 'Tensiune',
         'Ход штока' => 'Cursa pistonului',
         'Рабочий диапазон' => 'Interval de lucru',
+        'Ширина рукоятки' => 'Lățimea mânerului',
+        'Максимальный рабочий угол' => 'Unghi maxim de lucru',
+        'Ширина губок' => 'Lățimea fălcilor',
+        'Угол поворота основания' => 'Unghiul de rotație al bazei',
+        'Удерживающее усилие' => 'Forță de susținere',
+        'Рабочие углы' => 'Unghiuri de lucru',
+        'Максимальный диаметр трубы' => 'Diametrul maxim al țevii',
+        'Запомненные результаты' => 'Rezultate memorate',
+        'Время готовности' => 'Timp de pregătire',
+        'Диапазон измерения' => 'Interval de măsurare',
+        'Количество циклов' => 'Număr de cicluri',
+        'Тип датчика' => 'Tipul senzorului',
+        'Рабочая ширина' => 'Lățime de lucru',
+        'Ширина наконечника' => 'Lățimea vârfului',
+        'Глубина наконечника' => 'Adâncimea vârfului',
+        'Форма' => 'Formă',
     ];
 
     private const ATTRIBUTE_VALUES_RU = [
@@ -407,6 +423,18 @@ class Product extends Model
         '3 молотка и 4 рихтовочные оправки в кейсе' => '3 ciocane și 4 tasuri în valiză',
         'Гидравлический пресс' => 'Presă hidraulică',
         '220–240 V, 1 фаза' => '220–240 V, monofazat',
+        'Т-образный шестигранный ключ с шаровым наконечником' => 'Cheie hexagonală în T cu cap sferic',
+        'Высококачественная сталь S2' => 'Oțel S2 de calitate superioară',
+        'Шаровой' => 'Sferic',
+        'Поворотные слесарные тиски' => 'Menghină de banc rotativă',
+        'Ковкий чугун' => 'Fontă ductilă',
+        'Стрела' => 'Săgeată',
+        'Набор комбинированных ключей в ложементе' => 'Set de chei combinate în inserție',
+        'Техническая пена EVA' => 'Spumă tehnică EVA',
+        'Алкотестер' => 'Alcooltest',
+        'Полупроводниковый' => 'Semiconductor',
+        'Съёмник обивочных клипс' => 'Extractor pentru cleme de tapițerie',
+        'Вильчатый' => 'Tip furcă',
     ];
 
     protected $fillable = [

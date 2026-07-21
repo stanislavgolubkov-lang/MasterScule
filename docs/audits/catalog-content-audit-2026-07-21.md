@@ -29,6 +29,7 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 - Rebuilt 16 HOEGERT cards: eight CrV combination wrenches, six CrMo TORX impact sockets, and two polyurethane spiral air hoses now have normalized RU/RO descriptions and SKU-specific specifications instead of generic category text or producer contact details.
 - Rebuilt all 21 remaining one-characteristic M7 cards across cordless tools, impact wrenches, sanders, pneumatic consumables, hose reels, hammer kits, and couplings. Added explicit SKU data and removed generic catalog copy; the M7 one-characteristic queue is now empty.
 - Rebuilt all seven remaining one-characteristic Torin BIG RED cards across jack stands, a trolley jack, tire bead seater, industrial vacuum, injector-puller kit, body-repair kit, and hydraulic press. Official Tongrun data corrected T84007 from the imported 98–508 mm/twin-cylinder claim to 100–585 mm with a single pump piston, and corrected TRAD036 from 45 l to the official 10-gallon specification. Added a dedicated industrial-vacuum category and queued three distributor/import-only records plus the DATET-watermarked TRHS-8781 image for review.
+- Rebuilt all seven remaining one-characteristic HOEGERT cards from exact official SKU pages: a T-handle ball-end HEX key, swivel bench vise, welding magnet, two EVA tool sets, breathalyzer, and upholstery-clip remover. Corrected HT1W854 from an L-key to its actual T-handle form, added four exact leaf categories, and replaced stale Tristool parser image references for HT3B651, HT8G011, and HT8G393 with their official HOEGERT image URLs after visual verification.
 
 ## Current automated audit results
 
@@ -56,9 +57,9 @@ These counts are review queues, not automatically proven content errors:
 
 - 270 products need content review (down from 833 before the curated family passes).
 - 809 products need source review; the increase is intentional because 27 Maximum-derived records and three Torin records without official manufacturer pages were returned to the verification queue.
-- 224 products have only one characteristic (down from 910); no products are left without characteristics. The GYS portion is 124, the KING TONY portion is 87, the HOEGERT portion is 7, the JTC portion is 6, and both M7 and Torin are now at 0.
+- 217 products have only one characteristic (down from 910); no products are left without characteristics. The GYS portion is 124, the KING TONY portion is 87, the JTC portion is 6, and HOEGERT, M7, and Torin are now at 0.
 - Short generic catalog descriptions remain concentrated in JTC, Hoegert, M7, and the unreviewed KING TONY imports.
-- 704 products are assigned to broad non-leaf categories; 683 of them are published. The largest broad buckets are now `scule-speciale-auto` (409), `instrument-manual` (139), and `echipamente-pentru-service` (43).
+- 701 products are assigned to broad non-leaf categories; 680 of them are published. The largest broad buckets are now `scule-speciale-auto` (409), `instrument-manual` (137), and `echipamente-pentru-service` (43).
 
 ## Images
 
@@ -89,7 +90,7 @@ Suspicious exact characteristic groups spanning unrelated products or categories
 ## Recommended next pass
 
 1. Recover exact-SKU official images for the 632 KING TONY products, then replace the 46 GYS placeholders.
-2. Review the remaining 270 content and 809 source queues by brand, beginning with JTC, the seven remaining HOEGERT one-characteristic cards, and the unreviewed KING TONY families.
+2. Review the remaining 270 content and 809 source queues by brand, beginning with the six remaining JTC one-characteristic cards and the unreviewed KING TONY families.
 3. Reclassify the remaining 683 published products in broad categories after checking product semantics and official source data.
 4. Review duplicate images and characteristic groups only with SKU-level source confirmation; do not mass-delete shared family assets.
 
@@ -101,3 +102,10 @@ Selected official verification sources used during the curated passes:
 - `T84007`: https://en.tongrunjacks.com/product/134.html
 - `TRAD036`: https://en.tongrunjacks.com/products_details/608.html
 - `TY30001`: https://en.tongrunjacks.com/product/868.html
+- `HT1W854`: https://en.hoegert.com/product/hexagonal-wrenches-type-t-with-ball-long-4/
+- `HT3B618`: https://en.hoegert.com/product/swivel-bench-vise-150-mm/
+- `HT3B651`: https://hoegert.com/produkt/magnetyczny-katownik-spawalniczy-strzalkowy-225-kg/
+- `HT7G120-1`: https://en.hoegert.com/product/combination-wrench-set-16-pcs-technical-foam-2/
+- `HT7G139`: https://en.hoegert.com/product/tool-set-4/
+- `HT8G011`: https://en.hoegert.com/product/breathalyzer-with-lcd-display/
+- `HT8G393`: https://en.hoegert.com/product/clamp-for-upholstery-pins-230-mm/

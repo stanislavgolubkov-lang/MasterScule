@@ -108,7 +108,7 @@ return [
         'SJ-TN64' => 'nituitoare-capsatoare-si-cuie-pneumatice',
         'JTC-1412' => 'scule-pentru-suspensie',
         'JTC-1410' => 'scule-pentru-suspensie',
-        'HT7G139' => 'instrumente-electromontaj',
+        'HT7G139' => 'seturi-scule-electrice-izolate',
         'HT8G401' => 'extractoare-si-prese',
         'HT8G404' => 'extractoare-si-prese',
         'HT1P186' => 'clesti-electrician-si-cabluri',
