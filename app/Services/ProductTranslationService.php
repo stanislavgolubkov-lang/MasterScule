@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Services\Catalog\ProductContentLanguage;
+use App\Services\Catalog\ProductContentSanitizer;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -12,6 +13,7 @@ class ProductTranslationService
     public function __construct(
         private ProductParserSettings $settings,
         private ProductContentLanguage $language,
+        private ProductContentSanitizer $contentSanitizer,
     ) {}
 
     public function bilingual(array $source): array
@@ -210,10 +212,10 @@ class ProductTranslationService
 
     private function clean(string $value): string
     {
-        return trim((string) preg_replace(
+        return $this->contentSanitizer->sanitize(trim((string) preg_replace(
             '/[ \t]+/u',
             ' ',
             html_entity_decode(strip_tags($value), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
-        ));
+        )));
     }
 }

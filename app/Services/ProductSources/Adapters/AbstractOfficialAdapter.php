@@ -2,6 +2,7 @@
 
 namespace App\Services\ProductSources\Adapters;
 
+use App\Services\Catalog\ProductContentSanitizer;
 use App\Services\ProductSources\ProductSourceAdapterInterface;
 use App\Services\ProductSources\ProductSourceProductData;
 use App\Services\ProductSources\ProductSourceRegistry;
@@ -15,7 +16,10 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
 {
     private static array $lastRequestAt = [];
 
-    public function __construct(protected readonly ProductSourceRegistry $registry) {}
+    public function __construct(
+        protected readonly ProductSourceRegistry $registry,
+        protected readonly ProductContentSanitizer $contentSanitizer,
+    ) {}
 
     abstract protected function brandKeys(): array;
 
@@ -112,7 +116,7 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
         }
 
         $title = $this->meta($html, ['og:title']) ?: $this->firstText($html, 'h1') ?: $result->title;
-        $description = $this->meta($html, ['description', 'og:description']);
+        $description = $this->contentSanitizer->sanitize($this->meta($html, ['description', 'og:description'])) ?: null;
         $data = new ProductSourceProductData($result, $html, $title, $description, raw: $result->payload);
 
         return new ProductSourceProductData(

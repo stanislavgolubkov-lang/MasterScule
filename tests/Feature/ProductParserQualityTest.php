@@ -21,6 +21,15 @@ class ProductParserQualityTest extends TestCase
 
     public function test_category_detector_requires_at_least_ninety_percent_confidence(): void
     {
+        Category::firstOrCreate(
+            ['slug' => 'cutite-lame-rezerve'],
+            [
+                'name' => 'Ножи, лезвия и запасные части',
+                'name_ro' => 'Cuțite, lame și piese de schimb',
+                'is_active' => true,
+            ],
+        );
+
         $result = app(ProductCategoryDetector::class)->detect(
             '6AD10-3P01',
             'Cable cutter replacement blade',
@@ -89,6 +98,24 @@ class ProductParserQualityTest extends TestCase
         $this->assertNotEmpty($content['description_ru']);
         $this->assertNotEmpty($content['description_ro']);
         $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', $content['name_ro'].' '.$content['description_ro']);
+    }
+
+    public function test_content_builder_uses_curated_content_for_gys_082809(): void
+    {
+        $content = app(ProductParserContentBuilder::class)->ensureComplete([
+            'name_ru' => 'Средства защиты GYS 082809 GYSMATIC 9/13 G',
+            'description_ru' => 'Купить по лучшей цене в онлайн-магазине maximum.md.',
+            'description_ro' => 'Cumpara la cel mai bun pret in magazinul online maxim.md.',
+        ], '082809', 'Маска сварщика LCD GYSMATIC 9/13 G', 'GYS');
+
+        $this->assertSame(
+            'Автоматическая сварочная маска GYS 082809 GYSMATIC AUTO PRO TRUE COLOR',
+            $content['name_ru'],
+        );
+        $this->assertStringContainsString('100 × 93 мм', $content['description_ru']);
+        $this->assertStringNotContainsStringIgnoringCase('maximum.md', implode(' ', $content));
+        $this->assertFalse($content['needs_content_review']);
+        $this->assertSame('curated_sku', $content['translation_source_type']);
     }
 
     public function test_content_builder_removes_tristool_domain_from_official_titles(): void
@@ -379,5 +406,27 @@ class ProductParserQualityTest extends TestCase
         $this->assertSame('furtunuri-cuple-accesorii', $coupler['category_slug']);
         $this->assertFalse($stones['needs_review']);
         $this->assertFalse($coupler['needs_review']);
+    }
+
+    public function test_verified_characteristics_are_localized_without_cyrillic_in_romanian(): void
+    {
+        $product = new Product([
+            'attributes' => [
+                'Тип' => 'Набор ударных адаптеров',
+                'Механизм' => 'Быстросъёмный',
+                'Угол поворота' => '360°',
+                'Материал' => 'Термообработанная легированная сталь',
+            ],
+        ]);
+
+        app()->setLocale('ro');
+
+        $this->assertSame([
+            'Tip' => 'Set de adaptoare de impact',
+            'Mecanism' => 'Cu eliberare rapidă',
+            'Unghi de rotație' => '360°',
+            'Material' => 'Oțel aliat tratat termic',
+        ], $product->display_attributes);
+        $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', json_encode($product->display_attributes, JSON_UNESCAPED_UNICODE));
     }
 }

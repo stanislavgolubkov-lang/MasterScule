@@ -19,7 +19,6 @@ class GysOfficialAdapter extends AbstractOfficialAdapter
         $encoded = rawurlencode($sku);
 
         return [
-            'https://maximum.md/ru/search?query='.$encoded,
             'https://www.clickoutil.com/recherche?controller=search&s='.$encoded,
             'https://www.groupe-mlv-france.fr/recherche?controller=search&s='.$encoded,
             'https://www.gys.com.ua/?s='.$encoded,
@@ -79,32 +78,9 @@ class GysOfficialAdapter extends AbstractOfficialAdapter
             ->all();
     }
 
-    public function fetchProductPage(ProductSourceSearchResult $result): ProductSourceProductData
-    {
-        $data = parent::fetchProductPage($result);
-        $host = Str::lower((string) $result->domain);
-
-        if (Str::endsWith($host, 'maximum.md')
-            && (! $this->hasExactSkuToken(trim((string) $data->title.' '.(string) $data->description), $result->sku)
-                || preg_match('/(?<![A-Z0-9])GYS(?![A-Z0-9])/iu', (string) $data->title) !== 1)) {
-            return new ProductSourceProductData(
-                ProductSourceSearchResult::notFound($result->sku, $result->brand),
-            );
-        }
-
-        return $data;
-    }
-
     protected function candidateMatchesSku(string $candidate, string $text, string $sku): bool
     {
-        if (! $this->hasExactSkuToken($candidate.' '.$text, $sku)) {
-            return false;
-        }
-
-        $host = Str::lower((string) parse_url($candidate, PHP_URL_HOST));
-
-        return ! Str::endsWith($host, 'maximum.md')
-            || preg_match('/(?<![A-Z0-9])GYS(?![A-Z0-9])/iu', $text) === 1;
+        return $this->hasExactSkuToken($candidate.' '.$text, $sku);
     }
 
     private function hasExactSkuToken(string $haystack, string $sku): bool
@@ -129,10 +105,6 @@ class GysOfficialAdapter extends AbstractOfficialAdapter
 
         if (Str::endsWith($host, 'clickoutil.com')) {
             return Str::endsWith($path, '.html') && Str::contains($path, 'product');
-        }
-
-        if (Str::endsWith($host, 'maximum.md')) {
-            return preg_match('~^/(?:ru|ro)/\d+/?$~', $path) === 1;
         }
 
         if (Str::endsWith($host, 'groupe-mlv-france.fr')) {

@@ -13,6 +13,7 @@ class ProductPublicationGuard
         private readonly ProductImageAvailabilityService $images,
         private readonly ProductLanguageQualityGuard $languages,
         private readonly ProductImageQualityGuard $imageQuality,
+        private readonly ProductContentSanitizer $contentSanitizer,
     ) {}
 
     public function evaluate(Product $product, bool $approveGeneralReview = false, array $approvedReviewFlags = []): array
@@ -92,6 +93,26 @@ class ProductPublicationGuard
         $nameRo = trim((string) $product->name_ro);
         $descriptionRu = trim((string) ($product->short_description_ru ?: $product->short_description ?: $product->description_ru ?: $product->description));
         $descriptionRo = trim((string) ($product->short_description_ro ?: $product->description_ro));
+
+        $publicContent = implode(' ', array_filter([
+            $product->name,
+            $product->name_ru,
+            $product->name_ro,
+            $product->short_description,
+            $product->short_description_ru,
+            $product->short_description_ro,
+            $product->description,
+            $product->description_ru,
+            $product->description_ro,
+            $product->meta_title,
+            $product->meta_description,
+        ]));
+        if ($this->contentSanitizer->containsMarketplacePromotion($publicContent)) {
+            $add('marketplace_promotion_in_content', $this->message(
+                'Описание содержит рекламу или контакты стороннего магазина.',
+                'Descrierea contine reclama sau datele de contact ale unui magazin tert.',
+            ));
+        }
 
         if ($nameRu === '' || $this->isMachinePlaceholder($nameRu)) {
             $add('missing_name_ru', $this->message('Нет нормального названия на русском.', 'Denumirea rusa valida lipseste.'));

@@ -130,7 +130,7 @@ class ProductParserBasePipelineTest extends TestCase
         );
     }
 
-    public function test_collector_rejects_king_tony_brand_and_messenger_images(): void
+    public function test_collector_requires_exact_sku_in_official_king_tony_image_url(): void
     {
         $batch = ProductParserBatch::create([
             'title' => 'King Tony image guard',
@@ -148,10 +148,11 @@ class ProductParserBasePipelineTest extends TestCase
             'https://www.kingtony.com/tw/img/KINGTONY.png',
             'https://www.kingtony.com/images/fb-messenger.png',
             'https://www.kingtony.com/upload/products/302D.png',
+            'https://www.kingtony.com/upload/products/302D10.png',
         ]);
 
         $this->assertSame(
-            ['https://www.kingtony.com/upload/products/302D.png'],
+            ['https://www.kingtony.com/upload/products/302D10.png'],
             $item->imageAssets()->pluck('source_url')->all(),
         );
     }

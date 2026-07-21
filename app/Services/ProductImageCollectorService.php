@@ -66,18 +66,25 @@ class ProductImageCollectorService
             return true;
         }
 
+        $host = Str::lower((string) parse_url($url, PHP_URL_HOST));
+        $sku = $this->normalizeSku((string) $item->sku);
+        $normalizedUrl = $this->normalizeSku($url);
+
+        if (Str::contains($brand, ['king tony', 'kingtony'])
+            && ($host === 'kingtony.com' || Str::endsWith($host, '.kingtony.com'))
+        ) {
+            return $sku === '' || ! Str::contains($normalizedUrl, $sku);
+        }
+
         if (! Str::contains($brand, 'jtc')) {
             return false;
         }
 
-        $host = Str::lower((string) parse_url($url, PHP_URL_HOST));
         if ($host === '' || (! Str::endsWith($host, 'jtc.com.tw') && ! Str::endsWith($host, 'jtcautotools.com'))) {
             return false;
         }
 
-        $sku = $this->normalizeSku((string) $item->sku);
         $skuCore = preg_replace('/^JTC/', '', $sku) ?: $sku;
-        $normalizedUrl = $this->normalizeSku($url);
 
         return $sku === ''
             || (! Str::contains($normalizedUrl, $sku)

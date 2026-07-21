@@ -10,7 +10,7 @@ class ReprocessGysUnresolved extends Command
 {
     protected $signature = 'parser:reprocess-gys-unresolved {batch}';
 
-    protected $description = 'Recheck unresolved GYS rows through TrisTool, Maximum, official sources, and the approved GYS brand fallback';
+    protected $description = 'Recheck unresolved GYS rows through TrisTool, reviewed manufacturer sources, and the approved GYS brand fallback';
 
     public function handle(): int
     {
@@ -55,7 +55,7 @@ class ReprocessGysUnresolved extends Command
 
         $batch->addLog('Unresolved GYS rows queued for ordered source recovery', [
             'queued' => $items->count(),
-            'priority' => ['tristool.md', 'maximum.md', 'official_gys', 'gys_brand_fallback'],
+            'priority' => ['tristool.md', 'official_gys', 'gys_brand_fallback'],
         ]);
 
         $this->info("Queued {$items->count()} unresolved GYS rows.");

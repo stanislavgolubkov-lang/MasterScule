@@ -378,7 +378,8 @@ class ProductDraftService
     {
         return collect($item->found_specs_json['_package_contents'] ?? [])
             ->map(fn ($value) => trim((string) $value))
-            ->filter()
+            ->filter(fn (string $value) => $value !== ''
+                && ! preg_match('/draft parser preview|lorem ipsum|unknown product|\btodo\b|\btbd\b/i', $value))
             ->values()
             ->all();
     }

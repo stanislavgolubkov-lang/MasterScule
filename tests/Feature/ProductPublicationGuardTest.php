@@ -107,6 +107,16 @@ class ProductPublicationGuardTest extends TestCase
         $this->assertNotContains('language_ukrainian_not_supported', $result['error_codes']);
     }
 
+    public function test_third_party_marketplace_promotion_cannot_be_published(): void
+    {
+        $product = $this->validProduct([
+            'description' => 'Купить товар в онлайн-магазине maximum.md, рассрочка и доставка.',
+            'description_ru' => 'Купить товар в онлайн-магазине maximum.md, рассрочка и доставка.',
+        ]);
+
+        $this->assertGuardBlocked($product, 'marketplace_promotion_in_content');
+    }
+
     public function test_product_with_image_review_flag_cannot_be_published(): void
     {
         $product = $this->validProduct(['needs_image_review' => true]);

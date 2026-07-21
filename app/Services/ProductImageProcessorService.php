@@ -21,8 +21,6 @@ class ProductImageProcessorService
         'jtc.com.tw',
         'jtcautotools.com',
         'hoegert.com',
-        'maximum.md',
-        'simpalsmedia.com',
         'clickoutil.com',
         'groupe-mlv-france.fr',
         'gys.com.ua',

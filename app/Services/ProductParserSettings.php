@@ -7,6 +7,8 @@ use Illuminate\Support\Arr;
 
 class ProductParserSettings
 {
+    private const RETIRED_SOURCE_DOMAINS = ['maximum.md', 'simpalsmedia.com'];
+
     public function all(): array
     {
         $stored = Setting::where('key', 'product_parser')->value('value');
@@ -21,19 +23,22 @@ class ProductParserSettings
 
             foreach ($stored['source_registry'] ?? [] as $source) {
                 $domain = $source['domain'] ?? null;
-                if ($domain) {
+                if ($domain && ! in_array(strtolower((string) $domain), self::RETIRED_SOURCE_DOMAINS, true)) {
                     $sourceRegistry[$domain] = array_replace($sourceRegistry[$domain] ?? [], $source);
                 }
             }
 
-            $settings['source_registry'] = array_values($sourceRegistry);
+            $settings['source_registry'] = array_values(array_filter(
+                $sourceRegistry,
+                fn (array $source) => ! in_array(strtolower((string) ($source['domain'] ?? '')), self::RETIRED_SOURCE_DOMAINS, true),
+            ));
         }
 
         if (isset($defaults['allowed_domains'])) {
-            $settings['allowed_domains'] = array_values(array_unique(array_merge(
-                $defaults['allowed_domains'],
-                $stored['allowed_domains'] ?? [],
-            )));
+            $settings['allowed_domains'] = array_values(array_filter(
+                array_unique(array_merge($defaults['allowed_domains'], $stored['allowed_domains'] ?? [])),
+                fn (string $domain) => ! in_array(strtolower($domain), self::RETIRED_SOURCE_DOMAINS, true),
+            ));
         }
 
         return $settings;

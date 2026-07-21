@@ -3,10 +3,16 @@
 namespace App\Services;
 
 use App\Services\Catalog\ProductContentLanguage;
+use App\Services\Catalog\ProductContentSanitizer;
+use App\Services\Catalog\ProductSkuContentOverrides;
 
 class ProductParserContentBuilder
 {
-    public function __construct(private ProductContentLanguage $language) {}
+    public function __construct(
+        private ProductContentLanguage $language,
+        private ProductContentSanitizer $contentSanitizer,
+        private ProductSkuContentOverrides $skuContentOverrides,
+    ) {}
 
     public function build(string $sku, string $sourceName, ?string $brand = null, ?string $group = null, array $category = []): array
     {
@@ -33,7 +39,7 @@ class ProductParserContentBuilder
         $descriptionRo = $nameRo.'. '.$brandLabel.' '.$sku.' este recomandat pentru lucrari profesionale in atelier, service auto sau zona tehnica. '
             .'Categoria: '.$categoryRo.'. Verificati caracteristicile, dimensiunile si compatibilitatea cu lucrarea planificata inainte de utilizare.';
 
-        return [
+        return $this->skuContentOverrides->apply($sku, [
             'name_ru' => $nameRu,
             'name_ro' => $nameRo,
             'short_description_ru' => $shortRu,
@@ -44,7 +50,7 @@ class ProductParserContentBuilder
             'needs_content_review' => true,
             'generated_content' => true,
             'translation_source_type' => 'generated_pending_review',
-        ];
+        ]);
     }
 
     public function mergeOfficialContent(array $content, ?string $officialTitle, ?string $officialDescription, string $sku, ?string $brand = null): array
@@ -90,6 +96,23 @@ class ProductParserContentBuilder
 
     public function ensureComplete(array $content, string $sku, string $sourceName, ?string $brand = null, ?string $group = null, array $category = []): array
     {
+        $rejectedMarketplaceContent = false;
+        foreach ([
+            'name_ru',
+            'name_ro',
+            'short_description_ru',
+            'short_description_ro',
+            'description_ru',
+            'description_ro',
+        ] as $key) {
+            $original = (string) ($content[$key] ?? '');
+            $sanitized = $this->contentSanitizer->sanitize($original);
+            if ($original !== '' && $sanitized === '') {
+                $rejectedMarketplaceContent = true;
+            }
+            $content[$key] = $sanitized !== '' ? $sanitized : null;
+        }
+
         $fallback = $this->build($sku, $sourceName, $brand, $group, $category);
         $usedFallback = false;
 
@@ -131,11 +154,12 @@ class ProductParserContentBuilder
         $content['needs_content_review'] = (bool) ($content['needs_content_review'] ?? false)
             || $usedFallback
             || $hasMissing
+            || $rejectedMarketplaceContent
             || (bool) $content['generated_content'];
         $content['translation_source_type'] = $content['translation_source_type']
             ?? ($usedFallback ? 'generated_pending_review' : 'official_or_imported');
 
-        return $content;
+        return $this->skuContentOverrides->apply($sku, $content);
     }
 
     private function containsCyrillic(string $value): bool
@@ -191,6 +215,7 @@ class ProductParserContentBuilder
 
     private function clean(string $value): string
     {
+        $value = $this->contentSanitizer->sanitize($value);
         $value = html_entity_decode(strip_tags($value), ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $value = preg_replace('/^\s*(?:https?:\/\/)?(?:www\.)?tristool\.md\s*(?:[-–—:|]\s*)?/iu', '', $value) ?: $value;
 

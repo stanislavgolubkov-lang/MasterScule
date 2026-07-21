@@ -9,6 +9,7 @@ use App\Models\Setting;
 use App\Services\ProductCategoryDetector;
 use App\Services\ProductCategoryResolverService;
 use App\Services\ProductDraftService;
+use App\Services\ProductParserSettings;
 use App\Services\ProductSearchService;
 use App\Services\ProductSources\Adapters\JtcOfficialAdapter;
 use App\Services\ProductSources\Adapters\GysOfficialAdapter;
@@ -49,13 +50,13 @@ class ProductSourcePipelineTest extends TestCase
     {
         $sources = app(ProductSourceRegistry::class)->forBrand('GYS');
 
-        $this->assertSame('maximum.md', $sources[0]['domain']);
-        $this->assertTrue(app(ProductSourceRegistry::class)->isOfficialDomain('i.simpalsmedia.com', 'GYS'));
+        $this->assertSame('clickoutil.com', $sources[0]['domain']);
+        $this->assertFalse(app(ProductSourceRegistry::class)->isOfficialDomain('maximum.md', 'GYS'));
+        $this->assertFalse(app(ProductSourceRegistry::class)->isOfficialDomain('i.simpalsmedia.com', 'GYS'));
         $this->assertTrue(app(ProductSourceRegistry::class)->isOfficialDomain('www.gysusa.com', 'GYS'));
 
         Http::preventStrayRequests();
         Http::fake([
-            'https://maximum.md/ru/search?query=063754' => Http::response('<html></html>'),
             'https://www.clickoutil.com/recherche?controller=search&s=063754' => Http::response(
                 '<a href="https:\/\/www.clickoutil.com\/accessoire-gys\/154870-product063754.html">GYS 063754 MIG torch</a>'
             ),
@@ -75,69 +76,26 @@ class ProductSourcePipelineTest extends TestCase
         $this->assertSame(['https://www.clickoutil.com/images/063754.jpg'], $data->images);
     }
 
-    public function test_gys_adapter_checks_maximum_before_other_distributors(): void
+    public function test_retired_marketplace_sources_are_ignored_even_when_stored_in_settings(): void
     {
-        Http::preventStrayRequests();
-        Http::fake([
-            'https://maximum.md/ru/search?query=041592' => Http::response(
-                '<a href="https://maximum.md/ro/6976298/">GYS 041592 welding accessory</a>'
-            ),
-            'https://maximum.md/ro/6976298/' => Http::response(
-                '<html><head><meta name="description" content="GYS 041592 steel wire liner">'
-                .'<meta property="og:image" content="https://i.simpalsmedia.com/marketplace/products/350x350/gys-041592.jpg"></head>'
-                .'<body><h1>GYS 041592 steel wire liner</h1></body></html>'
-            ),
+        Setting::create([
+            'key' => 'product_parser',
+            'value' => json_encode([
+                'source_registry' => [
+                    ['brands' => ['GYS'], 'domain' => 'maximum.md', 'enabled' => true, 'priority' => 999],
+                    ['brands' => ['GYS'], 'domain' => 'simpalsmedia.com', 'enabled' => true, 'priority' => 999],
+                ],
+                'allowed_domains' => ['maximum.md', 'simpalsmedia.com'],
+            ]),
         ]);
 
-        $adapter = app(GysOfficialAdapter::class);
-        $search = $adapter->searchBySku('041592', 'GYS');
-        $data = $adapter->fetchProductPage($search);
+        $settings = app(ProductParserSettings::class)->all();
+        $domains = collect($settings['source_registry'])->pluck('domain')->all();
 
-        $this->assertTrue($search->found);
-        $this->assertSame('maximum.md', $search->domain);
-        $this->assertSame('https://maximum.md/ro/6976298/', $search->url);
-        $this->assertSame(
-            ['https://i.simpalsmedia.com/marketplace/products/350x350/gys-041592.jpg'],
-            $data->images,
-        );
-    }
-
-    public function test_gys_maximum_rejects_a_longer_unrelated_product_code(): void
-    {
-        Http::preventStrayRequests();
-        Http::fake([
-            'https://maximum.md/ru/search?query=031210' => Http::response(
-                '<a href="https://maximum.md/ru/6838911/">Кнопка смыва Schell Tower Crom (031210699)</a>'
-            ),
-            '*' => Http::response('<html></html>'),
-        ]);
-
-        $search = app(GysOfficialAdapter::class)->searchBySku('031210', 'GYS', 'Сварочный аппарат CARMIG');
-
-        $this->assertFalse($search->found);
-    }
-
-    public function test_gys_maximum_revalidates_the_exact_sku_on_the_product_page(): void
-    {
-        Http::preventStrayRequests();
-        Http::fake([
-            'https://maximum.md/ru/search?query=031210' => Http::response(
-                '<a href="https://maximum.md/ru/6838911/">GYS 031210 сварочный аппарат</a>'
-            ),
-            'https://maximum.md/ru/6838911/' => Http::response(
-                '<html><head><meta name="description" content="Schell Tower Crom 031210699">'
-                .'<meta property="og:image" content="https://i.simpalsmedia.com/marketplace/products/350x350/wrong.jpg"></head>'
-                .'<body><h1>Кнопка смыва Schell Tower Crom (031210699)</h1></body></html>'
-            ),
-        ]);
-
-        $adapter = app(GysOfficialAdapter::class);
-        $search = $adapter->searchBySku('031210', 'GYS', 'Сварочный аппарат CARMIG');
-        $data = $adapter->fetchProductPage($search);
-
-        $this->assertTrue($search->found);
-        $this->assertFalse($data->search->found);
-        $this->assertSame([], $data->images);
+        $this->assertNotContains('maximum.md', $domains);
+        $this->assertNotContains('simpalsmedia.com', $domains);
+        $this->assertNotContains('maximum.md', $settings['allowed_domains']);
+        $this->assertNotContains('simpalsmedia.com', $settings['allowed_domains']);
     }
 
     public function test_new_source_domains_survive_an_older_stored_parser_configuration(): void
@@ -713,7 +671,7 @@ class ProductSourcePipelineTest extends TestCase
             'short_description_ru' => 'Машинка системы MBX M7 QB-0808M.',
             'short_description_ro' => 'Masina sistem MBX M7 QB-0808M.',
             'found_specs_json' => ($result['specs'] ?? []) + [
-                '_package_contents' => $result['package_contents'],
+                '_package_contents' => [...$result['package_contents'], 'Draft parser preview'],
                 '_breadcrumb' => $result['breadcrumb'],
             ],
         ]);

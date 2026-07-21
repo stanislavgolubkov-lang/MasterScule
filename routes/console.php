@@ -301,7 +301,20 @@ Artisan::command('masterscule:enrich-product-images {--apply} {--limit=0} {--min
     $minImages = max(2, min(4, (int) $this->option('min')));
     $quiet = (bool) $this->option('quiet-output');
     $fallbackOnly = (bool) $this->option('fallback-only');
-    $isUsableImage = fn (?string $path): bool => filled($path) && ! Str::contains((string) $path, ['placeholder', 'product-placeholder']);
+    $isUsableImage = fn (?string $path): bool => filled($path) && ! Str::contains(
+        Str::lower((string) $path),
+        ['placeholder', 'product-placeholder', 'gys-product.svg'],
+    );
+    $isVerifiedSkuImage = function (Product $product, string $url): bool {
+        if (! Str::contains(Str::lower((string) $product->brand?->name), 'king')) {
+            return true;
+        }
+
+        $normalizedSku = preg_replace('/[^A-Z0-9]/', '', Str::upper(Str::ascii((string) $product->sku))) ?: '';
+        $normalizedUrl = preg_replace('/[^A-Z0-9]/', '', Str::upper(Str::ascii($url))) ?: '';
+
+        return $normalizedSku !== '' && Str::contains($normalizedUrl, $normalizedSku);
+    };
     $galleryFor = function (Product $product) use ($isUsableImage): array {
         return collect([$product->main_image])
             ->merge($product->gallery ?: [])
@@ -432,14 +445,16 @@ Artisan::command('masterscule:enrich-product-images {--apply} {--limit=0} {--min
                 ]
             );
 
-            $result = $search->search($product->sku, $product->brand?->name, 'auto', false);
-            $images = array_values(array_unique(array_filter($result['images'] ?? [])));
-
-            if (count($images) < $minImages) {
-                $looseQuery = trim(implode(' ', array_filter([$product->sku, $product->name, $product->name_ro])));
-                $loose = $search->searchLoose($looseQuery, $product->brand?->name);
-                $images = array_values(array_unique(array_filter(array_merge($images, $loose['images'] ?? []))));
-            }
+            $result = $search->searchExternalForParser(
+                $product->sku,
+                $product->brand?->name,
+                $product->display_name,
+            );
+            $images = collect($result['images'] ?? [])
+                ->filter(fn ($url) => filled($url) && $isVerifiedSkuImage($product, (string) $url))
+                ->unique()
+                ->values()
+                ->all();
 
             if ($images === []) {
                 $stats['not_found']++;
@@ -559,8 +574,21 @@ Artisan::command('masterscule:fetch-real-product-images {--apply} {--limit=100} 
     $replaceFallback = (bool) $this->option('replace-fallback');
     $quiet = (bool) $this->option('quiet-output');
 
-    $isFallback = fn (?string $path): bool => filled($path) && Str::contains((string) $path, ['fallback', 'placeholder', 'product-placeholder']);
+    $isFallback = fn (?string $path): bool => filled($path) && Str::contains(
+        Str::lower((string) $path),
+        ['fallback', 'placeholder', 'product-placeholder', 'gys-product.svg'],
+    );
     $isRealImage = fn (?string $path): bool => filled($path) && ! $isFallback($path);
+    $isVerifiedSkuImage = function (Product $product, string $url): bool {
+        if (! Str::contains(Str::lower((string) $product->brand?->name), 'king')) {
+            return true;
+        }
+
+        $normalizedSku = preg_replace('/[^A-Z0-9]/', '', Str::upper(Str::ascii((string) $product->sku))) ?: '';
+        $normalizedUrl = preg_replace('/[^A-Z0-9]/', '', Str::upper(Str::ascii($url))) ?: '';
+
+        return $normalizedSku !== '' && Str::contains($normalizedUrl, $normalizedSku);
+    };
     $galleryFor = function (Product $product) use ($isRealImage): array {
         return collect([$product->main_image])
             ->merge($product->gallery ?: [])
@@ -618,7 +646,8 @@ Artisan::command('masterscule:fetch-real-product-images {--apply} {--limit=100} 
                 ->whereNull('main_image')
                 ->orWhere('main_image', '')
                 ->orWhere('main_image', 'like', '%placeholder%')
-                ->orWhere('main_image', 'like', '%product-placeholder%');
+                ->orWhere('main_image', 'like', '%product-placeholder%')
+                ->orWhere('main_image', 'like', '%gys-product.svg%');
         });
     }
 
@@ -714,14 +743,16 @@ Artisan::command('masterscule:fetch-real-product-images {--apply} {--limit=100} 
                 ]
             );
 
-            $result = $search->search($product->sku, $product->brand?->name, 'auto', false);
-            $images = array_values(array_unique(array_filter($result['images'] ?? [])));
-
-            if (count($images) < $minImages) {
-                $looseQuery = trim(implode(' ', array_filter([$product->sku, $product->brand?->name, $product->name, $product->name_ro])));
-                $loose = $search->searchLoose($looseQuery, $product->brand?->name);
-                $images = array_values(array_unique(array_filter(array_merge($images, $loose['images'] ?? []))));
-            }
+            $result = $search->searchExternalForParser(
+                $product->sku,
+                $product->brand?->name,
+                $product->display_name,
+            );
+            $images = collect($result['images'] ?? [])
+                ->filter(fn ($url) => filled($url) && $isVerifiedSkuImage($product, (string) $url))
+                ->unique()
+                ->values()
+                ->all();
 
             if ($images === []) {
                 $stats['not_found']++;
