@@ -120,6 +120,9 @@ class Product extends Model
         'Разъём зарядки' => 'Conector de încărcare',
         'Угол регулировки' => 'Unghi de reglare',
         'Дистанция датчика' => 'Distanța senzorului',
+        'Внутренний диаметр' => 'Diametru interior',
+        'Наружный диаметр' => 'Diametru exterior',
+        'Рабочая температура' => 'Temperatură de lucru',
         'Рабочее давление' => 'Presiune de lucru',
         'Материал ложемента' => 'Materialul inserției',
         'Размер ложемента (ШxД)' => 'Dimensiunea inserției (L×A)',
@@ -328,6 +331,12 @@ class Product extends Model
         'Магнитная' => 'Magnetică',
         'Штатив' => 'Trepied',
         'Штатив 87162' => 'Trepied 87162',
+        'Комбинированный ключ' => 'Cheie combinată',
+        'Ударная торцевая насадка TORX' => 'Cap tubular de impact TORX',
+        'Спиральный пневматический шланг' => 'Furtun pneumatic spiralat',
+        'Хром-молибденовая сталь' => 'Oțel crom-molibden',
+        'Полиуретан' => 'Poliuretan',
+        '1/4 inch, наружная с двух сторон' => '1/4 inch, exterior la ambele capete',
     ];
 
     protected $fillable = [
