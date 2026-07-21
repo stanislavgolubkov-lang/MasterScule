@@ -23,6 +23,7 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 - Rebuilt 55 KING TONY wrench and socket cards: 10 articulated sockets, 33 ratcheting combination wrenches, and 12 impact sockets now have normalized RU/RO content and SKU-specific dimensions, mechanisms, profiles, and drive characteristics.
 - Rebuilt 33 KING TONY drive-tool cards: 17 ratchets, seven handles, five universal joints, one adapter, two articulated spark-plug sockets, and one extension now have normalized RU/RO content and explicit drive, length, mechanism, and fitment characteristics.
 - Corrected and reclassified 25 KING TONY products that had been placed under torque wrenches or an inconsistent bits category, including Phillips socket bits, T-handle and truck wrenches, adapters, screwdriver and wheel-wrench sets, a diesel compression kit, and a utility cutter.
+- Rebuilt 32 GYS accessory cards by explicit SKU family: welding magnets and clamps, wire and slag-cleaning tools, induction-heater conductors, plastic repair rods, TIG filler materials and electrodes, and torch/charger consumables now have normalized RU/RO content and SKU-specific characteristics.
 
 ## Current automated audit results
 
@@ -50,7 +51,7 @@ These counts are review queues, not automatically proven content errors:
 
 - 290 products need content review (down from 833 before the KING TONY passes).
 - 806 products need source review; the increase is intentional because 27 Maximum-derived records were returned to the verification queue.
-- 335 products have only one characteristic (down from 910); no products are left without characteristics.
+- 303 products have only one characteristic (down from 910); no products are left without characteristics. The GYS portion of this queue fell from 156 to 124.
 - Short generic catalog descriptions remain concentrated in JTC, Hoegert, M7, and the unreviewed KING TONY imports.
 - 704 products are assigned to broad non-leaf categories; 683 of them are published. The largest broad buckets are now `scule-speciale-auto` (409), `instrument-manual` (139), and `echipamente-pentru-service` (43).
 
