@@ -17,6 +17,8 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 - Retired Maximum and its image CDN from future GYS source discovery. Removed 27 Maximum product source links and all corresponding parser source references; affected marketplace-derived images are now explicitly queued for review.
 - Reclassified 70 reviewed products from broad categories into specific assignable categories.
 - Rejected and removed an unverified KING TONY `203503` family image after visual inspection showed size H8 instead of the SKU's H3 variant. Official KING TONY images now require the exact SKU in the image URL.
+- Rebuilt 373 KING TONY socket cards by exact SKU family: normalized RU/RO names and descriptions, added size, drive, point/profile, and socket-type characteristics, and moved them from screwdrivers/bits into sockets/ratchets.
+- Corrected 16 additional KING TONY products against their stored official product sources, including tool sets, flexible handles, thread repair tools, pneumatic ratchets, number punches, tool storage, and extractor socket sets.
 
 ## Current automated audit results
 
@@ -42,10 +44,10 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 
 These counts are review queues, not automatically proven content errors:
 
-- 833 products need content review.
+- 460 products need content review (down from 833 before the KING TONY pass).
 - 806 products need source review; the increase is intentional because 27 Maximum-derived records were returned to the verification queue.
-- 910 products have only one characteristic; no products are left without characteristics.
-- 3,044 products use short generic catalog descriptions. This is especially concentrated in JTC, Hoegert, M7, and KING TONY imports.
+- 521 products have only one characteristic (down from 910); no products are left without characteristics.
+- Short generic catalog descriptions remain concentrated in JTC, Hoegert, M7, and the unreviewed KING TONY imports.
 - 716 products are assigned to broad non-leaf categories; 695 of them are published. The largest broad buckets are now `scule-speciale-auto` (421), `instrument-manual` (139), and `echipamente-pentru-service` (43).
 
 ## Images
@@ -76,7 +78,7 @@ Suspicious exact characteristic groups spanning unrelated products or categories
 ## Recommended next pass
 
 1. Recover exact-SKU official images for the 632 KING TONY products, then replace the 46 GYS placeholders.
-2. Review the 833 content and 806 source queues by brand, beginning with KING TONY and JTC.
+2. Review the remaining 460 content and 806 source queues by brand, beginning with JTC and the unreviewed KING TONY families.
 3. Reclassify the remaining 695 published products in broad categories after checking product semantics and official source data.
 4. Review duplicate images and characteristic groups only with SKU-level source confirmation; do not mass-delete shared family assets.
 
