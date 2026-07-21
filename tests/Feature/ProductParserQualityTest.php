@@ -429,4 +429,32 @@ class ProductParserQualityTest extends TestCase
         ], $product->display_attributes);
         $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', json_encode($product->display_attributes, JSON_UNESCAPED_UNICODE));
     }
+
+    public function test_king_tony_impact_set_characteristics_are_fully_localized_in_romanian(): void
+    {
+        $product = new Product([
+            'attributes' => [
+                'Тип' => 'Набор ударных шестигранных головок',
+                'Количество предметов' => '11',
+                'Привод' => '3/4 inch',
+                'Материал' => 'Хром-молибденовая сталь',
+                'Покрытие' => 'Чёрное фосфатное',
+                'Состав набора' => '609616M / 609622M / H10–H32',
+                'Размер кейса' => '270 × 100 × 49 mm',
+            ],
+        ]);
+
+        app()->setLocale('ro');
+
+        $this->assertSame([
+            'Tip' => 'Set de capete de impact hexagonale',
+            'Număr de piese' => '11',
+            'Antrenare' => '3/4 inch',
+            'Material' => 'Oțel crom-molibden',
+            'Acoperire' => 'Fosfatare neagră',
+            'Componența setului' => '609616M / 609622M / H10–H32',
+            'Dimensiunea cutiei' => '270 × 100 × 49 mm',
+        ], $product->display_attributes);
+        $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', json_encode($product->display_attributes, JSON_UNESCAPED_UNICODE));
+    }
 }
