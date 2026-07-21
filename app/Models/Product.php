@@ -183,6 +183,19 @@ class Product extends Model
         'Ширина наконечника' => 'Lățimea vârfului',
         'Глубина наконечника' => 'Adâncimea vârfului',
         'Форма' => 'Formă',
+        'Назначение' => 'Destinație',
+        'Привод' => 'Antrenare',
+        'Марка автомобиля' => 'Marca automobilului',
+        'Совместимые двигатели' => 'Motoare compatibile',
+        'Совместимые модели' => 'Modele compatibile',
+        'Номер специнструмента' => 'Număr sculă specială',
+        'Статус модели' => 'Statutul modelului',
+        'Замена производителя' => 'Înlocuitorul producătorului',
+        'Система автомобиля' => 'Sistemul automobilului',
+        'Максимальный диаметр хомута' => 'Diametrul maxim al colierului',
+        'Длина гибкого троса' => 'Lungimea cablului flexibil',
+        'Патент' => 'Brevet',
+        'Исключение' => 'Excludere',
     ];
 
     private const ATTRIBUTE_VALUES_RU = [
@@ -435,6 +448,22 @@ class Product extends Model
         'Полупроводниковый' => 'Semiconductor',
         'Съёмник обивочных клипс' => 'Extractor pentru cleme de tapițerie',
         'Вильчатый' => 'Tip furcă',
+        'Съёмник и установщик ТНВД' => 'Extractor și montator pentru pompa de înaltă presiune',
+        'Демонтаж и установка насоса высокого давления' => 'Demontarea și montarea pompei de înaltă presiune',
+        'Дизельный' => 'Diesel',
+        'Снята с производства' => 'Scos din producție',
+        'Головка для шкива распределительного вала' => 'Cap tubular pentru roata arborelui cu came',
+        'Корректировка положения шкива распределительного вала' => 'Corectarea poziției roții arborelui cu came',
+        'Головка для обслуживания тормозных колодок' => 'Cap tubular pentru întreținerea plăcuțelor de frână',
+        'Замена тормозных колодок' => 'Înlocuirea plăcuțelor de frână',
+        'Съёмник муфты низкого давления кондиционера' => 'Extractor pentru cupla de joasă presiune a instalației de climatizare',
+        'Демонтаж муфты низкого давления' => 'Demontarea cuplei de joasă presiune',
+        'Система кондиционирования' => 'Sistem de climatizare',
+        'Съёмник хомутов с гибким тросом' => 'Extractor pentru coliere cu cablu flexibil',
+        'Хомуты нижнего патрубка системы охлаждения' => 'Colierele furtunului inferior al sistemului de răcire',
+        'Набор для демонтажа свечей накаливания' => 'Set pentru demontarea bujiilor incandescente',
+        'Демонтаж свечей накаливания' => 'Demontarea bujiilor incandescente',
+        'OM646 EVO не поддерживается' => 'OM646 EVO nu este compatibil',
     ];
 
     protected $fillable = [

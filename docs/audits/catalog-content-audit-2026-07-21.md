@@ -30,6 +30,7 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 - Rebuilt all 21 remaining one-characteristic M7 cards across cordless tools, impact wrenches, sanders, pneumatic consumables, hose reels, hammer kits, and couplings. Added explicit SKU data and removed generic catalog copy; the M7 one-characteristic queue is now empty.
 - Rebuilt all seven remaining one-characteristic Torin BIG RED cards across jack stands, a trolley jack, tire bead seater, industrial vacuum, injector-puller kit, body-repair kit, and hydraulic press. Official Tongrun data corrected T84007 from the imported 98–508 mm/twin-cylinder claim to 100–585 mm with a single pump piston, and corrected TRAD036 from 45 l to the official 10-gallon specification. Added a dedicated industrial-vacuum category and queued three distributor/import-only records plus the DATET-watermarked TRHS-8781 image for review.
 - Rebuilt all seven remaining one-characteristic HOEGERT cards from exact official SKU pages: a T-handle ball-end HEX key, swivel bench vise, welding magnet, two EVA tool sets, breathalyzer, and upholstery-clip remover. Corrected HT1W854 from an L-key to its actual T-handle form, added four exact leaf categories, and replaced stale Tristool parser image references for HT3B651, HT8G011, and HT8G393 with their official HOEGERT image URLs after visual verification.
+- Rebuilt all six remaining one-characteristic JTC cards with complete RU/RO descriptions and specifications. Four products now reference exact official JTC pages and official image candidates; `JTC-4145` is explicitly marked as discontinued and replaced by `JTC-6816`; `JW0832` remains in source review because its exact manufacturer and kit contents are not confirmed by a primary catalog. Reclassified `JTC-4729` into automotive air-conditioning tools and `JTC-4822` into a new automotive cooling-system leaf.
 
 ## Current automated audit results
 
@@ -55,9 +56,9 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 
 These counts are review queues, not automatically proven content errors:
 
-- 270 products need content review (down from 833 before the curated family passes).
-- 809 products need source review; the increase is intentional because 27 Maximum-derived records and three Torin records without official manufacturer pages were returned to the verification queue.
-- 217 products have only one characteristic (down from 910); no products are left without characteristics. The GYS portion is 124, the KING TONY portion is 87, the JTC portion is 6, and HOEGERT, M7, and Torin are now at 0.
+- 264 products need content review (down from 833 before the curated family passes).
+- 805 products need source review. Four JTC records were cleared against exact official manufacturer pages; `JTC-4145` and `JW0832` remain in review because no current primary page confirms those exact records.
+- 211 products have only one characteristic (down from 910); no products are left without characteristics. The remaining queue is GYS 124 and KING TONY 87; JTC, HOEGERT, M7, and Torin are now at 0.
 - Short generic catalog descriptions remain concentrated in JTC, Hoegert, M7, and the unreviewed KING TONY imports.
 - 701 products are assigned to broad non-leaf categories; 680 of them are published. The largest broad buckets are now `scule-speciale-auto` (409), `instrument-manual` (137), and `echipamente-pentru-service` (43).
 
@@ -65,7 +66,7 @@ These counts are review queues, not automatically proven content errors:
 
 - 697 products have no main image: 632 KING TONY products and 65 JTC drafts.
 - 46 GYS products still use the shared placeholder `/images/products/gys-product.svg`.
-- 743 products are explicitly queued for image review. This includes 12 individual KING TONY `9DT11-*` tools that all use the same parent-set photo, four HOEGERT products whose stored source image belongs to a neighboring SKU, M7 `SC-2A`/`SC-2B`, whose distinct official source images were processed into one identical local file, and Torin `TRHS-8781`, whose current image carries a DATET watermark.
+- 743 products are explicitly queued for image review. This includes 12 individual KING TONY `9DT11-*` tools that all use the same parent-set photo, four HOEGERT products whose stored source image belongs to a neighboring SKU, M7 `SC-2A`/`SC-2B`, whose distinct official source images were processed into one identical local file, and Torin `TRHS-8781`, whose current image carries a DATET watermark. Exact official image candidates are now recorded for `JTC-4181`, `JTC-4338`, `JTC-4729`, and `JTC-4822`, but the cards remain blocked until those files are processed into local main/preview/thumbnail assets.
 - 678 published products therefore have no valid unique main image.
 - The 4,996 available product images passed the technical size checks: none are below 300 px or 500 px, and none have an extreme aspect ratio.
 - 1,179 products share an exact image file with another product. Most are legitimate size/model families, so these must be compared by SKU rather than deleted automatically.
@@ -90,7 +91,7 @@ Suspicious exact characteristic groups spanning unrelated products or categories
 ## Recommended next pass
 
 1. Recover exact-SKU official images for the 632 KING TONY products, then replace the 46 GYS placeholders.
-2. Review the remaining 270 content and 809 source queues by brand, beginning with the six remaining JTC one-characteristic cards and the unreviewed KING TONY families.
+2. Review the remaining 264 content and 805 source queues by brand, beginning with the 124 GYS and 87 KING TONY one-characteristic cards.
 3. Reclassify the remaining 683 published products in broad categories after checking product semantics and official source data.
 4. Review duplicate images and characteristic groups only with SKU-level source confirmation; do not mass-delete shared family assets.
 
@@ -109,3 +110,8 @@ Selected official verification sources used during the curated passes:
 - `HT7G139`: https://en.hoegert.com/product/tool-set-4/
 - `HT8G011`: https://en.hoegert.com/product/breathalyzer-with-lcd-display/
 - `HT8G393`: https://en.hoegert.com/product/clamp-for-upholstery-pins-230-mm/
+- `JTC-4181`: https://eng.jtc.com.tw/product/?id=3865&mode=data
+- `JTC-4338`: https://eng.jtc.com.tw/product/?id=4318&mode=data&top=2
+- `JTC-4729`: https://eng.jtc.com.tw/product/?id=1577&mode=data&top=2
+- `JTC-4822`: https://eng.jtc.com.tw/product/?id=1807&mode=data&top=2
+- `JTC-4145` discontinued-record reference: https://specinstrument.ru/catalog/specinstrument/spetsinstrument_dlya_legkovykh_mashin/bmw/semnik_tnvd_bmw_dvig_n47_nov_art_jtc_6816/

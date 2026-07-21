@@ -181,6 +181,7 @@ return [
             'extractoare-si-prese' => ['съемник', 'съёмник', 'puller', 'подшипник', 'сайлентблок'],
             'scule-pentru-frane' => ['тормоз', 'brake', 'frane'],
             'scule-pentru-motor' => ['двигатель', 'грм', 'распредвал', 'коленвал', 'engine', 'timing'],
+            'scule-sistem-racire-auto' => ['система охлаждения', 'патрубок охлаждения', 'хомут радиатора', 'cooling system', 'radiator hose'],
             'scule-pentru-suspensie' => ['подвеска', 'амортизатор', 'пружина', 'suspension'],
             'scule-speciale-auto' => ['bmw', 'mercedes', 'audi', 'volkswagen', 'vw', 'opel', 'renault', 'jtc'],
             'compresoare' => ['компрессор', 'compressor', 'compresor'],
