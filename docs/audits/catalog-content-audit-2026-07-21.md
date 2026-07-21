@@ -22,6 +22,7 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 - Rebuilt 75 KING TONY bit and holder cards from explicit SKU-family data: normalized RU/RO content, added profile, size, shank/drive, length, and compatibility characteristics, and moved 12 RIBE socket bits out of the broad automotive-special-tools category.
 - Rebuilt 55 KING TONY wrench and socket cards: 10 articulated sockets, 33 ratcheting combination wrenches, and 12 impact sockets now have normalized RU/RO content and SKU-specific dimensions, mechanisms, profiles, and drive characteristics.
 - Rebuilt 33 KING TONY drive-tool cards: 17 ratchets, seven handles, five universal joints, one adapter, two articulated spark-plug sockets, and one extension now have normalized RU/RO content and explicit drive, length, mechanism, and fitment characteristics.
+- Corrected and reclassified 25 KING TONY products that had been placed under torque wrenches or an inconsistent bits category, including Phillips socket bits, T-handle and truck wrenches, adapters, screwdriver and wheel-wrench sets, a diesel compression kit, and a utility cutter.
 
 ## Current automated audit results
 
@@ -47,9 +48,9 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 
 These counts are review queues, not automatically proven content errors:
 
-- 306 products need content review (down from 833 before the KING TONY passes).
+- 290 products need content review (down from 833 before the KING TONY passes).
 - 806 products need source review; the increase is intentional because 27 Maximum-derived records were returned to the verification queue.
-- 360 products have only one characteristic (down from 910); no products are left without characteristics.
+- 335 products have only one characteristic (down from 910); no products are left without characteristics.
 - Short generic catalog descriptions remain concentrated in JTC, Hoegert, M7, and the unreviewed KING TONY imports.
 - 704 products are assigned to broad non-leaf categories; 683 of them are published. The largest broad buckets are now `scule-speciale-auto` (409), `instrument-manual` (139), and `echipamente-pentru-service` (43).
 
@@ -81,7 +82,7 @@ Suspicious exact characteristic groups spanning unrelated products or categories
 ## Recommended next pass
 
 1. Recover exact-SKU official images for the 632 KING TONY products, then replace the 46 GYS placeholders.
-2. Review the remaining 306 content and 806 source queues by brand, beginning with JTC and the unreviewed KING TONY families.
+2. Review the remaining 290 content and 806 source queues by brand, beginning with JTC and the unreviewed KING TONY families.
 3. Reclassify the remaining 683 published products in broad categories after checking product semantics and official source data.
 4. Review duplicate images and characteristic groups only with SKU-level source confirmation; do not mass-delete shared family assets.
 
