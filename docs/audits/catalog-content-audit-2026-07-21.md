@@ -28,6 +28,7 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 - Rebuilt 16 KING TONY SQUAD and lighting cards with normalized RU/RO content and SKU-specific dimensions, compatibility, power, light output, protection, and battery data. Removed the copied 400-lumen AAA headlamp description from `9TA56`; that SKU is a 170-lumen rechargeable LED beanie with a 3.7 V / 250 mAh battery.
 - Rebuilt 16 HOEGERT cards: eight CrV combination wrenches, six CrMo TORX impact sockets, and two polyurethane spiral air hoses now have normalized RU/RO descriptions and SKU-specific specifications instead of generic category text or producer contact details.
 - Rebuilt all 21 remaining one-characteristic M7 cards across cordless tools, impact wrenches, sanders, pneumatic consumables, hose reels, hammer kits, and couplings. Added explicit SKU data and removed generic catalog copy; the M7 one-characteristic queue is now empty.
+- Rebuilt all seven remaining one-characteristic Torin BIG RED cards across jack stands, a trolley jack, tire bead seater, industrial vacuum, injector-puller kit, body-repair kit, and hydraulic press. Official Tongrun data corrected T84007 from the imported 98–508 mm/twin-cylinder claim to 100–585 mm with a single pump piston, and corrected TRAD036 from 45 l to the official 10-gallon specification. Added a dedicated industrial-vacuum category and queued three distributor/import-only records plus the DATET-watermarked TRHS-8781 image for review.
 
 ## Current automated audit results
 
@@ -46,16 +47,16 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 | Marketplace domains/contact copy in product text | 0 |
 | Exact copied descriptions pointing to another catalog SKU | 0 |
 | Marketplace source links in product/parser records | 0 |
-| Products passing all publication rules | 4,753 |
-| Products blocked by one or more publication rules | 986 |
+| Products passing all publication rules | 4,750 |
+| Products blocked by one or more publication rules | 989 |
 
 ## Remaining work requiring source review
 
 These counts are review queues, not automatically proven content errors:
 
 - 270 products need content review (down from 833 before the curated family passes).
-- 806 products need source review; the increase is intentional because 27 Maximum-derived records were returned to the verification queue.
-- 231 products have only one characteristic (down from 910); no products are left without characteristics. The GYS portion is 124, the KING TONY portion is 87, the HOEGERT portion is 7, and the M7 portion fell from 21 to 0.
+- 809 products need source review; the increase is intentional because 27 Maximum-derived records and three Torin records without official manufacturer pages were returned to the verification queue.
+- 224 products have only one characteristic (down from 910); no products are left without characteristics. The GYS portion is 124, the KING TONY portion is 87, the HOEGERT portion is 7, the JTC portion is 6, and both M7 and Torin are now at 0.
 - Short generic catalog descriptions remain concentrated in JTC, Hoegert, M7, and the unreviewed KING TONY imports.
 - 704 products are assigned to broad non-leaf categories; 683 of them are published. The largest broad buckets are now `scule-speciale-auto` (409), `instrument-manual` (139), and `echipamente-pentru-service` (43).
 
@@ -63,7 +64,7 @@ These counts are review queues, not automatically proven content errors:
 
 - 697 products have no main image: 632 KING TONY products and 65 JTC drafts.
 - 46 GYS products still use the shared placeholder `/images/products/gys-product.svg`.
-- 742 products are explicitly queued for image review. This includes 12 individual KING TONY `9DT11-*` tools that all use the same parent-set photo, four HOEGERT products whose stored source image belongs to a neighboring SKU, and M7 `SC-2A`/`SC-2B`, whose distinct official source images were processed into one identical local file.
+- 743 products are explicitly queued for image review. This includes 12 individual KING TONY `9DT11-*` tools that all use the same parent-set photo, four HOEGERT products whose stored source image belongs to a neighboring SKU, M7 `SC-2A`/`SC-2B`, whose distinct official source images were processed into one identical local file, and Torin `TRHS-8781`, whose current image carries a DATET watermark.
 - 678 published products therefore have no valid unique main image.
 - The 4,996 available product images passed the technical size checks: none are below 300 px or 500 px, and none have an extreme aspect ratio.
 - 1,179 products share an exact image file with another product. Most are legitimate size/model families, so these must be compared by SKU rather than deleted automatically.
@@ -88,11 +89,15 @@ Suspicious exact characteristic groups spanning unrelated products or categories
 ## Recommended next pass
 
 1. Recover exact-SKU official images for the 632 KING TONY products, then replace the 46 GYS placeholders.
-2. Review the remaining 270 content and 806 source queues by brand, beginning with JTC and the unreviewed KING TONY families.
+2. Review the remaining 270 content and 809 source queues by brand, beginning with JTC, the seven remaining HOEGERT one-characteristic cards, and the unreviewed KING TONY families.
 3. Reclassify the remaining 683 published products in broad categories after checking product semantics and official source data.
 4. Review duplicate images and characteristic groups only with SKU-level source confirmation; do not mass-delete shared family assets.
 
-Official verification used for the two corrected KING TONY products:
+Selected official verification sources used during the curated passes:
 
 - `37335-030`: https://www.kingtony.com/product_detail.php?Key=2914&cID=208&uID=75
 - `9AL12`: https://www.kingtony.com/product_detail.php?Key=982&cID=661&uID=61
+- `T412002C`: https://en.tongrunjacks.com/products_details/83.html
+- `T84007`: https://en.tongrunjacks.com/product/134.html
+- `TRAD036`: https://en.tongrunjacks.com/products_details/608.html
+- `TY30001`: https://en.tongrunjacks.com/product/868.html

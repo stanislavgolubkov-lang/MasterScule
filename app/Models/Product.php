@@ -163,6 +163,10 @@ class Product extends Model
         'Цвет' => 'Culoare',
         'Допустимая погрешность' => 'Toleranță admisă',
         'Цена деления' => 'Diviziune',
+        'Количество двигателей' => 'Număr de motoare',
+        'Напряжение' => 'Tensiune',
+        'Ход штока' => 'Cursa pistonului',
+        'Рабочий диапазон' => 'Interval de lucru',
     ];
 
     private const ATTRIBUTE_VALUES_RU = [
@@ -389,6 +393,20 @@ class Product extends Model
         'Шестигранный' => 'Hexagonal',
         'Европейский профиль' => 'Profil european',
         'Композит' => 'Compozit',
+        'Автомобильные страховочные стойки' => 'Capre auto de siguranță',
+        'Храповой с двойной фиксацией' => 'Cu clichet și blocare dublă',
+        'Подкатной гидравлический домкрат' => 'Cric hidraulic tip cărucior',
+        'Однопоршневой гидравлический насос' => 'Pompă hidraulică cu un piston',
+        'Бустер для взрывной накачки шин' => 'Booster pentru umflarea rapidă a anvelopelor',
+        'Промышленный пылесос для сухой и влажной уборки' => 'Aspirator industrial pentru curățare uscată și umedă',
+        'Сухая и влажная уборка' => 'Curățare uscată și umedă',
+        'Набор съёмников дизельных форсунок' => 'Set de extractoare pentru injectoare diesel',
+        'Дизельные форсунки' => 'Injectoare diesel',
+        'Мастер-набор в кейсе' => 'Set complet în valiză',
+        'Набор рихтовочных молотков и оправок' => 'Set de ciocane și tasuri pentru tinichigerie',
+        '3 молотка и 4 рихтовочные оправки в кейсе' => '3 ciocane și 4 tasuri în valiză',
+        'Гидравлический пресс' => 'Presă hidraulică',
+        '220–240 V, 1 фаза' => '220–240 V, monofazat',
     ];
 
     protected $fillable = [
