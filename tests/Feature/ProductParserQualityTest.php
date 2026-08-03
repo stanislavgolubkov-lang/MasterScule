@@ -452,6 +452,34 @@ class ProductParserQualityTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', json_encode($product->display_attributes, JSON_UNESCAPED_UNICODE));
     }
 
+    public function test_gys_bodyshop_measurement_characteristics_are_fully_localized_in_romanian(): void
+    {
+        $product = new Product([
+            'attributes' => [
+                'Тип' => 'Толщиномер лакокрасочного покрытия',
+                'Диапазон измерения' => '0–1.80 mm',
+                'Разрешение' => '0.01 mm',
+                'Точность' => '±0.03 mm',
+                'Материал' => 'Сталь / алюминий',
+                'Источник питания' => '2 × AAA 1.5 V',
+                'Габаритные размеры' => '62 × 30.5 × 105 mm',
+            ],
+        ]);
+
+        app()->setLocale('ro');
+
+        $this->assertSame([
+            'Tip' => 'Aparat pentru măsurarea grosimii vopselei',
+            'Interval de măsurare' => '0–1.80 mm',
+            'Rezoluție' => '0.01 mm',
+            'Precizie' => '±0.03 mm',
+            'Material' => 'Oțel / aluminiu',
+            'Sursă de alimentare' => '2 × AAA 1.5 V',
+            'Dimensiuni' => '62 × 30.5 × 105 mm',
+        ], $product->display_attributes);
+        $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', json_encode($product->display_attributes, JSON_UNESCAPED_UNICODE));
+    }
+
     public function test_king_tony_impact_set_characteristics_are_fully_localized_in_romanian(): void
     {
         $product = new Product([
