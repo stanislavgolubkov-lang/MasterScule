@@ -40,6 +40,7 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 - Rebuilt four GYS battery testers (`024168`, `024175`, `024182`, and `024205`) and the `052994` infrared thermometer from exact-SKU publications. Added RU/RO descriptions plus 9–11 localized characteristics per card, moved PBT 600 from the generic power-tool category to testers, and corrected the thermometer range from the imported `−50…+420 °C` claim to the published `−50…+380 °C`. All five existing main images were visually checked against their exact models and retained.
 - Rebuilt 11 GYS induction-heating cards: GYSDUCTION bolt-release inductor, POWERDUCTION 10R/37LG/39LG machines, S180 and S180/B3W heads, 28S adapter, B2/B3 ferrites, S180/D55 loop and B3 protective casing. Added exact technical data, corrected product types, and verified the three existing non-placeholder images against their exact models. Eight accessory cards remain on the shared GYS placeholder until exact manufacturer image assets can be recovered.
 - Rebuilt four per-piece GYS plasma-consumable cards from the manufacturer references `040168`, `040175`, `040212`, and `040236`. Corrected the imported reversal between `040212/1` (cutting tip) and `040236/1` (outer nozzle), documented the one-piece sales unit separately from the manufacturer packs of 10/2/10/4 pieces, moved all four cards into accessories and consumables, and retained the two visually verified exact images. The taxonomy pass also repaired the stale primary-category pivot left by the earlier PBT 600 category move.
+- Rebuilt six GYS charging-accessory cards: `026094` clamp cables, `053519` cigarette-lighter adapter, `054677` GYSPACK power supply, `087132` 67 W USB-C charger, and the `53139`/`53151` internal batteries. Added exact compatibility, electrical data and RU/RO descriptions, moved the two generic-accessory records into the battery/charger family, and synchronized all primary-category pivots. Four existing images were visually verified; the two internal batteries remain queued because only the shared GYS placeholder is available. The misleading `053137.jpg` URL was removed from the `053519` provenance history.
 
 ## Current automated audit results
 
@@ -66,16 +67,16 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 These counts are review queues, not automatically proven content errors:
 
 - 264 products need content review (down from 833 before the curated family passes).
-- 791 products need source review. Four JTC records were cleared against exact official manufacturer pages; `JTC-4145` and `JW0832` remain in review because no current primary page confirms those exact records.
-- 85 products have only one characteristic (down from 910); no products are left without characteristics. The remaining queue is GYS 34 and KING TONY 51; JTC, HOEGERT, M7, and Torin are now at 0.
+- 790 products need source review. Four JTC records were cleared against exact official manufacturer pages; `JTC-4145` and `JW0832` remain in review because no current primary page confirms those exact records.
+- 79 products have only one characteristic (down from 910); no products are left without characteristics. The remaining queue is GYS 28 and KING TONY 51; JTC, HOEGERT, M7, and Torin are now at 0.
 - Short generic catalog descriptions remain concentrated in JTC, Hoegert, M7, and the unreviewed KING TONY imports.
-- 701 products are assigned to broad non-leaf categories; 680 of them are published. The largest broad buckets are now `scule-speciale-auto` (409), `instrument-manual` (137), and `echipamente-pentru-service` (43).
+- 762 products are assigned to broad non-leaf categories; 741 of them are published. The largest broad buckets are `scule-speciale-auto` (409), `instrument-manual` (137), `taiere-pilire-prelucrare` (66), and `echipamente-pentru-service` (43).
 
 ## Images
 
 - 698 products have no main image: 633 KING TONY products and 65 JTC drafts. The additional KING TONY item is `6411MP`, whose unrelated pliers image was deliberately removed.
 - 46 GYS products still use the shared placeholder `/images/products/gys-product.svg`.
-- 744 products are explicitly queued for image review. This includes 12 individual KING TONY `9DT11-*` tools that all use the same parent-set photo, KING TONY `6411MP` with its exact replacement image candidate, four HOEGERT products whose stored source image belongs to a neighboring SKU, M7 `SC-2A`/`SC-2B`, whose distinct official source images were processed into one identical local file, and Torin `TRHS-8781`, whose current image carries a DATET watermark. Exact official image candidates are also recorded for `JTC-4181`, `JTC-4338`, `JTC-4729`, and `JTC-4822`, but the cards remain blocked until those files are processed into local main/preview/thumbnail assets.
+- 745 products are explicitly queued for image review. This includes the GYS `53139` and `53151` batteries whose placeholder status is now recorded correctly, 12 individual KING TONY `9DT11-*` tools that all use the same parent-set photo, KING TONY `6411MP` with its exact replacement image candidate, four HOEGERT products whose stored source image belongs to a neighboring SKU, M7 `SC-2A`/`SC-2B`, whose distinct official source images were processed into one identical local file, and Torin `TRHS-8781`, whose current image carries a DATET watermark. Exact official image candidates are also recorded for `JTC-4181`, `JTC-4338`, `JTC-4729`, and `JTC-4822`, but the cards remain blocked until those files are processed into local main/preview/thumbnail assets.
 - 678 published products therefore have no valid unique main image.
 - The 4,996 available product images passed the technical size checks: none are below 300 px or 500 px, and none have an extreme aspect ratio.
 - 1,179 products share an exact image file with another product. Most are legitimate size/model families, so these must be compared by SKU rather than deleted automatically.
@@ -100,8 +101,8 @@ Suspicious exact characteristic groups spanning unrelated products or categories
 ## Recommended next pass
 
 1. Recover exact-SKU official images for the 633 KING TONY products, then replace the 46 GYS placeholders.
-2. Review the remaining 264 content and 791 source queues by brand, beginning with the 34 GYS and 51 KING TONY one-characteristic cards.
-3. Reclassify the remaining 683 published products in broad categories after checking product semantics and official source data.
+2. Review the remaining 264 content and 790 source queues by brand, beginning with the 28 GYS and 51 KING TONY one-characteristic cards.
+3. Reclassify the remaining 741 published products in broad categories after checking product semantics and official source data.
 4. Review duplicate images and characteristic groups only with SKU-level source confirmation; do not mass-delete shared family assets.
 
 Selected official verification sources used during the curated passes:
@@ -135,6 +136,10 @@ Selected official verification sources used during the curated passes:
 - GYS POWERDUCTION 39LG (`058583`): https://www.skb.ch/wp-content/uploads/2025/07/058583.pdf
 - GYS POWERDUCTION 10R (`062504`): https://manualzz.com/doc/55395076/gys-powerduction-10r-datasheet
 - GYS plasma technologies, torches and consumables (`040168`, `040175`, `040212`, `040236`): https://lakkspesialisten.no/content/uploads/2026/01/GYS%20040236.pdf
+- GYS GYSFLASH 18.12 PL clamp cables (`026094`): https://www.shop.niteh.com/media/GYS_GYSFLASH_18.12_PL_-_026926.pdf
+- GYS charger-accessory catalog (`053519`): https://www.te.com.sg/downloads/catalogues/gys/charger.pdf
+- GYS USB-C charger (`087132`): https://www.comptoirdespros.com/media/FT_Gys_087132.pdf
+- GYS GYSPACK PRO manual (`53151`): https://www.comptoirdespros.com/media/MU_Gys_026155.pdf
 
 - `37335-030`: https://www.kingtony.com/product_detail.php?Key=2914&cID=208&uID=75
 - `9AL12`: https://www.kingtony.com/product_detail.php?Key=982&cID=661&uID=61

@@ -813,4 +813,51 @@ class ProductParserQualityTest extends TestCase
             $nozzle->display_attributes,
         ], JSON_UNESCAPED_UNICODE));
     }
+
+    public function test_gys_charging_accessory_characteristics_are_fully_localized_in_romanian(): void
+    {
+        $adapter = new Product([
+            'attributes' => [
+                'Тип' => 'Адаптер для автомобильного прикуривателя',
+                'Артикул производителя' => '053519',
+                'Совместимость' => 'GYSFLASH 4A / GYSFLASH 7A / GYSTECH 3800',
+                'Напряжение' => '12 V',
+                'Предохранитель' => '10 A',
+                'Назначение' => 'Подключение зарядного устройства через автомобильную розетку',
+            ],
+        ]);
+        $battery = new Product([
+            'attributes' => [
+                'Тип' => 'Внутренний аккумулятор для пускового устройства',
+                'Артикул производителя' => '53139',
+                'Тип внутреннего аккумулятора' => 'Герметичный свинцово-кислотный',
+                'Напряжение аккумулятора' => '12 V',
+                'Ёмкость аккумулятора' => '18 Ah',
+                'Совместимость' => 'GYSPACK AUTO / GYSPACK 400 / GYSPACK AIR',
+            ],
+        ]);
+
+        app()->setLocale('ro');
+
+        $this->assertSame([
+            'Tip' => 'Adaptor pentru priza auto',
+            'Codul producătorului' => '053519',
+            'Compatibilitate' => 'GYSFLASH 4A / GYSFLASH 7A / GYSTECH 3800',
+            'Tensiune' => '12 V',
+            'Siguranță' => '10 A',
+            'Destinație' => 'Conectarea încărcătorului prin priza auto',
+        ], $adapter->display_attributes);
+        $this->assertSame([
+            'Tip' => 'Baterie internă pentru booster',
+            'Codul producătorului' => '53139',
+            'Tipul bateriei interne' => 'Plumb-acid etanș',
+            'Tensiunea acumulatorului' => '12 V',
+            'Capacitatea acumulatorului' => '18 Ah',
+            'Compatibilitate' => 'GYSPACK AUTO / GYSPACK 400 / GYSPACK AIR',
+        ], $battery->display_attributes);
+        $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', json_encode([
+            $adapter->display_attributes,
+            $battery->display_attributes,
+        ], JSON_UNESCAPED_UNICODE));
+    }
 }
