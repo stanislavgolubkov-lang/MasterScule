@@ -719,4 +719,53 @@ class ProductParserQualityTest extends TestCase
             $thermometer->display_attributes,
         ], JSON_UNESCAPED_UNICODE));
     }
+
+    public function test_gys_induction_characteristics_are_fully_localized_in_romanian(): void
+    {
+        $machine = new Product([
+            'attributes' => [
+                'Тип' => 'Индукционный нагреватель',
+                'Мощность' => '3700 W',
+                'Потребляемый ток' => '16 A',
+                'Частота индукции' => '20–50 kHz',
+                'Шаг регулировки мощности' => '250 W',
+                'Система охлаждения' => 'Жидкостная',
+                'Объём бака' => '7 l',
+                'Длина кабеля индуктора' => '3 m',
+                'Глубина нагрева' => 'до 6 mm',
+            ],
+        ]);
+        $accessory = new Product([
+            'attributes' => [
+                'Тип' => 'Петлевой индуктор',
+                'Модель индуктора' => 'S180/D55',
+                'Диаметр петли' => '55 mm',
+                'Назначение' => 'Нагрев цилиндрических деталей',
+            ],
+        ]);
+
+        app()->setLocale('ro');
+
+        $this->assertSame([
+            'Tip' => 'Încălzitor prin inducție',
+            'Putere' => '3700 W',
+            'Curent absorbit' => '16 A',
+            'Frecvență de inducție' => '20–50 kHz',
+            'Treapta de reglare a puterii' => '250 W',
+            'Sistem de răcire' => 'Cu lichid',
+            'Volumul rezervorului' => '7 l',
+            'Lungimea cablului inductorului' => '3 m',
+            'Adâncime de încălzire' => 'până la 6 mm',
+        ], $machine->display_attributes);
+        $this->assertSame([
+            'Tip' => 'Inductor tip buclă',
+            'Modelul inductorului' => 'S180/D55',
+            'Diametrul buclei' => '55 mm',
+            'Destinație' => 'Încălzirea pieselor cilindrice',
+        ], $accessory->display_attributes);
+        $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', json_encode([
+            $machine->display_attributes,
+            $accessory->display_attributes,
+        ], JSON_UNESCAPED_UNICODE));
+    }
 }
