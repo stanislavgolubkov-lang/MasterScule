@@ -39,6 +39,7 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 - Rebuilt 16 GYS chargers and boosters from exact-SKU publications. Corrected five NOMAD/GYSPACK imports that were mislabeled as battery chargers, removed ClickOutil promotional text, and added verified voltage, charging/current ranges, battery chemistry, starting/cranking/peak current, protection, weight, and dimensions. Exact publications cleared five source-review flags. A follow-up provenance audit also removed retired Maximum/Simpals URLs from 27 product histories and the corresponding 26 parser-item histories.
 - Rebuilt four GYS battery testers (`024168`, `024175`, `024182`, and `024205`) and the `052994` infrared thermometer from exact-SKU publications. Added RU/RO descriptions plus 9–11 localized characteristics per card, moved PBT 600 from the generic power-tool category to testers, and corrected the thermometer range from the imported `−50…+420 °C` claim to the published `−50…+380 °C`. All five existing main images were visually checked against their exact models and retained.
 - Rebuilt 11 GYS induction-heating cards: GYSDUCTION bolt-release inductor, POWERDUCTION 10R/37LG/39LG machines, S180 and S180/B3W heads, 28S adapter, B2/B3 ferrites, S180/D55 loop and B3 protective casing. Added exact technical data, corrected product types, and verified the three existing non-placeholder images against their exact models. Eight accessory cards remain on the shared GYS placeholder until exact manufacturer image assets can be recovered.
+- Rebuilt four per-piece GYS plasma-consumable cards from the manufacturer references `040168`, `040175`, `040212`, and `040236`. Corrected the imported reversal between `040212/1` (cutting tip) and `040236/1` (outer nozzle), documented the one-piece sales unit separately from the manufacturer packs of 10/2/10/4 pieces, moved all four cards into accessories and consumables, and retained the two visually verified exact images. The taxonomy pass also repaired the stale primary-category pivot left by the earlier PBT 600 category move.
 
 ## Current automated audit results
 
@@ -65,8 +66,8 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 These counts are review queues, not automatically proven content errors:
 
 - 264 products need content review (down from 833 before the curated family passes).
-- 793 products need source review. Four JTC records were cleared against exact official manufacturer pages; `JTC-4145` and `JW0832` remain in review because no current primary page confirms those exact records.
-- 89 products have only one characteristic (down from 910); no products are left without characteristics. The remaining queue is GYS 38 and KING TONY 51; JTC, HOEGERT, M7, and Torin are now at 0.
+- 791 products need source review. Four JTC records were cleared against exact official manufacturer pages; `JTC-4145` and `JW0832` remain in review because no current primary page confirms those exact records.
+- 85 products have only one characteristic (down from 910); no products are left without characteristics. The remaining queue is GYS 34 and KING TONY 51; JTC, HOEGERT, M7, and Torin are now at 0.
 - Short generic catalog descriptions remain concentrated in JTC, Hoegert, M7, and the unreviewed KING TONY imports.
 - 701 products are assigned to broad non-leaf categories; 680 of them are published. The largest broad buckets are now `scule-speciale-auto` (409), `instrument-manual` (137), and `echipamente-pentru-service` (43).
 
@@ -99,7 +100,7 @@ Suspicious exact characteristic groups spanning unrelated products or categories
 ## Recommended next pass
 
 1. Recover exact-SKU official images for the 633 KING TONY products, then replace the 46 GYS placeholders.
-2. Review the remaining 264 content and 793 source queues by brand, beginning with the 38 GYS and 51 KING TONY one-characteristic cards.
+2. Review the remaining 264 content and 791 source queues by brand, beginning with the 34 GYS and 51 KING TONY one-characteristic cards.
 3. Reclassify the remaining 683 published products in broad categories after checking product semantics and official source data.
 4. Review duplicate images and characteristic groups only with SKU-level source confirmation; do not mass-delete shared family assets.
 
@@ -133,6 +134,7 @@ Selected official verification sources used during the curated passes:
 - GYS POWERDUCTION 37LG (`056992`): https://documents.kramp.com/056992GYS_FR.pdf
 - GYS POWERDUCTION 39LG (`058583`): https://www.skb.ch/wp-content/uploads/2025/07/058583.pdf
 - GYS POWERDUCTION 10R (`062504`): https://manualzz.com/doc/55395076/gys-powerduction-10r-datasheet
+- GYS plasma technologies, torches and consumables (`040168`, `040175`, `040212`, `040236`): https://lakkspesialisten.no/content/uploads/2026/01/GYS%20040236.pdf
 
 - `37335-030`: https://www.kingtony.com/product_detail.php?Key=2914&cID=208&uID=75
 - `9AL12`: https://www.kingtony.com/product_detail.php?Key=982&cID=661&uID=61

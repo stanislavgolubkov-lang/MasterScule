@@ -768,4 +768,49 @@ class ProductParserQualityTest extends TestCase
             $accessory->display_attributes,
         ], JSON_UNESCAPED_UNICODE));
     }
+
+    public function test_gys_plasma_consumable_characteristics_are_fully_localized_in_romanian(): void
+    {
+        $tip = new Product([
+            'attributes' => [
+                'Тип' => 'Наконечник плазменной горелки',
+                'Артикул производителя' => '040212',
+                'Единица продажи' => '1 шт.',
+                'Заводская упаковка' => '10 шт.',
+                'Совместимость' => 'TPT25 / MT35K / TPT40',
+                'Диаметр отверстия' => '0.8 mm',
+                'Назначение' => 'Формирование плазменной струи',
+            ],
+        ]);
+        $nozzle = new Product([
+            'attributes' => [
+                'Тип' => 'Сопло плазменной горелки',
+                'Единица продажи' => '1 шт.',
+                'Заводская упаковка' => '4 шт.',
+                'Назначение' => 'Наружный элемент плазменной горелки',
+            ],
+        ]);
+
+        app()->setLocale('ro');
+
+        $this->assertSame([
+            'Tip' => 'Duză de tăiere pentru pistolet de plasmă',
+            'Codul producătorului' => '040212',
+            'Unitate de vânzare' => '1 buc.',
+            'Ambalajul producătorului' => '10 buc.',
+            'Compatibilitate' => 'TPT25 / MT35K / TPT40',
+            'Diametrul orificiului' => '0.8 mm',
+            'Destinație' => 'Formarea jetului de plasmă',
+        ], $tip->display_attributes);
+        $this->assertSame([
+            'Tip' => 'Duză exterioară pentru pistolet de plasmă',
+            'Unitate de vânzare' => '1 buc.',
+            'Ambalajul producătorului' => '4 buc.',
+            'Destinație' => 'Element exterior al pistoletului de plasmă',
+        ], $nozzle->display_attributes);
+        $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', json_encode([
+            $tip->display_attributes,
+            $nozzle->display_attributes,
+        ], JSON_UNESCAPED_UNICODE));
+    }
 }
