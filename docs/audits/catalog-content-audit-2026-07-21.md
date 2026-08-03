@@ -32,6 +32,7 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 - Rebuilt all seven remaining one-characteristic HOEGERT cards from exact official SKU pages: a T-handle ball-end HEX key, swivel bench vise, welding magnet, two EVA tool sets, breathalyzer, and upholstery-clip remover. Corrected HT1W854 from an L-key to its actual T-handle form, added four exact leaf categories, and replaced stale Tristool parser image references for HT3B651, HT8G011, and HT8G393 with their official HOEGERT image URLs after visual verification.
 - Rebuilt all six remaining one-characteristic JTC cards with complete RU/RO descriptions and specifications. Four products now reference exact official JTC pages and official image candidates; `JTC-4145` is explicitly marked as discontinued and replaced by `JTC-6816`; `JW0832` remains in source review because its exact manufacturer and kit contents are not confirmed by a primary catalog. Reclassified `JTC-4729` into automotive air-conditioning tools and `JTC-4822` into a new automotive cooling-system leaf.
 - Rebuilt 18 KING TONY hand-tool cards from exact official product pages: punch and file sets, plier sets and individual pliers, wire/cable tools, aviation snips, a ratcheting tubing cutter, and a four-size tube bender now have complete RU/RO descriptions and SKU-specific characteristics. Corrected the critical `6411MP` mismatch from end-cutting pliers to the actual 11-piece 3/4″ impact HEX bit-socket set; removed its wrong pliers image, returned the card to draft, and queued the exact official `6411MP` image. Added a dedicated pipe-tools category for `7912-23` and `7CA15-10M`.
+- Rebuilt 18 more KING TONY cards from exact official product pages and catalog tables: three power-bit sets, two impact-socket sets, two wrench sets, soldering wire, a carbide scraper, two socket sets, three compact insert adapters, two six-piece adapter sets, and a power-bit adapter set. Corrected four category assignments (`1406PR`, `9CJ7416`, `786P06`, and `9103PR`) and preserved the existing exact-SKU official images. Ambiguous suffix variants `1214MRN01` and `9AE53-80` were deliberately left for separate source review.
 
 ## Current automated audit results
 
@@ -59,7 +60,7 @@ These counts are review queues, not automatically proven content errors:
 
 - 264 products need content review (down from 833 before the curated family passes).
 - 805 products need source review. Four JTC records were cleared against exact official manufacturer pages; `JTC-4145` and `JW0832` remain in review because no current primary page confirms those exact records.
-- 193 products have only one characteristic (down from 910); no products are left without characteristics. The remaining queue is GYS 124 and KING TONY 69; JTC, HOEGERT, M7, and Torin are now at 0.
+- 175 products have only one characteristic (down from 910); no products are left without characteristics. The remaining queue is GYS 124 and KING TONY 51; JTC, HOEGERT, M7, and Torin are now at 0.
 - Short generic catalog descriptions remain concentrated in JTC, Hoegert, M7, and the unreviewed KING TONY imports.
 - 701 products are assigned to broad non-leaf categories; 680 of them are published. The largest broad buckets are now `scule-speciale-auto` (409), `instrument-manual` (137), and `echipamente-pentru-service` (43).
 
@@ -92,7 +93,7 @@ Suspicious exact characteristic groups spanning unrelated products or categories
 ## Recommended next pass
 
 1. Recover exact-SKU official images for the 633 KING TONY products, then replace the 46 GYS placeholders.
-2. Review the remaining 264 content and 805 source queues by brand, beginning with the 124 GYS and 69 KING TONY one-characteristic cards.
+2. Review the remaining 264 content and 805 source queues by brand, beginning with the 124 GYS and 51 KING TONY one-characteristic cards.
 3. Reclassify the remaining 683 published products in broad categories after checking product semantics and official source data.
 4. Review duplicate images and characteristic groups only with SKU-level source confirmation; do not mass-delete shared family assets.
 
@@ -119,3 +120,12 @@ Selected official verification sources used during the curated passes:
 - `6411MP`: https://www.kingtony.com/product/11-PC-Impact-Bit-Socket-Set-6411MP
 - `7912-23`: https://www.kingtony.com/product/Ratchet-Tubing-Cutter-for-Stainless-Steel-28~67mm-7912-23
 - `7CA15-10M`: https://www.kingtony.com/product/90˚-Tube-Bender-7CA15-10M
+- `1004A6HQ` / `1004A6TQ` / `1004A6UQ`: https://www.kingtony.com/e_catalog/files/basic-html/page39.html
+- `4421MP1`: https://www.kingtony.com/product/11-PC-6-Point-Impact-Socket-Rail-Set-4421MP1
+- `6424MP`: https://www.kingtony.com/product/14-PC-6-Point-Impact-Socket-Set-6424MP
+- `1226MR`: https://www.kingtony.com/product/26-PC-Combination-Wrench-Set-1226MR
+- `1406PR`: https://www.kingtony.com/product/Star-Box-End-Wrench-Set-1406PR
+- `2549MR-EB`: https://www.kingtony.com/product/48-PC-Socket-Set-2549MR-EB
+- `3033MRV`: https://www.kingtony.com/product/33-PC-12-Point-Socket-Wrench-Set-3033MRV
+- `78106`: https://www.kingtony.com/product/6-PC-Adapter-Set-78106
+- `786P06`: https://www.kingtony.com/product/6-PC-Impact-Adapter-Set-786P06

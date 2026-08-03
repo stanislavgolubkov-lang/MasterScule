@@ -457,4 +457,49 @@ class ProductParserQualityTest extends TestCase
         ], $product->display_attributes);
         $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', json_encode($product->display_attributes, JSON_UNESCAPED_UNICODE));
     }
+
+    public function test_king_tony_bit_and_adapter_set_characteristics_are_fully_localized_in_romanian(): void
+    {
+        $bitSet = new Product([
+            'attributes' => [
+                'Тип' => 'Набор силовых бит',
+                'Размеры битов' => 'H2 / H2.5 / H3 / H4 / H5 / H6',
+                'Хвостовик' => '1/4 inch HEX',
+                'Длина шейки' => '9,5 mm',
+                'Материал' => 'Сталь S2',
+                'Покрытие' => 'Фосфатирование с антикоррозионным маслом',
+                'Магнитный хвостовик' => 'Да',
+            ],
+        ]);
+        $adapterSet = new Product([
+            'attributes' => [
+                'Тип' => 'Набор ручных адаптеров',
+                'Диапазон приводов' => '1/4 / 3/8 / 1/2 / 3/4 inch',
+                'Фиксация' => 'Шариковый фиксатор',
+                'Применение' => 'Для ручного инструмента',
+            ],
+        ]);
+
+        app()->setLocale('ro');
+
+        $this->assertSame([
+            'Tip' => 'Set de biți de putere',
+            'Dimensiunile biților' => 'H2 / H2.5 / H3 / H4 / H5 / H6',
+            'Tijă' => '1/4 inch HEX',
+            'Lungimea gâtului' => '9,5 mm',
+            'Material' => 'Oțel S2',
+            'Acoperire' => 'Fosfatare cu ulei anticoroziv',
+            'Tijă magnetică' => 'Da',
+        ], $bitSet->display_attributes);
+        $this->assertSame([
+            'Tip' => 'Set de adaptoare manuale',
+            'Gama antrenărilor' => '1/4 / 3/8 / 1/2 / 3/4 inch',
+            'Fixare' => 'Fixare cu bilă',
+            'Utilizare' => 'Pentru scule manuale',
+        ], $adapterSet->display_attributes);
+        $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', json_encode([
+            $bitSet->display_attributes,
+            $adapterSet->display_attributes,
+        ], JSON_UNESCAPED_UNICODE));
+    }
 }
