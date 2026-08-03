@@ -37,6 +37,7 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 - Rebuilt 16 more verified GYS bodyshop accessory cards: anti-arc battery protection, gas-welding goggles, self-piercing rivets, carbon and pulling electrodes, spot-welding caps, aluminium dent-pulling kits, heat-cover magnets, plastic-repair staples, a bumper rack, and a paint-thickness gauge. Corrected `048232` from the imported 3.3 × 5.0 mm claim to the catalog value 3.3 × 3.5 mm, restored the complete six-size contents of `048706`, and moved `041318`, `042803`, and `059856` into their proper leaf categories.
 - Rebuilt 12 GYS eye, face, welding, and heat-protection cards from exact-SKU publications. Corrected `042698` and `042728` from single-item wording to the manufacturer packs of 20 screens, identified `043336` as 20 DIN 11 Magic Zip lenses, added the certified flame-retardant cotton specification for `045224`, and attached the exact AUTO PRO TRUE COLOR technical data to `082809`. Moved `042827` and `042865` from the generic accessories bucket into eye and face protection.
 - Rebuilt 16 GYS chargers and boosters from exact-SKU publications. Corrected five NOMAD/GYSPACK imports that were mislabeled as battery chargers, removed ClickOutil promotional text, and added verified voltage, charging/current ranges, battery chemistry, starting/cranking/peak current, protection, weight, and dimensions. Exact publications cleared five source-review flags. A follow-up provenance audit also removed retired Maximum/Simpals URLs from 27 product histories and the corresponding 26 parser-item histories.
+- Rebuilt four GYS battery testers (`024168`, `024175`, `024182`, and `024205`) and the `052994` infrared thermometer from exact-SKU publications. Added RU/RO descriptions plus 9–11 localized characteristics per card, moved PBT 600 from the generic power-tool category to testers, and corrected the thermometer range from the imported `−50…+420 °C` claim to the published `−50…+380 °C`. All five existing main images were visually checked against their exact models and retained.
 
 ## Current automated audit results
 
@@ -63,8 +64,8 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 These counts are review queues, not automatically proven content errors:
 
 - 264 products need content review (down from 833 before the curated family passes).
-- 800 products need source review. Four JTC records were cleared against exact official manufacturer pages; `JTC-4145` and `JW0832` remain in review because no current primary page confirms those exact records.
-- 105 products have only one characteristic (down from 910); no products are left without characteristics. The remaining queue is GYS 54 and KING TONY 51; JTC, HOEGERT, M7, and Torin are now at 0.
+- 795 products need source review. Four JTC records were cleared against exact official manufacturer pages; `JTC-4145` and `JW0832` remain in review because no current primary page confirms those exact records.
+- 100 products have only one characteristic (down from 910); no products are left without characteristics. The remaining queue is GYS 49 and KING TONY 51; JTC, HOEGERT, M7, and Torin are now at 0.
 - Short generic catalog descriptions remain concentrated in JTC, Hoegert, M7, and the unreviewed KING TONY imports.
 - 701 products are assigned to broad non-leaf categories; 680 of them are published. The largest broad buckets are now `scule-speciale-auto` (409), `instrument-manual` (137), and `echipamente-pentru-service` (43).
 
@@ -97,7 +98,7 @@ Suspicious exact characteristic groups spanning unrelated products or categories
 ## Recommended next pass
 
 1. Recover exact-SKU official images for the 633 KING TONY products, then replace the 46 GYS placeholders.
-2. Review the remaining 264 content and 800 source queues by brand, beginning with the 54 GYS and 51 KING TONY one-characteristic cards.
+2. Review the remaining 264 content and 795 source queues by brand, beginning with the 49 GYS and 51 KING TONY one-characteristic cards.
 3. Reclassify the remaining 683 published products in broad categories after checking product semantics and official source data.
 4. Review duplicate images and characteristic groups only with SKU-level source confirmation; do not mass-delete shared family assets.
 
@@ -122,6 +123,11 @@ Selected official verification sources used during the curated passes:
 - GYS GYSFLASH 9.24 (`029477`): https://documents.kramp.com/029477GYS_EN.pdf
 - GYS NOMAD POWER PRO 901 FC (`085879`): https://www.1001piles.com/media/pdf/LEX1H33_FR.pdf
 - GYS NOMAD POWER 501 (`087323`): https://www.suomentyokalu.fi/app/uploads/2017/03/087323.pdf
+- GYS NBT 200 (`024168`): https://optimotive.co.uk/pdfs/datasheets/024168.pdf
+- GYS DBT 300 (`024175`): https://m.media-amazon.com/images/I/B1jI3D6V6YL.pdf
+- GYS DBT 400 (`024182`): https://handleidingen.acculaders.nl/wp-content/uploads/2020/12/productsheet-gys-dbt-400.pdf
+- GYS battery tester catalog including PBT 600 (`024205`): https://www.skb.ch/wp-content/uploads/2024/07/GYS_Charger_72dpi_2025.pdf
+- GYS infrared thermometer (`052994`): https://www.gysweldingusa.com/product/infrared-thermometer/
 
 - `37335-030`: https://www.kingtony.com/product_detail.php?Key=2914&cID=208&uID=75
 - `9AL12`: https://www.kingtony.com/product_detail.php?Key=982&cID=661&uID=61

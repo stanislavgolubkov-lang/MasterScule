@@ -662,4 +662,61 @@ class ProductParserQualityTest extends TestCase
             $booster->display_attributes,
         ], JSON_UNESCAPED_UNICODE));
     }
+
+    public function test_gys_battery_tester_characteristics_are_fully_localized_in_romanian(): void
+    {
+        $tester = new Product([
+            'attributes' => [
+                'Тип' => 'Профессиональный тестер аккумуляторов с принтером',
+                'Напряжение аккумулятора' => '12 V',
+                'Диапазон ёмкости аккумулятора' => '30–220 Ah',
+                'Диапазон измерения напряжения' => '6–30 V',
+                'Проверяемые системы' => 'Аккумулятор / стартер / генератор',
+                'Поддерживаемые аккумуляторы' => 'VRLA / GEL / AGM / EFB / жидкостные',
+                'Стандарты пускового тока' => 'EN / DIN / SAE / JIS / IEC / CA-MCA',
+                'Встроенный принтер' => 'Термопринтер без чернил',
+                'Время анализа' => '1 s',
+            ],
+        ]);
+        $thermometer = new Product([
+            'attributes' => [
+                'Тип' => 'Инфракрасный термометр',
+                'Температурный диапазон' => '−50…+380 °C',
+                'Точность' => '±1.5 °C или ±1.5%',
+                'Разрешение' => '0.1 °C',
+                'Время отклика' => '500 ms',
+                'Спектральный диапазон' => '8–14 µm',
+                'Коэффициент излучения' => '0.95',
+                'Оптическое разрешение' => '12:1',
+            ],
+        ]);
+
+        app()->setLocale('ro');
+
+        $this->assertSame([
+            'Tip' => 'Tester profesional pentru baterii cu imprimantă',
+            'Tensiunea acumulatorului' => '12 V',
+            'Intervalul capacității bateriei' => '30–220 Ah',
+            'Interval de măsurare a tensiunii' => '6–30 V',
+            'Sisteme verificate' => 'Baterie / demaror / alternator',
+            'Baterii compatibile' => 'VRLA / GEL / AGM / EFB / lichide',
+            'Standarde pentru curentul de pornire' => 'EN / DIN / SAE / JIS / IEC / CA-MCA',
+            'Imprimantă integrată' => 'Imprimantă termică fără cerneală',
+            'Timp de analiză' => '1 s',
+        ], $tester->display_attributes);
+        $this->assertSame([
+            'Tip' => 'Termometru cu infraroșu',
+            'Interval de temperatură' => '−50…+380 °C',
+            'Precizie' => '±1,5 °C sau ±1,5%',
+            'Rezoluție' => '0.1 °C',
+            'Timp de răspuns' => '500 ms',
+            'Interval spectral' => '8–14 µm',
+            'Emisivitate' => '0.95',
+            'Rezoluție optică' => '12:1',
+        ], $thermometer->display_attributes);
+        $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', json_encode([
+            $tester->display_attributes,
+            $thermometer->display_attributes,
+        ], JSON_UNESCAPED_UNICODE));
+    }
 }
