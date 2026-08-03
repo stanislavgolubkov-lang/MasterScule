@@ -14,6 +14,7 @@ class ProductPublicationGuard
         private readonly ProductLanguageQualityGuard $languages,
         private readonly ProductImageQualityGuard $imageQuality,
         private readonly ProductContentSanitizer $contentSanitizer,
+        private readonly ProductContentQualityGuard $contentQuality,
     ) {}
 
     public function evaluate(Product $product, bool $approveGeneralReview = false, array $approvedReviewFlags = []): array
@@ -28,6 +29,8 @@ class ProductPublicationGuard
 
         if (! filled($product->sku)) {
             $add('missing_sku', $this->message('Не указан SKU.', 'SKU lipseste.'));
+        } elseif (preg_match('/\p{Cyrillic}/u', (string) $product->sku) === 1) {
+            $add('sku_contains_cyrillic', 'SKU contains Cyrillic characters that can be confused with Latin characters.');
         }
         $brandExists = $product->relationLoaded('brand')
             ? $product->brand !== null
@@ -136,6 +139,9 @@ class ProductPublicationGuard
         }
 
         foreach ($this->languages->evaluate($product)['errors'] as $code => $message) {
+            $add($code, $message);
+        }
+        foreach ($this->contentQuality->evaluate($product)['errors'] as $code => $message) {
             $add($code, $message);
         }
         foreach ($this->imageQuality->evaluate($product)['errors'] as $code => $message) {

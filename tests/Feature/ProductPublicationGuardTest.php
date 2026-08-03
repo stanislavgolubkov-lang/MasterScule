@@ -107,6 +107,71 @@ class ProductPublicationGuardTest extends TestCase
         $this->assertNotContains('language_ukrainian_not_supported', $result['error_codes']);
     }
 
+    public function test_english_russian_description_is_not_hidden_by_a_valid_russian_name(): void
+    {
+        $product = $this->validProduct([
+            'description' => 'Heavy duty adjustable wrench for professional applications.',
+            'description_ru' => 'Heavy duty adjustable wrench for professional applications.',
+        ]);
+
+        $this->assertGuardBlocked($product, 'language_ru_description_missing_cyrillic');
+    }
+
+    public function test_english_text_in_romanian_description_cannot_be_published(): void
+    {
+        $product = $this->validProduct([
+            'description_ro' => 'Chrome plated steel wrench designed for automotive applications.',
+        ]);
+
+        $this->assertGuardBlocked($product, 'language_ro_description_likely_english');
+    }
+
+    public function test_generic_catalog_description_cannot_be_published(): void
+    {
+        $product = $this->validProduct([
+            'description' => 'Оборудование, инструмент и специнструмент для автосервиса, электроинструмент',
+            'description_ru' => 'Оборудование, инструмент и специнструмент для автосервиса, электроинструмент',
+        ]);
+
+        $this->assertGuardBlocked($product, 'content_generic_description');
+    }
+
+    public function test_generic_romanian_catalog_template_cannot_be_published(): void
+    {
+        $product = $this->validProduct([
+            'description_ro' => 'Instrument profesional ABC este un produs Test din categoria „Scule”. Cod producator: ABC.',
+        ]);
+
+        $this->assertGuardBlocked($product, 'content_generic_description');
+    }
+
+    public function test_heading_only_description_cannot_be_published(): void
+    {
+        $product = $this->validProduct([
+            'description' => 'Состав:',
+            'description_ru' => 'Состав:',
+        ]);
+
+        $this->assertGuardBlocked($product, 'content_incomplete_description_ru');
+    }
+
+    public function test_unbalanced_product_name_cannot_be_published(): void
+    {
+        $product = $this->validProduct([
+            'name' => 'Набор ключей (профессиональный',
+            'name_ru' => 'Набор ключей (профессиональный',
+        ]);
+
+        $this->assertGuardBlocked($product, 'content_unbalanced_name_ru');
+    }
+
+    public function test_sku_with_cyrillic_confusable_character_cannot_be_published(): void
+    {
+        $product = $this->validProduct(['sku' => '97443С']);
+
+        $this->assertGuardBlocked($product, 'sku_contains_cyrillic');
+    }
+
     public function test_third_party_marketplace_promotion_cannot_be_published(): void
     {
         $product = $this->validProduct([
