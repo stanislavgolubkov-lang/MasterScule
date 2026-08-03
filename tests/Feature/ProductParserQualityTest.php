@@ -552,4 +552,59 @@ class ProductParserQualityTest extends TestCase
             $adapterSet->display_attributes,
         ], JSON_UNESCAPED_UNICODE));
     }
+
+    public function test_gys_safety_characteristics_are_fully_localized_in_romanian(): void
+    {
+        $helmet = new Product([
+            'attributes' => [
+                'Тип' => 'Автоматическая сварочная маска',
+                'Оптический класс' => '1/1/1/1',
+                'Светлое состояние' => 'DIN 3',
+                'Степень затемнения' => 'DIN 5–9 / 9–13',
+                'Время срабатывания' => '0.08 ms',
+                'Время возврата в светлое состояние' => '0.15–0.8 s',
+                'Размер смотрового окна' => '100 × 93 mm',
+                'Количество датчиков' => '4',
+                'Источник питания' => 'Солнечная батарея + 2 × CR2032',
+                'Режим шлифования' => 'Да',
+            ],
+        ]);
+        $hood = new Product([
+            'attributes' => [
+                'Тип' => 'Защитный капюшон сварщика',
+                'Материал' => 'Огнестойкий хлопок',
+                'Плотность материала' => '305 g/m²',
+                'Размер' => 'XL',
+                'Стандарт' => 'EN ISO 11611:2015, class 1',
+                'Применение' => 'Защита головы, ушей и шеи при сварке',
+            ],
+        ]);
+
+        app()->setLocale('ro');
+
+        $this->assertSame([
+            'Tip' => 'Mască automată de sudură',
+            'Clasă optică' => '1/1/1/1',
+            'Nuanță deschisă' => 'DIN 3',
+            'Grad de întunecare' => 'DIN 5–9 / 9–13',
+            'Timp de reacție' => '0.08 ms',
+            'Timp de revenire la starea luminoasă' => '0.15–0.8 s',
+            'Dimensiunea câmpului vizual' => '100 × 93 mm',
+            'Număr de senzori' => '4',
+            'Sursă de alimentare' => 'Celulă solară + 2 × CR2032',
+            'Mod de șlefuire' => 'Da',
+        ], $helmet->display_attributes);
+        $this->assertSame([
+            'Tip' => 'Cagulă de protecție pentru sudor',
+            'Material' => 'Bumbac ignifug',
+            'Densitatea materialului' => '305 g/m²',
+            'Dimensiune' => 'XL',
+            'Standard' => 'EN ISO 11611:2015, class 1',
+            'Utilizare' => 'Protejarea capului, urechilor și gâtului la sudare',
+        ], $hood->display_attributes);
+        $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', json_encode([
+            $helmet->display_attributes,
+            $hood->display_attributes,
+        ], JSON_UNESCAPED_UNICODE));
+    }
 }
