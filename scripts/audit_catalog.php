@@ -6,6 +6,7 @@ use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Page;
 use App\Models\Product;
+use App\Services\Catalog\ProductImageAvailabilityService;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Str;
 
@@ -41,6 +42,7 @@ $activeProducts = $products->filter(fn (Product $product) => $product->is_active
     && $product->stock_status === 'in_stock'
     && (int) $product->stock_quantity > 0);
 $activeProductIds = array_fill_keys($activeProducts->modelKeys(), true);
+$imageAvailability = app(ProductImageAvailabilityService::class);
 
 $imageStats = [
     'missing_main' => 0,
@@ -64,15 +66,16 @@ $imageUsage = [];
 $brokenImageSamples = [];
 $brokenGallerySamples = [];
 
-$collectImageStats = function (Product $product, array &$stats) use (&$brokenImageSamples, &$brokenGallerySamples): void {
+$collectImageStats = function (Product $product, array &$stats) use ($imageAvailability, &$brokenImageSamples, &$brokenGallerySamples): void {
     $main = trim((string) $product->main_image);
-    if ($main === '') {
+    $mainInspection = $imageAvailability->inspect($main);
+    if ($mainInspection['code'] === 'missing') {
         $stats['missing_main']++;
-    } elseif (preg_match('~placeholder|fallback|no[-_ ]?image~i', $main)) {
+    } elseif ($mainInspection['code'] === 'placeholder') {
         $stats['placeholder_main']++;
-    } elseif (preg_match('~^https?://~i', $main)) {
+    } elseif ($mainInspection['code'] === 'remote_not_verified') {
         $stats['external_main']++;
-    } elseif (localImageExists($main) === false) {
+    } elseif (! $mainInspection['available']) {
         $stats['broken_local_main']++;
         if (count($brokenImageSamples) < 25) {
             $brokenImageSamples[] = ['id' => $product->id, 'sku' => $product->sku, 'image' => $main];
@@ -92,11 +95,12 @@ $collectImageStats = function (Product $product, array &$stats) use (&$brokenIma
     $stats['gallery_images_total'] += $galleryCount;
 
     foreach ($gallery as $galleryImage) {
-        if (preg_match('~placeholder|fallback|no[-_ ]?image~i', $galleryImage)) {
+        $galleryInspection = $imageAvailability->inspect((string) $galleryImage);
+        if ($galleryInspection['code'] === 'placeholder') {
             $stats['placeholder_gallery']++;
-        } elseif (preg_match('~^https?://~i', $galleryImage)) {
+        } elseif ($galleryInspection['code'] === 'remote_not_verified') {
             $stats['external_gallery']++;
-        } elseif (localImageExists($galleryImage) === false) {
+        } elseif (! $galleryInspection['available']) {
             $stats['broken_local_gallery']++;
             if (count($brokenGallerySamples) < 25) {
                 $brokenGallerySamples[] = ['id' => $product->id, 'sku' => $product->sku, 'image' => $galleryImage];

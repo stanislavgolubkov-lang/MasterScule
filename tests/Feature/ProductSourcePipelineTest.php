@@ -46,11 +46,12 @@ class ProductSourcePipelineTest extends TestCase
         $this->assertTrue(app(ProductSourceRegistry::class)->isOfficialDomain('omo-oss-image.thefastimg.com', 'Torin BIG RED'));
     }
 
-    public function test_gys_registry_and_adapter_use_only_reviewed_distributor_domains(): void
+    public function test_gys_registry_prefers_manufacturer_and_adapter_supports_reviewed_distributor(): void
     {
         $sources = app(ProductSourceRegistry::class)->forBrand('GYS');
 
-        $this->assertSame('clickoutil.com', $sources[0]['domain']);
+        $this->assertSame('gys.fr', $sources[0]['domain']);
+        $this->assertSame(120, $sources[0]['priority']);
         $this->assertFalse(app(ProductSourceRegistry::class)->isOfficialDomain('maximum.md', 'GYS'));
         $this->assertFalse(app(ProductSourceRegistry::class)->isOfficialDomain('i.simpalsmedia.com', 'GYS'));
         $this->assertTrue(app(ProductSourceRegistry::class)->isOfficialDomain('www.gysusa.com', 'GYS'));
@@ -755,6 +756,26 @@ class ProductSourcePipelineTest extends TestCase
 
         $this->assertTrue($search->found);
         $this->assertSame(['https://eng.jtc.com.tw/upload/product/JTC-1339.jpg'], $data->images);
+    }
+
+    public function test_jtc_adapter_reads_sku_from_official_result_card_sibling(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://eng.jtc.com.tw/product/index.php?keywords=JTC-1206&mode=search' => Http::response(
+                '<div id="product">'
+                .'<div id="product-popup" class="image"><a href="/product/?mode=data&id=2876&top=2">Image</a></div>'
+                .'<div class="no">JTC-1206</div>'
+                .'<div id="product-popup" class="name"><a href="./?mode=data&id=2876&top=2">CLICK-TYPE TORQUE WRENCH 3/4&quot;</a></div>'
+                .'</div>'
+            ),
+        ]);
+
+        $result = app(JtcOfficialAdapter::class)->searchBySku('JTC-1206', 'JTC');
+
+        $this->assertTrue($result->found);
+        $this->assertSame('https://eng.jtc.com.tw/product/?mode=data&id=2876&top=2', $result->url);
+        $this->assertSame('CLICK-TYPE TORQUE WRENCH 3/4&quot;', $result->title);
     }
 
     public function test_hoegert_official_search_uses_product_page_before_direct_image(): void

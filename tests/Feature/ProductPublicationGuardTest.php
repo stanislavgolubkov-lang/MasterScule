@@ -54,6 +54,18 @@ class ProductPublicationGuardTest extends TestCase
         $this->assertGuardBlocked($product, 'invalid_image_placeholder');
     }
 
+    public function test_product_with_empty_description_section_labels_cannot_be_published(): void
+    {
+        $product = $this->validProduct([
+            'description' => "Назначение:\nОбласть применения:",
+            'description_ru' => "Назначение:\nОбласть применения:",
+            'description_ro' => "Scop:\nDomeniul de aplicare:",
+        ]);
+
+        $this->assertGuardBlocked($product, 'content_incomplete_description_ru');
+        $this->assertGuardBlocked($product, 'content_incomplete_description_ro');
+    }
+
     public function test_processed_fallback_directory_is_not_treated_as_placeholder(): void
     {
         UploadedFile::fake()->image('fallback.webp', 40, 40)

@@ -62,6 +62,22 @@ class ProductContentQualityGuard
             return true;
         }
 
+        $sectionLabels = preg_split('/\R+/u', $normalized) ?: [];
+        $sectionLabels = array_values(array_filter(array_map(
+            static fn (string $line): string => mb_strtolower(trim($line, " \t\n\r\0\x0B:")),
+            $sectionLabels,
+        )));
+        if ($sectionLabels !== [] && collect($sectionLabels)->every(fn (string $line): bool => in_array($line, [
+            'назначение',
+            'область применения',
+            'scop',
+            'domeniul de aplicare',
+            'destinație',
+            'descriere',
+        ], true))) {
+            return true;
+        }
+
         return mb_strlen($normalized) < 20;
     }
 

@@ -32,6 +32,44 @@ class JtcOfficialAdapter extends AbstractOfficialAdapter
                 continue;
             }
 
+            // The official JTC result card keeps the SKU in a sibling `.no`
+            // element instead of inside the product link. Match the whole card
+            // before falling back to the generic anchor parser.
+            preg_match_all(
+                '/<div\b[^>]*class=["\'][^"\']*\bno\b[^"\']*["\'][^>]*>([\s\S]*?)<\/div>\s*<div\b[^>]*class=["\'][^"\']*\bname\b[^"\']*["\'][^>]*>\s*<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>([\s\S]*?)<\/a>/iu',
+                $html,
+                $cards,
+                PREG_SET_ORDER,
+            );
+
+            foreach ($cards as $card) {
+                $candidateSku = $this->normalizeSku(trim(strip_tags((string) ($card[1] ?? ''))));
+                if ($candidateSku !== $needle) {
+                    continue;
+                }
+
+                $candidate = html_entity_decode((string) ($card[2] ?? ''), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                if (Str::startsWith($candidate, './?')) {
+                    $candidate = '/product/?'.Str::after($candidate, './?');
+                }
+                $absolute = $this->absoluteUrl($url, $candidate);
+                $domain = (string) parse_url($absolute, PHP_URL_HOST);
+                if ($this->isListingUrl($absolute) || ! $this->registry->isOfficialDomain($domain, $brand)) {
+                    continue;
+                }
+
+                return new ProductSourceSearchResult(
+                    true,
+                    $sku,
+                    $brand,
+                    $absolute,
+                    $domain,
+                    trim(strip_tags((string) ($card[3] ?? ''))),
+                    true,
+                    priority: 100,
+                );
+            }
+
             preg_match_all('/<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>([\s\S]*?)<\/a>/iu', $html, $links, PREG_SET_ORDER);
             foreach ($links as $link) {
                 $candidate = html_entity_decode((string) ($link[1] ?? ''), ENT_QUOTES | ENT_HTML5, 'UTF-8');
