@@ -33,6 +33,7 @@ Scope: all 5,739 products in the local catalog, including RU/RO text, SKU consis
 - Rebuilt all six remaining one-characteristic JTC cards with complete RU/RO descriptions and specifications. Four products now reference exact official JTC pages and official image candidates; `JTC-4145` is explicitly marked as discontinued and replaced by `JTC-6816`; `JW0832` remains in source review because its exact manufacturer and kit contents are not confirmed by a primary catalog. Reclassified `JTC-4729` into automotive air-conditioning tools and `JTC-4822` into a new automotive cooling-system leaf.
 - Rebuilt 18 KING TONY hand-tool cards from exact official product pages: punch and file sets, plier sets and individual pliers, wire/cable tools, aviation snips, a ratcheting tubing cutter, and a four-size tube bender now have complete RU/RO descriptions and SKU-specific characteristics. Corrected the critical `6411MP` mismatch from end-cutting pliers to the actual 11-piece 3/4″ impact HEX bit-socket set; removed its wrong pliers image, returned the card to draft, and queued the exact official `6411MP` image. Added a dedicated pipe-tools category for `7912-23` and `7CA15-10M`.
 - Rebuilt 18 more KING TONY cards from exact official product pages and catalog tables: three power-bit sets, two impact-socket sets, two wrench sets, soldering wire, a carbide scraper, two socket sets, three compact insert adapters, two six-piece adapter sets, and a power-bit adapter set. Corrected four category assignments (`1406PR`, `9CJ7416`, `786P06`, and `9103PR`) and preserved the existing exact-SKU official images. Ambiguous suffix variants `1214MRN01` and `9AE53-80` were deliberately left for separate source review.
+- Rebuilt 26 GYS steel/aluminium dent-pulling consumable and accessory cards from exact catalog SKU tables: nails, studs, rings, electrodes, wavy wire, stars, magnetic-earth parts, and lifting rods now have normalized RU/RO descriptions plus localized characteristics. Corrected `050792` from the imported 150/300/500 mm claim to the catalog lengths 180/300/500 mm and recorded the manufacturer-catalog evidence without replacing the cards' existing source URLs.
 
 ## Current automated audit results
 
@@ -60,7 +61,7 @@ These counts are review queues, not automatically proven content errors:
 
 - 264 products need content review (down from 833 before the curated family passes).
 - 805 products need source review. Four JTC records were cleared against exact official manufacturer pages; `JTC-4145` and `JW0832` remain in review because no current primary page confirms those exact records.
-- 175 products have only one characteristic (down from 910); no products are left without characteristics. The remaining queue is GYS 124 and KING TONY 51; JTC, HOEGERT, M7, and Torin are now at 0.
+- 149 products have only one characteristic (down from 910); no products are left without characteristics. The remaining queue is GYS 98 and KING TONY 51; JTC, HOEGERT, M7, and Torin are now at 0.
 - Short generic catalog descriptions remain concentrated in JTC, Hoegert, M7, and the unreviewed KING TONY imports.
 - 701 products are assigned to broad non-leaf categories; 680 of them are published. The largest broad buckets are now `scule-speciale-auto` (409), `instrument-manual` (137), and `echipamente-pentru-service` (43).
 
@@ -93,11 +94,16 @@ Suspicious exact characteristic groups spanning unrelated products or categories
 ## Recommended next pass
 
 1. Recover exact-SKU official images for the 633 KING TONY products, then replace the 46 GYS placeholders.
-2. Review the remaining 264 content and 805 source queues by brand, beginning with the 124 GYS and 51 KING TONY one-characteristic cards.
+2. Review the remaining 264 content and 805 source queues by brand, beginning with the 98 GYS and 51 KING TONY one-characteristic cards.
 3. Reclassify the remaining 683 published products in broad categories after checking product semantics and official source data.
 4. Review duplicate images and characteristic groups only with SKU-level source confirmation; do not mass-delete shared family assets.
 
 Selected official verification sources used during the curated passes:
+
+- GYS car-body accessories and consumables catalog: https://www.shop.niteh.com/media/Pages_from_GYS_Carbody_HD_1_1.pdf
+- GYS USA `049413`: https://www.gysusa.com/product-p/049413.htm
+- GYS USA `049444`: https://www.gysusa.com/product-p/049444.htm
+- GYS USA `050648`: https://www.gysusa.com/product-p/050648.htm
 
 - `37335-030`: https://www.kingtony.com/product_detail.php?Key=2914&cID=208&uID=75
 - `9AL12`: https://www.kingtony.com/product_detail.php?Key=982&cID=661&uID=61

@@ -430,6 +430,28 @@ class ProductParserQualityTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', json_encode($product->display_attributes, JSON_UNESCAPED_UNICODE));
     }
 
+    public function test_gys_body_repair_characteristics_are_fully_localized_in_romanian(): void
+    {
+        $product = new Product([
+            'attributes' => [
+                'Тип' => 'Скрученные приварные кольца',
+                'Исполнение' => 'Скрученное',
+                'Количество предметов' => '50',
+                'Применение' => 'Вытягивание углов и рёбер кузовных панелей',
+            ],
+        ]);
+
+        app()->setLocale('ro');
+
+        $this->assertSame([
+            'Tip' => 'Inele sudabile răsucite',
+            'Execuție' => 'Răsucit',
+            'Număr de piese' => '50',
+            'Utilizare' => 'Tragerea colțurilor și nervurilor panourilor de caroserie',
+        ], $product->display_attributes);
+        $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', json_encode($product->display_attributes, JSON_UNESCAPED_UNICODE));
+    }
+
     public function test_king_tony_impact_set_characteristics_are_fully_localized_in_romanian(): void
     {
         $product = new Product([
