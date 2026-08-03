@@ -607,4 +607,59 @@ class ProductParserQualityTest extends TestCase
             $hood->display_attributes,
         ], JSON_UNESCAPED_UNICODE));
     }
+
+    public function test_gys_charger_and_booster_characteristics_are_fully_localized_in_romanian(): void
+    {
+        $charger = new Product([
+            'attributes' => [
+                'Тип' => 'Автоматическое зарядное устройство',
+                'Напряжение зарядки' => '6 / 12 / 24 V',
+                'Зарядный ток' => '9 A (6/12 V) / 6 A (24 V)',
+                'Диапазон ёмкости аккумулятора' => '18–220 Ah (6/12 V) / 15–125 Ah (24 V)',
+                'Поддерживаемые аккумуляторы' => 'Свинцово-кислотные: жидкостные / GEL / AGM / VRLA',
+                'Количество ступеней зарядки' => '8',
+            ],
+        ]);
+        $booster = new Product([
+            'attributes' => [
+                'Тип' => 'Литиевое пусковое устройство и внешний аккумулятор',
+                'Напряжение' => '12 V',
+                'Тип внутреннего аккумулятора' => 'LiCoO2',
+                'Ёмкость аккумулятора' => '6 Ah',
+                'Энергия аккумулятора' => '92.5 Wh',
+                'Пусковой ток' => '900 A',
+                'Ток прокрутки' => '1400 A',
+                'Пиковый ток' => '1700 A',
+                'Время полной зарядки' => '1 h 15 min (67 W)',
+                'Выходы питания' => 'USB-A / USB-C PD 60 W / 15 V DC, 10 A',
+            ],
+        ]);
+
+        app()->setLocale('ro');
+
+        $this->assertSame([
+            'Tip' => 'Încărcător automat',
+            'Tensiune de încărcare' => '6 / 12 / 24 V',
+            'Curent de încărcare' => '9 A (6/12 V) / 6 A (24 V)',
+            'Intervalul capacității bateriei' => '18–220 Ah (6/12 V) / 15–125 Ah (24 V)',
+            'Baterii compatibile' => 'Plumb-acid: lichide / GEL / AGM / VRLA',
+            'Număr de etape de încărcare' => '8',
+        ], $charger->display_attributes);
+        $this->assertSame([
+            'Tip' => 'Booster cu litiu și baterie externă',
+            'Tensiune' => '12 V',
+            'Tipul bateriei interne' => 'LiCoO2',
+            'Capacitatea acumulatorului' => '6 Ah',
+            'Energia bateriei' => '92.5 Wh',
+            'Curent de pornire' => '900 A',
+            'Curent de antrenare' => '1400 A',
+            'Curent de vârf' => '1700 A',
+            'Timp de încărcare completă' => '1 h 15 min (67 W)',
+            'Ieșiri de alimentare' => 'USB-A / USB-C PD 60 W / 15 V DC, 10 A',
+        ], $booster->display_attributes);
+        $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', json_encode([
+            $charger->display_attributes,
+            $booster->display_attributes,
+        ], JSON_UNESCAPED_UNICODE));
+    }
 }
