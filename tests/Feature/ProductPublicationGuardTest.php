@@ -54,6 +54,25 @@ class ProductPublicationGuardTest extends TestCase
         $this->assertGuardBlocked($product, 'invalid_image_placeholder');
     }
 
+    public function test_excluded_catalog_brand_cannot_be_published(): void
+    {
+        $brand = Brand::create([
+            'name' => 'JBM',
+            'slug' => 'jbm',
+            'is_active' => true,
+        ]);
+        $product = $this->validProduct(['brand_id' => $brand->id]);
+
+        $this->assertGuardBlocked($product, 'excluded_catalog_product');
+    }
+
+    public function test_excluded_catalog_sku_cannot_be_published_under_another_brand(): void
+    {
+        $product = $this->validProduct(['sku' => 'TRHS-8781']);
+
+        $this->assertGuardBlocked($product, 'excluded_catalog_product');
+    }
+
     public function test_product_with_empty_description_section_labels_cannot_be_published(): void
     {
         $product = $this->validProduct([

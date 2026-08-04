@@ -38,6 +38,20 @@ class ProductPublicationGuard
         if (! $brandExists) {
             $add('missing_brand', $this->message('Не указан существующий бренд.', 'Marca valida lipseste.'));
         }
+        $brand = $product->relationLoaded('brand')
+            ? $product->brand
+            : ($product->brand_id ? Brand::find($product->brand_id) : null);
+        $excludedSkus = collect(config('product_parser.excluded_catalog.skus', []))
+            ->map(fn ($sku) => Str::lower((string) preg_replace('/[^a-z0-9]+/i', '', (string) $sku)))
+            ->all();
+        $excludedBrands = collect(config('product_parser.excluded_catalog.brands', []))
+            ->map(fn ($name) => Str::lower(trim((string) $name)))
+            ->all();
+        $normalizedSku = Str::lower((string) preg_replace('/[^a-z0-9]+/i', '', (string) $product->sku));
+        $normalizedBrand = Str::lower(trim((string) ($brand?->name ?? '')));
+        if (in_array($normalizedSku, $excludedSkus, true) || in_array($normalizedBrand, $excludedBrands, true)) {
+            $add('excluded_catalog_product', 'Product is excluded from the MasterScule catalog.');
+        }
         $categoryExists = $product->relationLoaded('category')
             ? $product->category !== null
             : ($product->category_id && Category::whereKey($product->category_id)->exists());

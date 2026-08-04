@@ -775,6 +775,46 @@ class ExampleTest extends TestCase
         Queue::assertPushed(ParsePriceListJob::class);
     }
 
+    public function test_price_list_skips_products_excluded_from_the_catalog(): void
+    {
+        Storage::fake('local');
+        Storage::disk('local')->put('parser/test/excluded.csv', implode("\n", [
+            'Артикул;Наименование;ОтпускЦена;Остаток',
+            'JBM-51896;Набор для ремонта резьбы;100;1',
+            'TRHS-8781;Набор съёмников форсунок;200;1',
+        ]));
+
+        $batch = ProductParserBatch::create([
+            'title' => 'Excluded catalog products test',
+            'source_type' => 'price_list',
+            'file_name' => 'excluded.csv',
+            'file_path' => 'parser/test/excluded.csv',
+            'file_type' => 'csv',
+            'price_type' => 'retail_price',
+            'import_mode' => 'dry_run',
+            'status' => 'pending',
+            'options_json' => [
+                'search_images' => false,
+                'process_images' => false,
+                'create_drafts_automatically' => false,
+            ],
+        ]);
+
+        app(ProductPriceListImportService::class)->dryRun($batch);
+
+        $batch->refresh();
+        $this->assertSame('dry_run_completed', $batch->status);
+        $this->assertSame(0, $batch->product_rows);
+        $this->assertSame(2, $batch->skipped_rows);
+        $this->assertSame(2, $batch->items()->where('status', 'skipped')->count());
+        $this->assertSame(
+            2,
+            $batch->items()->where('error_message', 'Excluded from the MasterScule catalog.')->count(),
+        );
+        $this->assertDatabaseMissing('products', ['sku' => 'JBM-51896']);
+        $this->assertDatabaseMissing('products', ['sku' => 'TRHS-8781']);
+    }
+
     public function test_price_list_dry_run_tracks_brand_vehicle_context_without_creating_products(): void
     {
         Storage::fake('local');

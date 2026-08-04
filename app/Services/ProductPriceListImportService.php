@@ -80,6 +80,16 @@ class ProductPriceListImportService
         $rowLimit = $dryRun ? 0 : max(0, (int) ($options['row_limit'] ?? 0));
         $context = $this->initialContext($batch);
         $seenSkus = [];
+        $excludedSkus = collect(config('product_parser.excluded_catalog.skus', []))
+            ->map(fn ($sku) => $this->normalizeSku($this->cleanSku((string) $sku)))
+            ->filter()
+            ->flip()
+            ->all();
+        $excludedBrands = collect(config('product_parser.excluded_catalog.brands', []))
+            ->map(fn ($brand) => Str::lower(trim((string) $brand)))
+            ->filter()
+            ->flip()
+            ->all();
         $existingProducts = $this->existingProductsIndex();
         $stats = $this->emptyStats();
         $queuedItemIds = [];
@@ -118,6 +128,22 @@ class ProductPriceListImportService
                 $sku = $this->cleanSku((string) $row['sku']);
                 $normalizedSku = $this->normalizeSku($sku);
                 $brand = $this->brandValue($row['brand'] ?? null) ?: $context['brand'];
+                $normalizedBrand = Str::lower(trim((string) $brand));
+
+                if (isset($excludedSkus[$normalizedSku]) || isset($excludedBrands[$normalizedBrand])) {
+                    $this->skippedItem(
+                        $batch,
+                        $row,
+                        $sku,
+                        'Excluded from the MasterScule catalog.',
+                        $brand,
+                        $normalizedSku,
+                        $context,
+                    );
+                    $stats['skipped_rows']++;
+
+                    continue;
+                }
                 // Products use SKU as the global identity, so a repeated SKU must
                 // never create two drafts even when the supplier changes brand text.
                 $duplicateKey = $normalizedSku;

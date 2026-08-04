@@ -6,6 +6,10 @@ return [
     'max_sku_per_batch' => (int) env('PRODUCT_PARSER_MAX_SKU_PER_BATCH', 20000),
     'max_file_size_kb' => (int) env('PRODUCT_PARSER_MAX_FILE_SIZE_KB', 51200),
     'allowed_formats' => ['xls', 'xlsx', 'csv'],
+    'excluded_catalog' => [
+        'brands' => ['JBM', 'DATET'],
+        'skus' => ['JBM-51896', 'TRHS-8781'],
+    ],
     'max_images_per_product' => (int) env('PRODUCT_PARSER_MAX_IMAGES_PER_PRODUCT', 4),
     'min_confidence_score' => max(90, (int) env('PRODUCT_PARSER_MIN_CONFIDENCE_SCORE', 90)),
     'image_size' => (int) env('PRODUCT_PARSER_IMAGE_SIZE', 1200),
