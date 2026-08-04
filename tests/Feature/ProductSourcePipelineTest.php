@@ -2,23 +2,33 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ParsePriceListJob;
+use App\Models\Brand;
 use App\Models\Category;
+use App\Models\Product;
 use App\Models\ProductParserBatch;
 use App\Models\ProductParserItem;
 use App\Models\Setting;
+use App\Services\ParserQueueSupervisor;
 use App\Services\ProductCategoryDetector;
 use App\Services\ProductCategoryResolverService;
 use App\Services\ProductDraftService;
 use App\Services\ProductParserSettings;
+use App\Services\ProductPriceListImportService;
 use App\Services\ProductSearchService;
-use App\Services\ProductSources\Adapters\JtcOfficialAdapter;
 use App\Services\ProductSources\Adapters\GysOfficialAdapter;
+use App\Services\ProductSources\Adapters\JtcOfficialAdapter;
 use App\Services\ProductSources\Adapters\MightySevenOfficialAdapter;
+use App\Services\ProductSources\Adapters\SpinOfficialAdapter;
+use App\Services\ProductSources\Adapters\TelwinOfficialAdapter;
+use App\Services\ProductSources\Adapters\ThinkcarOfficialAdapter;
 use App\Services\ProductSources\Adapters\TorinOfficialAdapter;
+use App\Services\ProductSources\Adapters\UhlMashOfficialAdapter;
 use App\Services\ProductSources\ProductSourceRegistry;
 use App\Services\ProductTranslationService;
 use App\Services\TrisToolsEnrichmentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Mockery;
 use Tests\TestCase;
@@ -26,6 +36,550 @@ use Tests\TestCase;
 class ProductSourcePipelineTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_price_list_start_job_uses_dedicated_parser_queue(): void
+    {
+        $this->assertSame('parser', (new ParsePriceListJob(123))->queue);
+    }
+
+    public function test_parser_queue_supervisor_recovers_and_drains_an_orphaned_job(): void
+    {
+        config()->set('queue.default', 'database');
+
+        ParsePriceListJob::dispatch(999999);
+        $jobId = DB::table('jobs')->value('id');
+        DB::table('jobs')->where('id', $jobId)->update([
+            'attempts' => 1,
+            'reserved_at' => now()->subHour()->timestamp,
+        ]);
+
+        app(ParserQueueSupervisor::class)->drain();
+
+        $this->assertDatabaseCount('jobs', 0);
+        $this->assertDatabaseCount('failed_jobs', 0);
+    }
+
+    public function test_new_parser_brands_are_active_and_thinckar_is_canonicalized(): void
+    {
+        $this->assertSame(
+            ['SPIN', 'TELWIN', 'THINKCAR'],
+            Brand::query()->whereIn('slug', ['spin', 'telwin', 'thinkcar'])->orderBy('name')->pluck('name')->all(),
+        );
+        $this->assertSame(3, Brand::query()->whereIn('slug', ['spin', 'telwin', 'thinkcar'])->where('is_active', true)->count());
+        $this->assertSame(
+            [
+                'spin' => '/images/brand/spin.png',
+                'telwin' => '/images/brand/telwin.svg',
+                'thinkcar' => '/images/brand/thinkcar.png',
+            ],
+            Brand::query()->whereIn('slug', ['spin', 'telwin', 'thinkcar'])->orderBy('slug')->pluck('logo', 'slug')->all(),
+        );
+
+        $registry = app(ProductSourceRegistry::class);
+        $this->assertSame('THINKCAR', $registry->brandKey('THINCKAR'));
+        $this->assertTrue($registry->isOfficialDomain('www.spinsrl.it', 'SPIN'));
+        $this->assertTrue($registry->isOfficialDomain('www.telwin.com', 'TELWIN'));
+        $this->assertTrue($registry->isOfficialDomain('mythinkcar.com', 'THINCKAR'));
+        $this->assertTrue($registry->isOfficialDomain('thinkcar.ua', 'THINKCAR'));
+        $this->assertTrue($registry->isOfficialDomain('thinktool.ru', 'THINKCAR'));
+        $this->assertTrue($registry->isOfficialDomain('thinkcar.in', 'THINKCAR'));
+        $this->assertSame('UHL_MASH', $registry->brandKey('УХЛ-МАШ'));
+        $this->assertTrue($registry->isOfficialDomain('uhl-mash.com.ua', 'УХЛ-МАШ'));
+    }
+
+    public function test_parser_brands_have_official_logos(): void
+    {
+        $this->assertSame(
+            [
+                'hazet' => '/images/brand/hazet.svg',
+                'uhl-mash' => '/images/brand/uhl-mash.svg',
+                'vigor' => '/images/brand/vigor.svg',
+            ],
+            Brand::query()->whereIn('slug', ['hazet', 'uhl-mash', 'vigor'])->orderBy('slug')->pluck('logo', 'slug')->all(),
+        );
+
+        $this->assertSame(
+            3,
+            Brand::query()->whereIn('slug', ['hazet', 'uhl-mash', 'vigor'])->where('is_active', true)->count(),
+        );
+
+        $this->assertFileExists(public_path('images/brand/uhl-mash.svg'));
+    }
+
+    public function test_vigor_obvious_families_override_stale_learned_categories(): void
+    {
+        foreach ([
+            ['slug' => 'furtunuri-cuple-accesorii', 'name' => 'Шланги и соединения', 'name_ro' => 'Furtunuri și cuple'],
+            ['slug' => 'scule-pentru-roti-vulcanizare', 'name' => 'Инструмент для колес', 'name_ro' => 'Scule pentru roți'],
+            ['slug' => 'diagnoza-auto', 'name' => 'Автодиагностика', 'name_ro' => 'Diagnostic auto'],
+        ] as $category) {
+            Category::firstOrCreate(['slug' => $category['slug']], $category + [
+                'is_active' => true,
+                'is_assignable' => true,
+            ]);
+        }
+
+        $hose = app(ProductCategoryDetector::class)->detect(
+            'V7143-10',
+            'Катушка с воздушым шлангом 10 мм, длина 15 м',
+            'VIGOR',
+        );
+        $wheel = app(ProductCategoryDetector::class)->detect(
+            'V7001/4',
+            'Набор специальных насадок для V7001, 4 штуки',
+            'VIGOR',
+        );
+        $endoscope = app(ProductCategoryDetector::class)->detect(
+            'V7501-39',
+            'Цифровой видеоэндоскоп с поворотной камерой 3,9 мм',
+            'VIGOR',
+        );
+
+        $this->assertSame('furtunuri-cuple-accesorii', $hose['category_slug']);
+        $this->assertSame('scule-pentru-roti-vulcanizare', $wheel['category_slug']);
+        $this->assertSame('diagnoza-auto', $endoscope['category_slug']);
+        $this->assertGreaterThanOrEqual(90, $hose['confidence']);
+        $this->assertGreaterThanOrEqual(90, $wheel['confidence']);
+        $this->assertGreaterThanOrEqual(90, $endoscope['confidence']);
+    }
+
+    public function test_uhl_mash_families_override_shifted_headings_and_generic_keywords(): void
+    {
+        foreach ([
+            'mobilier-pentru-service' => ['Мебель для СТО', 'Mobilier pentru service'],
+            'dulapuri-si-organizare' => ['Шкафы и организация', 'Dulapuri și organizare'],
+            'accesorii-pentru-bancuri-de-lucru' => ['Оснастка для верстаков', 'Accesorii pentru bancuri de lucru'],
+            'sisteme-de-depozitare-si-transport' => ['Системы хранения', 'Sisteme de depozitare'],
+            'carucioare-de-scule' => ['Тележки инструментальные', 'Cărucioare de scule'],
+            'polizoare' => ['Болгарки и шлифмашины', 'Polizoare'],
+            'menghine-si-cleme' => ['Тиски и зажимы', 'Menghine și cleme'],
+        ] as $slug => [$name, $nameRo]) {
+            Category::firstOrCreate(
+                ['slug' => $slug],
+                ['name' => $name, 'name_ro' => $nameRo, 'is_active' => true, 'is_assignable' => true],
+            );
+        }
+
+        $detector = app(ProductCategoryDetector::class);
+        $cases = [
+            ['ВМ-0410', 'Ключница (24 ключа)', 'dulapuri-si-organizare'],
+            ['5540-0714', 'Ножки для одёжного металлического шкафа', 'accesorii-pentru-bancuri-de-lucru'],
+            ['СК2,0/1000х400', 'Стеллаж модульный, 5 полок', 'sisteme-de-depozitare-si-transport'],
+            ['ТУ6МС', 'Tележка инструментальная, 7 ящиков', 'carucioare-de-scule'],
+            ['T2040', 'Двухсторонний шлифовальный станок (точило)', 'polizoare'],
+            ['uhl-mash2', 'Тиски слесарные поворотные 150 мм', 'menghine-si-cleme'],
+        ];
+
+        foreach ($cases as [$sku, $name, $expectedSlug]) {
+            $result = $detector->detect($sku, $name, 'УХЛ-МАШ', 'UHL-MASH (Мебель металл.)', 'Смещённый заголовок');
+
+            $this->assertSame($expectedSlug, $result['category_slug'], $sku);
+            $this->assertFalse($result['needs_review'], $sku);
+        }
+
+        $fromBadBreadcrumb = $detector->detectFromTrisTools(
+            'ШО-400/1',
+            'Шкаф одёжный',
+            'УХЛ-МАШ',
+            ['Оснастка', 'Ножи и лезвия'],
+        );
+        $this->assertSame('dulapuri-si-organizare', $fromBadBreadcrumb['category_slug']);
+    }
+
+    public function test_new_brand_official_adapters_resolve_exact_sku_sources(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://www.spinsrl.it/?s=01.001.44' => Http::response(
+                '<a href="/prodotto/breeze-x4-dual-touch/">SPIN Breeze X4 01.001.44</a>'
+            ),
+            'https://www.spinsrl.it/prodotto/breeze-x4-dual-touch/' => Http::response(
+                '<html><head><meta name="description" content="Official SPIN product">'
+                .'<meta property="og:image" content="https://www.spinsrl.it/uploads/spin-01.001.44.jpg"></head>'
+                .'<body><h1>Breeze X4 Dual Touch</h1></body></html>'
+            ),
+            'https://www.telwin.com/intl/en/generate-pdf/816087' => Http::response('TELWIN official product sheet 816087'),
+            'https://mythinkcar.com/search?q=THINKSCAN%20689BT' => Http::response(
+                '<a href="/products/thinkcar-thinkscan-689bt-bidirectional-scan-tool">THINKSCAN 689BT</a>'
+            ),
+            'https://mythinkcar.com/products/thinkcar-thinkscan-689bt-bidirectional-scan-tool' => Http::response(
+                '<html><head><meta name="description" content="Official THINKCAR scanner">'
+                .'<meta property="og:image" content="https://mythinkcar.com/cdn/shop/files/thinkscan-689bt.jpg"></head>'
+                .'<body><h1>THINKSCAN 689BT</h1></body></html>'
+            ),
+            'https://uhl-mash.com.ua/search/*' => Http::response(
+                '<a href="https://uhl-mash.com.ua/products/kantselyarskie_shkafy/shkaf-arkhivniy-kantselyarskiy-shmr-20.php">'
+                .'Шкаф архивный канцелярский ШМР-20</a>'
+            ),
+            'https://uhl-mash.com.ua/products/kantselyarskie_shkafy/shkaf-arkhivniy-kantselyarskiy-shmr-20.php' => Http::response(
+                '<html><head><meta name="description" content="Официальный архивный шкаф УХЛ-МАШ">'
+                .'<meta property="og:image" content="https://uhl-mash.com.ua/image/catalog/shmr-20.jpg"></head>'
+                .'<body><h1>Шкаф архивный ШМР-20</h1></body></html>'
+            ),
+        ]);
+
+        $spin = app(SpinOfficialAdapter::class);
+        $spinSearch = $spin->searchBySku('01.001.44', 'SPIN');
+        $this->assertTrue($spinSearch->found);
+        $this->assertSame(['https://www.spinsrl.it/uploads/spin-01.001.44.jpg'], $spin->fetchProductPage($spinSearch)->images);
+
+        $telwin = app(TelwinOfficialAdapter::class)->searchBySku('816087', 'TELWIN');
+        $this->assertTrue($telwin->found);
+        $this->assertSame('https://www.telwin.com/intl/en/generate-pdf/816087', $telwin->url);
+
+        $thinkcar = app(ThinkcarOfficialAdapter::class);
+        $thinkcarSearch = $thinkcar->searchBySku('THINKSCAN 689BT', 'THINCKAR');
+        $this->assertTrue($thinkcarSearch->found);
+        $this->assertSame(
+            ['https://mythinkcar.com/cdn/shop/files/thinkscan-689bt.jpg'],
+            $thinkcar->fetchProductPage($thinkcarSearch)->images,
+        );
+
+        $uhlMash = app(UhlMashOfficialAdapter::class);
+        $uhlSearch = $uhlMash->searchBySku('ШМР-20', 'УХЛ-МАШ');
+        $this->assertTrue($uhlSearch->found);
+        $this->assertSame(
+            ['https://uhl-mash.com.ua/image/catalog/shmr-20.jpg'],
+            $uhlMash->fetchProductPage($uhlSearch)->images,
+        );
+    }
+
+    public function test_thinkcar_adapter_uses_exact_models_from_authorized_catalog_sitemaps(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://mythinkcar.com/search*' => Http::response('<html></html>'),
+            'https://thinkcarus.com/search*' => Http::response('<html></html>'),
+            'https://thinkcar.in/product/' => Http::response('<html></html>'),
+            'https://thinkcar.in/page-sitemap.xml' => Http::response('<urlset></urlset>'),
+            'https://thinktool.ru/sitemap.xml' => Http::response('<urlset></urlset>'),
+            'https://thinkcar.ua/content/export/thinkcar.ua/catalog-sitemap.xml' => Http::response(
+                '<urlset><url><loc>https://thinkcar.ua/ru/thinkcar-thinktool-expert-399/</loc></url></urlset>'
+            ),
+            'https://thinkcar.ua/ru/thinkcar-thinktool-expert-399/' => Http::response(
+                '<html><head><meta property="og:image" content="https://thinkcar.ua/images/expert-399.jpg"></head>'
+                .'<body><h1>THINKTOOL Expert 399</h1>'
+                .'<h2>THINKTOOL Expert 399 is an official dual-vehicle diagnostic platform with advanced coding, topology mapping, and professional workshop functions.</h2>'
+                .'</body></html>'
+            ),
+        ]);
+
+        $adapter = app(ThinkcarOfficialAdapter::class);
+        $search = $adapter->searchBySku('ThinkCarExpert399', 'THINKCAR');
+        $data = $adapter->fetchProductPage($search);
+
+        $this->assertTrue($search->found);
+        $this->assertSame('official_distributor', $search->sourceType);
+        $this->assertSame('https://thinkcar.ua/ru/thinkcar-thinktool-expert-399/', $search->url);
+        $this->assertSame(['https://thinkcar.ua/images/expert-399.jpg'], $data->images);
+        $this->assertStringContainsString('dual-vehicle diagnostic platform', $data->description);
+    }
+
+    public function test_thinkcar_price_row_uses_approved_brand_fallback_after_all_sources_fail(): void
+    {
+        $category = Category::firstOrCreate(
+            ['slug' => 'diagnoza-auto'],
+            [
+                'name' => 'Автомобильная диагностика',
+                'name_ro' => 'Diagnoză auto',
+                'is_active' => true,
+                'is_assignable' => true,
+            ],
+        );
+        $batch = ProductParserBatch::create([
+            'title' => 'THINKCAR fallback test',
+            'source_type' => 'price_list',
+            'import_mode' => 'create_drafts',
+            'status' => 'processing',
+            'options_json' => [
+                'create_drafts_automatically' => true,
+                'process_images' => true,
+            ],
+        ]);
+        $item = ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'ThinkTPMST90',
+            'normalized_sku' => 'thinktpmst90',
+            'brand' => 'THINKCAR',
+            'category_id' => $category->id,
+            'detected_category_id' => $category->id,
+            'raw_name' => 'Прибор для диагностики и программирования датчиков давления TPMS',
+            'parsed_name' => 'Прибор для диагностики и программирования датчиков давления TPMS',
+            'parsed_price' => 1000,
+            'parsed_stock' => 2,
+            'status' => 'external_searching',
+            'processing_stage' => 'external_searching',
+            'needs_category_review' => false,
+        ]);
+
+        $search = Mockery::mock(ProductSearchService::class);
+        $search->shouldReceive('searchExternalForParser')
+            ->once()
+            ->with($item->sku, 'THINKCAR', $item->raw_name)
+            ->andReturn(['found' => false, 'images' => [], 'sources' => []]);
+        $this->app->instance(ProductSearchService::class, $search);
+
+        app(ProductPriceListImportService::class)->processExternalQueuedItem($item);
+
+        $item->refresh();
+        $product = Product::where('sku', $item->sku)->firstOrFail();
+        $this->assertSame('draft_created', $item->status);
+        $this->assertSame('brand_logo_fallback', $item->image_source_type);
+        $this->assertSame('/images/brand/thinkcar.png', $product->main_image);
+        $this->assertSame(2, $product->stock_quantity);
+        $this->assertFalse((bool) $product->needs_source_review);
+    }
+
+    public function test_cached_exact_tristool_match_is_fast_tracked_for_every_brand(): void
+    {
+        $category = Category::firstOrCreate(
+            ['slug' => 'scule-pentru-frane'],
+            [
+                'name' => 'Инструмент для тормозной системы',
+                'name_ro' => 'Scule pentru frâne',
+                'is_active' => true,
+                'is_assignable' => true,
+            ],
+        );
+        $batch = ProductParserBatch::create([
+            'title' => 'VIGOR TrisTool fast-path test',
+            'source_type' => 'price_list',
+            'import_mode' => 'create_drafts',
+            'status' => 'processing',
+            'options_json' => [
+                'create_drafts_automatically' => true,
+                'process_images' => true,
+            ],
+        ]);
+        $item = ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'V7158',
+            'normalized_sku' => 'v7158',
+            'brand' => 'VIGOR',
+            'category_id' => $category->id,
+            'detected_category_id' => $category->id,
+            'raw_name' => 'Набор головок для снятия тормозного суппорта',
+            'parsed_name' => 'Набор головок для снятия тормозного суппорта',
+            'parsed_price' => 1000,
+            'parsed_stock' => 2,
+            'status' => 'tristool_searching',
+            'processing_stage' => 'tristool_searching',
+            'tristools_url' => 'https://tristool.md/ru/products/426/8429',
+            'tristools_match_confidence' => 98,
+            'source_match_confidence' => 98,
+            'needs_category_review' => false,
+            'needs_source_review' => true,
+            'needs_content_review' => true,
+            'needs_translation_review' => true,
+            'name_ru' => 'Набор головок для снятия тормозного суппорта',
+            'name_ro' => 'Set de capete pentru demontarea etrierului de frână',
+            'description_ru' => 'Комплект предназначен для профессионального обслуживания тормозных суппортов автомобилей.',
+            'description_ro' => 'Setul este destinat întreținerii profesionale a etrierelor de frână ale automobilelor.',
+            'content_source_type' => 'tristools_primary',
+            'image_source_type' => 'tristools_primary',
+        ]);
+        $item->imageAssets()->create([
+            'source_url' => 'https://tristool.md/uploaded_files/v7158.jpg',
+            'source_domain' => 'tristool.md',
+            'processed_path' => '/images/brand/vigor.svg',
+            'preview_path' => '/images/brand/vigor.svg',
+            'thumb_path' => '/images/brand/vigor.svg',
+            'mime_type' => 'image/svg+xml',
+            'status' => 'processed',
+            'is_selected' => true,
+            'is_main' => true,
+        ]);
+
+        $search = Mockery::mock(ProductSearchService::class);
+        $search->shouldNotReceive('searchTrisToolForParser');
+        $search->shouldNotReceive('searchExternalForParser');
+        $this->app->instance(ProductSearchService::class, $search);
+
+        app(ProductPriceListImportService::class)->processFastQueuedItem($item);
+
+        $item->refresh();
+        $this->assertSame('draft_created', $item->status);
+        $this->assertSame('tristool_ready', $item->processing_stage);
+        $this->assertNotNull($item->source_reviewed_at);
+        $this->assertDatabaseHas('products', ['sku' => 'V7158', 'stock_quantity' => 2]);
+    }
+
+    public function test_hazet_uses_brand_fallback_only_after_sources_are_exhausted(): void
+    {
+        $category = Category::firstOrCreate(
+            ['slug' => 'instrumente-izolate-vde'],
+            [
+                'name' => 'Диэлектрический инструмент VDE',
+                'name_ro' => 'Scule izolate VDE',
+                'is_active' => true,
+                'is_assignable' => true,
+            ],
+        );
+        $batch = ProductParserBatch::create([
+            'title' => 'HAZET fallback test',
+            'source_type' => 'price_list',
+            'import_mode' => 'create_drafts',
+            'status' => 'processing',
+            'options_json' => ['create_drafts_automatically' => true, 'process_images' => true],
+        ]);
+        $item = ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => '804VDE/14',
+            'normalized_sku' => '804vde14',
+            'brand' => 'HAZET',
+            'category_id' => $category->id,
+            'detected_category_id' => $category->id,
+            'raw_name' => 'Набор диэлектрических отверток VDE 1000 В, 14 предметов',
+            'parsed_name' => 'Набор диэлектрических отверток VDE 1000 В, 14 предметов',
+            'parsed_price' => 1000,
+            'parsed_stock' => 1,
+            'status' => 'external_searching',
+            'processing_stage' => 'external_searching',
+            'needs_category_review' => false,
+        ]);
+
+        $search = Mockery::mock(ProductSearchService::class);
+        $search->shouldReceive('searchExternalForParser')->once()->andReturn([
+            'found' => false,
+            'images' => [],
+            'sources' => [],
+        ]);
+        $this->app->instance(ProductSearchService::class, $search);
+
+        app(ProductPriceListImportService::class)->processExternalQueuedItem($item);
+
+        $item->refresh();
+        $product = Product::where('sku', '804VDE/14')->firstOrFail();
+        $this->assertSame('draft_created', $item->status);
+        $this->assertSame('brand_logo_fallback', $item->image_source_type);
+        $this->assertSame('/images/brand/hazet.svg', $product->main_image);
+        $this->assertFalse((bool) $product->needs_source_review);
+    }
+
+    public function test_uhl_mash_price_row_uses_reviewed_brand_fallback_without_external_search(): void
+    {
+        $category = Category::firstOrCreate(
+            ['slug' => 'dulapuri-si-organizare'],
+            [
+                'name' => 'Шкафы и организация',
+                'name_ro' => 'Dulapuri și organizare',
+                'is_active' => true,
+                'is_assignable' => true,
+            ],
+        );
+        $batch = ProductParserBatch::create([
+            'title' => 'UHL-MASH fallback test',
+            'source_type' => 'price_list',
+            'import_mode' => 'create_drafts',
+            'status' => 'processing',
+            'options_json' => ['create_drafts_automatically' => true, 'process_images' => true],
+        ]);
+        $item = ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'ШО-400/1',
+            'normalized_sku' => 'шо4001',
+            'brand' => 'УХЛ-МАШ',
+            'category_id' => $category->id,
+            'detected_category_id' => $category->id,
+            'raw_name' => 'Шкаф одёжный, 1 секция',
+            'parsed_name' => 'Шкаф одёжный, 1 секция',
+            'parsed_price' => 1890,
+            'parsed_stock' => 4,
+            'status' => 'external_searching',
+            'processing_stage' => 'external_searching',
+            'needs_category_review' => false,
+        ]);
+
+        $search = Mockery::mock(ProductSearchService::class);
+        $search->shouldNotReceive('searchExternalForParser');
+        $this->app->instance(ProductSearchService::class, $search);
+
+        app(ProductPriceListImportService::class)->processExternalQueuedItem($item);
+
+        $item->refresh();
+        $this->assertSame('draft_created', $item->status);
+        $this->assertSame('brand_logo_ready', $item->processing_stage);
+        $this->assertSame('brand_logo_fallback', $item->image_source_type);
+        $this->assertSame('/images/brand/uhl-mash.svg', $item->processed_images_json[0]);
+        $this->assertSame('uhl-mash.com.ua', $item->fallback_source_domain);
+        $this->assertFalse((bool) $item->needs_source_review);
+        $this->assertFalse((bool) $item->needs_content_review);
+        $this->assertStringContainsString('UHL-MASH', (string) $item->name_ro);
+        $this->assertStringNotContainsString('УХЛ-МАШ', str_replace($item->sku, '', (string) $item->name_ro));
+        $this->assertSame('uhl-mash', Product::where('sku', $item->sku)->firstOrFail()->brand->slug);
+    }
+
+    public function test_uhl_mash_does_not_repeat_the_same_tristool_miss_before_official_recovery(): void
+    {
+        config()->set('product_parser.automation_recovery_attempts', 3);
+        config()->set('product_parser.automation_recovery_delay_ms', 0);
+        config()->set('product_parser.tristools_fallback_enabled', true);
+
+        $tristools = Mockery::mock(TrisToolsEnrichmentService::class);
+        $tristools->shouldReceive('enrich')
+            ->once()
+            ->with('ШО-400/1', 'УХЛ-МАШ')
+            ->andReturn(['found' => false, 'confidence' => 0]);
+        $this->app->instance(TrisToolsEnrichmentService::class, $tristools);
+
+        $result = app(\App\Services\ProductSources\ProductSourceDiscoveryService::class)
+            ->searchTrisTool('ШО-400/1', 'УХЛ-МАШ', 'Шкаф одёжный');
+
+        $this->assertFalse($result['found']);
+        $this->assertSame(1, $result['automation_attempts']);
+    }
+
+    public function test_spin_and_telwin_fast_track_create_categorized_drafts_without_external_search(): void
+    {
+        $search = Mockery::mock(ProductSearchService::class);
+        $search->shouldNotReceive('searchExternalForParser');
+        $this->app->instance(ProductSearchService::class, $search);
+
+        foreach ([
+            ['SPIN', 'SPIN-FAST-R134', 'R134 refrigerant leak detector', 'scule-aer-conditionat-auto', '/images/brand/spin.png'],
+            ['TELWIN', 'TELWIN-FAST-START', 'TELWIN DYNAMIC 420 START', 'baterii-incarcatoare', '/images/brand/telwin.svg'],
+        ] as [$brand, $sku, $name, $categorySlug, $image]) {
+            Category::firstOrCreate(
+                ['slug' => $categorySlug],
+                [
+                    'name' => $categorySlug,
+                    'name_ro' => $categorySlug,
+                    'is_active' => true,
+                    'is_assignable' => true,
+                ],
+            );
+            $batch = ProductParserBatch::create([
+                'title' => $brand.' fast-track test',
+                'source_type' => 'price_list',
+                'import_mode' => 'dry_run',
+                'status' => 'dry_run_completed',
+                'options_json' => ['staging_complete' => true],
+                'dry_run_report_json' => ['error_rows' => 0],
+            ]);
+            ProductParserItem::create([
+                'batch_id' => $batch->id,
+                'sku' => $sku,
+                'normalized_sku' => strtolower($sku),
+                'brand' => $brand,
+                'raw_name' => $name,
+                'parsed_name' => $name,
+                'parsed_price' => 100,
+                'parsed_stock' => 1,
+                'status' => 'needs_manual_review',
+                'needs_category_review' => true,
+            ]);
+
+            $result = app(ProductPriceListImportService::class)->fastTrackReviewedSupplierBatch($batch);
+            $this->assertSame([], $result['failed'], json_encode($result['failed'], JSON_UNESCAPED_UNICODE));
+            $this->assertSame('draft_created', $batch->items()->where('sku', $sku)->firstOrFail()->status);
+            $product = Product::where('sku', $sku)->firstOrFail();
+
+            $this->assertSame('completed', $batch->fresh()->status);
+            $this->assertSame(1, $batch->fresh()->created_drafts);
+            $this->assertSame($categorySlug, $product->category->slug);
+            $this->assertSame($image, $product->main_image);
+        }
+    }
 
     public function test_registry_returns_only_official_brand_domains_in_priority_order(): void
     {
@@ -462,6 +1016,66 @@ class ProductSourcePipelineTest extends TestCase
         $this->assertFalse($result['needs_review']);
     }
 
+    public function test_thinkcar_product_families_use_precise_categories_before_supplier_breadcrumbs(): void
+    {
+        foreach ([
+            'sisteme-tpms' => ['Системы TPMS', 'Sisteme TPMS'],
+            'elevatoare-auto' => ['Автомобильные подъёмники', 'Elevatoare auto'],
+            'diagnoza-auto' => ['Автодиагностика', 'Diagnostic auto'],
+            'baterii-incarcatoare' => ['Аккумуляторы и зарядные устройства', 'Baterii și încărcătoare'],
+            'multimetre-testere' => ['Мультиметры и тестеры', 'Multimetre și testere'],
+            'scule-pentru-roti-vulcanizare' => ['Инструмент для колёс', 'Scule pentru roți'],
+            'prelungitoare-si-tamburi-cablu' => ['Удлинители и кабельные катушки', 'Prelungitoare și tamburi de cablu'],
+        ] as $slug => [$name, $nameRo]) {
+            Category::firstOrCreate(
+                ['slug' => $slug],
+                ['name' => $name, 'name_ro' => $nameRo, 'is_active' => true],
+            );
+        }
+
+        $cases = [
+            ['ThinkTPMST90', 'Прибор для диагностики датчиков давления TPMS', 'sisteme-tpms'],
+            ['TVL240', 'Подъёмник 2-ух стоечный, 4,0 т', 'elevatoare-auto'],
+            ['ThinkCarExpert399', 'Сканер автомобильный', 'diagnoza-auto'],
+            ['PPS150', 'Зарядное устройство 12 В', 'baterii-incarcatoare'],
+            ['TBT-360', 'Тестер аккумуляторных батарей', 'multimetre-testere'],
+            ['TWB733', 'Балансировочный станок с монитором', 'scule-pentru-roti-vulcanizare'],
+            ['TCR-333', 'Катушка с электрическим кабелем 220 В', 'prelungitoare-si-tamburi-cablu'],
+        ];
+
+        foreach ($cases as [$sku, $name, $slug]) {
+            $result = app(ProductCategoryDetector::class)->detect(
+                $sku,
+                $name,
+                'THINKCAR',
+                'Кабеля, Адаптеры и Блоки',
+                'Неточная категория поставщика',
+            );
+
+            $this->assertSame($slug, $result['category_slug']);
+            $this->assertGreaterThanOrEqual(90, $result['confidence']);
+            $this->assertFalse($result['needs_review']);
+        }
+    }
+
+    public function test_vde_product_gets_ninety_percent_category_without_manual_review(): void
+    {
+        $category = Category::firstOrCreate(
+            ['slug' => 'instrumente-izolate-vde'],
+            ['name' => 'Изолированный инструмент VDE', 'name_ro' => 'Scule izolate VDE', 'is_active' => true],
+        );
+
+        $result = app(ProductCategoryDetector::class)->detect(
+            '804VDE/14',
+            'Набор диэлектрических отверток VDE 1000 В, 14 предметов HAZET',
+            'HAZET',
+        );
+
+        $this->assertSame($category->id, $result['category_id']);
+        $this->assertSame(99, $result['confidence']);
+        $this->assertFalse($result['needs_review']);
+    }
+
     public function test_russian_text_returned_from_a_ro_url_is_translated_instead_of_trusted(): void
     {
         Http::preventStrayRequests();
@@ -481,6 +1095,28 @@ class ProductSourcePipelineTest extends TestCase
         $this->assertSame('Каблерез', $result['name_ru']);
         $this->assertSame('Foarfecă pentru cablu', $result['name_ro']);
         $this->assertSame('Descriere în limba română.', $result['description_ro']);
+        $this->assertTrue($result['complete']);
+        $this->assertSame('machine_translation', $result['translation_source_type']);
+    }
+
+    public function test_english_text_in_romanian_source_fields_is_translated_instead_of_trusted(): void
+    {
+        Http::preventStrayRequests();
+        Http::fakeSequence()
+            ->push([[['THINKCAR VENU 90 — instrument inteligent de diagnosticare TPMS', null, null, null]]])
+            ->push([[['Instrumentul permite activarea, programarea și învățarea senzorilor de presiune din anvelope.', null, null, null]]]);
+
+        $result = app(ProductTranslationService::class)->bilingual([
+            'title' => 'THINKCAR VENU 90 — интеллектуальный диагностический инструмент TPMS',
+            'description' => 'Инструмент обеспечивает активацию, программирование и обучение датчиков давления в шинах.',
+            'title_ru' => 'THINKCAR VENU 90 — интеллектуальный диагностический инструмент TPMS',
+            'description_ru' => 'Инструмент обеспечивает активацию, программирование и обучение датчиков давления в шинах.',
+            'title_ro' => 'THINKCAR VENU 90 - Intelligent TPMS Diagnostic Tool',
+            'description_ro' => 'The tool provides sensor activation, programming, and learning capabilities for tire pressure management.',
+        ]);
+
+        $this->assertSame('THINKCAR VENU 90 — instrument inteligent de diagnosticare TPMS', $result['name_ro']);
+        $this->assertSame('Instrumentul permite activarea, programarea și învățarea senzorilor de presiune din anvelope.', $result['description_ro']);
         $this->assertTrue($result['complete']);
         $this->assertSame('machine_translation', $result['translation_source_type']);
     }
@@ -870,5 +1506,52 @@ class ProductSourcePipelineTest extends TestCase
         $this->assertSame(3, $result['automation_attempts']);
         $this->assertFalse($result['automation_exhausted']);
         $this->assertFalse($result['needs_source_review']);
+    }
+
+    public function test_parser_fetches_tristool_content_and_images_before_official_sources(): void
+    {
+        config()->set('product_parser.automation_recovery_attempts', 1);
+        config()->set('product_parser.tristools_fallback_enabled', true);
+        config()->set('product_parser.tristools.enabled', true);
+        config()->set('product_parser.tristools_content_first', true);
+        config()->set('product_parser.tristools_image_first', true);
+        config()->set('product_parser.official_sources_enabled', true);
+
+        $order = [];
+        $tristools = Mockery::mock(TrisToolsEnrichmentService::class);
+        $tristools->shouldReceive('enrich')->once()->andReturnUsing(function () use (&$order): array {
+            $order[] = 'tristool';
+
+            return [
+                'found' => true,
+                'title' => 'TrisTool SG-912',
+                'description' => 'TrisTool description for SG-912.',
+                'specs' => ['Source' => 'TrisTool'],
+                'images' => ['https://tristool.md/uploaded_files/SG-912.jpg'],
+                'source_urls' => ['https://tristool.md/ru/products/sg-912'],
+                'confidence' => 96,
+            ];
+        });
+        $this->app->instance(TrisToolsEnrichmentService::class, $tristools);
+
+        Http::preventStrayRequests();
+        Http::fake(function ($request) use (&$order) {
+            $order[] = 'official';
+
+            if (str_contains($request->url(), 'getprodut_list_search')) {
+                return Http::response(['data' => '<a href="/product/3597"><img src="/upload/product/sg912.png"><h3>Official SG-912</h3><p>SG-912</p></a>']);
+            }
+
+            return Http::response('<html><head><meta name="description" content="Official SG-912 description"><meta property="og:image" content="https://www.mighty-seven.com/upload/product/sg912.png"></head><body><h1>Official SG-912</h1></body></html>');
+        });
+
+        $result = app(ProductSearchService::class)->searchForParser('SG-912', 'M7 / Mighty Seven', preferLocal: false);
+
+        $this->assertSame('tristool', $order[0]);
+        $this->assertSame('TrisTool description for SG-912.', $result['description']);
+        $this->assertSame('https://tristool.md/uploaded_files/SG-912.jpg', $result['images'][0]);
+        $this->assertContains('https://www.mighty-seven.com/upload/product/sg912.png', $result['images']);
+        $this->assertSame('tristools_primary', $result['content_source_type']);
+        $this->assertSame('tristools_then_official', $result['image_source_type']);
     }
 }

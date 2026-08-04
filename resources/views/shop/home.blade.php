@@ -42,7 +42,11 @@
             <div class="hero-grid">
                 <div class="hero-copy">
                     <span class="hero-kicker">{{ $copy[$index]['kicker'] }}</span>
-                    <h1>{{ $copy[$index]['title'] }}</h1>
+                    @if($index === 0)
+                        <h1>{{ $copy[$index]['title'] }}</h1>
+                    @else
+                        <h2>{{ $copy[$index]['title'] }}</h2>
+                    @endif
                     <p>{{ $copy[$index]['text'] }}</p>
                     <div class="actions"><a class="btn" href="{{ $slide['primary'] }}" @if($index === 0) data-catalog-open @endif>{{ $copy[$index]['primary'] }}</a><a class="btn {{ $index === 0 ? 'orange-btn' : 'outline' }}" href="{{ $slide['secondary'] }}">{{ $copy[$index]['secondary'] }}</a></div>
                     <div class="hero-stats">
@@ -111,10 +115,22 @@
     <h2>{{ __('ui.recommended_products') }}</h2>
     <a href="{{ route('catalog') }}">{{ __('ui.view_all_products') }}</a>
 </section>
-<section class="shell product-grid product-grid-compact home-recommended-grid">
+<section
+    id="home-recommended-grid"
+    class="shell product-grid product-grid-compact home-recommended-grid"
+    data-responsive-product-grid
+    data-tablet-limit="18"
+    data-mobile-limit="8"
+    data-narrow-limit="6"
+>
     @foreach($featuredProducts as $product)
         <x-product-card :product="$product" />
     @endforeach
 </section>
+<div class="shell responsive-grid-more" data-responsive-product-controls="home-recommended-grid" hidden>
+    <button class="btn outline responsive-grid-button" type="button" data-responsive-product-reveal="home-recommended-grid" data-label-more="{{ __('ui.show_more_products') }}" data-label-less="{{ __('ui.show_fewer_products') }}" aria-expanded="false">
+        <span data-responsive-product-label>{{ __('ui.show_more_products') }}</span>
+    </button>
+</div>
 
 @endsection

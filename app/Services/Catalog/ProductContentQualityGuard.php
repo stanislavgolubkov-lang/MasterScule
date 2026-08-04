@@ -68,8 +68,16 @@ class ProductContentQualityGuard
             $sectionLabels,
         )));
         if ($sectionLabels !== [] && collect($sectionLabels)->every(fn (string $line): bool => in_array($line, [
+            'состав',
+            'особенности',
+            'технические характеристики',
             'назначение',
             'область применения',
+            'compoziție',
+            'compozitie',
+            'caracteristici',
+            'specificații',
+            'specificatii',
             'scop',
             'domeniul de aplicare',
             'destinație',

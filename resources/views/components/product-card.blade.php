@@ -26,7 +26,7 @@
             @if($product->badge)
                 <span class="product-card-label {{ $product->is_discounted ? 'product-card-label-sale' : '' }}">{{ $product->badge }}</span>
             @endif
-            <small class="product-brand">{{ $product->brand->name }}</small>
+            <small class="product-brand">{{ $product->brand->display_name }}</small>
         </div>
         <h3><a href="{{ route('product.show', $product->slug) }}" title="{{ $product->display_name }}">{{ $product->display_name }}</a></h3>
         <div class="product-card-purchase">

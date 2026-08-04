@@ -44,7 +44,10 @@ class ProductContentLanguage
             return false;
         }
 
-        if (preg_match('/\b(?:used|designed|suitable)\s+(?:to|for|in)\b/u', $value) === 1) {
+        if (preg_match(
+            '/\b(?:used|designed|suitable)\s+(?:to|for|in)\b|\b(?:air blow gun|air consumption|air pressure|combination wrench|drawer divider|flexible handle|grip material|long nose pliers|ring slogging|socket rail|cutting pliers|c-clamp grip|polished heads|rail length|steel nozzle|work gloves|mesh fabric|pu leather|with moving jaw|finished with|do not cut)\b/u',
+            $value,
+        ) === 1) {
             return true;
         }
 
@@ -55,9 +58,25 @@ class ProductContentLanguage
             'drive', 'socket', 'heavy', 'duty', 'adjustable', 'application',
             'applications', 'especially', 'while', 'easy', 'quality', 'direction',
             'must', 'ensure', 'ring', 'moon', 'pliers', 'hammer', 'screwdriver',
-            'trolley', 'cabinet', 'gauge', 'puller', 'cutter', 'drill', 'extension',
+            'trolley', 'cabinet', 'gauge', 'puller', 'cutter', 'cutting', 'drill', 'extension',
+            'action', 'base', 'clamp', 'clip', 'combine', 'divider', 'drawer', 'finished',
+            'flexible', 'grip', 'groove', 'handle', 'jaw', 'joint', 'long', 'mini',
+            'miniature', 'nose', 'piece', 'pieces', 'plastic', 'polished', 'quick',
+            'rail', 'slogging',
+            'activation', 'capabilities', 'diagnostic', 'intelligent', 'learning',
+            'management', 'pressure', 'programming', 'provides', 'sensor', 'sensors',
+            'tire', 'vehicle',
+            'air', 'blow', 'breathability', 'cleaning', 'consumption', 'fabric',
+            'gloves', 'gun', 'leather', 'lightweight', 'mesh', 'nozzle', 'pressure',
+            'work',
         ]));
 
-        return count($markers) >= 3;
+        $romanianMarkers = array_unique(array_intersect($tokens, [
+            'acțiune', 'articulat', 'cheie', 'clește', 'clești', 'clichet', 'cu',
+            'de', 'din', 'este', 'falcă', 'flexibil', 'inelară', 'mâner', 'pentru',
+            'piese', 'prindere', 'separatoare', 'suport', 'tăiere', 'tubulare',
+        ]));
+
+        return count($markers) >= 2 && count($romanianMarkers) === 0;
     }
 }

@@ -1,5 +1,7 @@
 @extends('layouts.app')
 
+@section('title', __('ui.cart_title').' — '.config('store.domain_label'))
+
 @section('content')
 <section class="shell page-title"><p>{{ __('ui.home') }} / {{ __('ui.cart') }}</p><h1>{{ __('ui.cart_title') }}</h1><span>{{ __('ui.cart_count', ['count' => $cart['count']]) }}</span></section>
 <section class="shell cart-layout">

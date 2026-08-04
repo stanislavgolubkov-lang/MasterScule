@@ -19,6 +19,7 @@ use App\Models\ProductParserBatch;
 use App\Models\ProductParserImageAsset;
 use App\Models\ProductParserItem;
 use App\Services\Catalog\ProductPublicationGuard;
+use App\Services\ParserQueueSupervisor;
 use App\Services\ProductCategoryLearningService;
 use App\Services\ProductDraftService;
 use App\Services\ProductParserSettings;
@@ -40,7 +41,10 @@ class ProductParserController extends Controller
     public function __construct(
         private ProductParserSettings $settings,
         private ProductCategoryLearningService $categoryLearning,
-    ) {}
+        ParserQueueSupervisor $queueSupervisor,
+    ) {
+        $queueSupervisor->drainAfterResponse();
+    }
 
     public function index()
     {
@@ -897,6 +901,7 @@ class ProductParserController extends Controller
             'official_sources_enabled' => $request->boolean('official_sources_enabled'),
             'tristools_fallback_enabled' => $request->boolean('tristools_fallback_enabled'),
             'auto_approve_exact_fallback' => $request->boolean('auto_approve_exact_fallback'),
+            'official_source_priority' => false,
             'tristools_image_first' => true,
             'tristools_content_first' => true,
             'tristools_fallback_only' => false,

@@ -72,9 +72,9 @@
 @endif
 
 @if($showProducts ?? true)
-    <div id="mobile-filters" class="filter-drawer" hidden>
+    <div id="mobile-filters" class="filter-drawer" data-scroll-lock-overlay hidden>
         <div class="filter-drawer-backdrop" data-close="mobile-filters"></div>
-        <aside class="filter-drawer-panel" aria-label="{{ __('ui.filters') }}">
+        <aside class="filter-drawer-panel" role="dialog" aria-modal="true" aria-label="{{ __('ui.filters') }}">
             <div class="filter-drawer-head">
                 <h2>{{ __('ui.filters') }}</h2>
                 <button type="button" data-close="mobile-filters" aria-label="{{ __('ui.close') }}">x</button>

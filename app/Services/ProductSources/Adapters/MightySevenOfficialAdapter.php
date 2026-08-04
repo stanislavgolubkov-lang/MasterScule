@@ -59,7 +59,7 @@ class MightySevenOfficialAdapter extends AbstractOfficialAdapter
     private function skuMatches(string $candidateSku, string $needle): bool
     {
         $candidate = $this->normalizeSku($candidateSku);
-        if ($candidate === $needle || $candidate === $needle.'P') {
+        if ($candidate === $needle || $candidate === $needle.'p') {
             return true;
         }
 

@@ -15,6 +15,7 @@ class ProductPublicationGuard
         private readonly ProductImageQualityGuard $imageQuality,
         private readonly ProductContentSanitizer $contentSanitizer,
         private readonly ProductContentQualityGuard $contentQuality,
+        private readonly ProductTechnicalIdentityPolicy $technicalIdentities,
     ) {}
 
     public function evaluate(Product $product, bool $approveGeneralReview = false, array $approvedReviewFlags = []): array
@@ -27,20 +28,20 @@ class ProductPublicationGuard
             $errors[$code] = $message;
         };
 
-        if (! filled($product->sku)) {
-            $add('missing_sku', $this->message('Не указан SKU.', 'SKU lipseste.'));
-        } elseif (preg_match('/\p{Cyrillic}/u', (string) $product->sku) === 1) {
-            $add('sku_contains_cyrillic', 'SKU contains Cyrillic characters that can be confused with Latin characters.');
-        }
-        $brandExists = $product->relationLoaded('brand')
-            ? $product->brand !== null
-            : ($product->brand_id && Brand::whereKey($product->brand_id)->exists());
-        if (! $brandExists) {
-            $add('missing_brand', $this->message('Не указан существующий бренд.', 'Marca valida lipseste.'));
-        }
         $brand = $product->relationLoaded('brand')
             ? $product->brand
             : ($product->brand_id ? Brand::find($product->brand_id) : null);
+
+        if (! filled($product->sku)) {
+            $add('missing_sku', $this->message('Не указан SKU.', 'SKU lipseste.'));
+        } elseif (preg_match('/\p{Cyrillic}/u', (string) $product->sku) === 1
+            && ! $this->technicalIdentities->allowsCyrillicSku($product)) {
+            $add('sku_contains_cyrillic', 'SKU contains Cyrillic characters that can be confused with Latin characters.');
+        }
+        $brandExists = $brand !== null;
+        if (! $brandExists) {
+            $add('missing_brand', $this->message('Не указан существующий бренд.', 'Marca valida lipseste.'));
+        }
         $excludedSkus = collect(config('product_parser.excluded_catalog.skus', []))
             ->map(fn ($sku) => Str::lower((string) preg_replace('/[^a-z0-9]+/i', '', (string) $sku)))
             ->all();
@@ -148,7 +149,7 @@ class ProductPublicationGuard
             $product->short_description_ro,
             $product->description_ro,
         ]));
-        if ($this->containsCyrillic($allRomanianText)) {
+        if ($this->containsCyrillic($this->technicalIdentities->romanianLanguageSample($product, $allRomanianText))) {
             $add('ro_contains_cyrillic', $this->message('RO-текст содержит кириллицу.', 'Textul RO contine caractere chirilice.'));
         }
 

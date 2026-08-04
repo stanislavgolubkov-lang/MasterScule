@@ -2,6 +2,7 @@
 
 namespace App\Services\ProductSources;
 
+use App\Support\ProductSkuNormalizer;
 use Illuminate\Support\Str;
 
 class ReviewedCatalogSourceService
@@ -16,7 +17,11 @@ class ReviewedCatalogSourceService
                 continue;
             }
 
-            $assets = $catalog['assets'] ?? [];
+            $assets = collect($catalog['assets'] ?? [])
+                ->mapWithKeys(fn ($filename, $assetSku) => [
+                    $this->normalizeSku((string) $assetSku) => $filename,
+                ])
+                ->all();
             $filename = $assets[$normalizedSku] ?? null;
             if (! is_string($filename) || $filename === '') {
                 continue;
@@ -90,6 +95,6 @@ class ReviewedCatalogSourceService
 
     private function normalizeSku(string $sku): string
     {
-        return Str::lower(trim(preg_replace('/\s+/u', '', $sku) ?: ''));
+        return ProductSkuNormalizer::normalize($sku);
     }
 }

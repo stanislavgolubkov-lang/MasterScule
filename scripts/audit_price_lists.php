@@ -72,9 +72,15 @@ function isProductRow(array $row): bool
 
 $reader = app(ProductPriceListReader::class);
 $products = Product::with('brand:id,name')->get()->keyBy(fn (Product $product) => normalizedSku($product->sku));
+$excludedSkus = collect(config('product_parser.excluded_catalog.skus', []))
+    ->map(fn (string $sku): string => normalizedSku($sku))
+    ->filter()
+    ->flip();
 $report = [];
 $global = [
     'price_rows' => 0,
+    'excluded_rows' => 0,
+    'duplicate_rows' => 0,
     'unique_skus' => 0,
     'matched_products' => 0,
     'missing_products' => 0,
@@ -90,6 +96,8 @@ foreach ($files as $brand => $path) {
         'file' => basename($path),
         'exists' => is_file($path),
         'price_rows' => 0,
+        'excluded_rows' => 0,
+        'duplicate_rows' => 0,
         'unique_skus' => 0,
         'matched_products' => 0,
         'missing_products' => 0,
@@ -103,6 +111,7 @@ foreach ($files as $brand => $path) {
 
     if (! is_file($path)) {
         $report[$brand] = $fileReport;
+
         continue;
     }
 
@@ -119,6 +128,11 @@ foreach ($files as $brand => $path) {
         if ($key === '') {
             continue;
         }
+        if ($excludedSkus->has($key)) {
+            $fileReport['excluded_rows']++;
+
+            continue;
+        }
 
         $candidate = [
             'sku' => trim((string) $row['sku']),
@@ -128,8 +142,13 @@ foreach ($files as $brand => $path) {
             'row_number' => $row['row_number'] ?? null,
         ];
 
-        if (! isset($bestRows[$key]) || ($bestRows[$key]['stock'] === null && $candidate['stock'] !== null)) {
+        // The importer treats the first valid occurrence as canonical and skips
+        // later duplicate rows. The audit must mirror that rule instead of
+        // replacing a stockless canonical row with a later duplicate.
+        if (! isset($bestRows[$key])) {
             $bestRows[$key] = $candidate;
+        } else {
+            $fileReport['duplicate_rows']++;
         }
     }
 
@@ -142,6 +161,7 @@ foreach ($files as $brand => $path) {
             if (count($fileReport['samples']) < 25) {
                 $fileReport['samples'][] = ['type' => 'missing_product', 'sku' => $row['sku'], 'row' => $row['row_number']];
             }
+
             continue;
         }
 

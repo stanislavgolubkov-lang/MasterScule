@@ -8,6 +8,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\CheckoutController;
 use App\Http\Controllers\ShopController;
+use App\Http\Controllers\SitemapController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/language/{locale}', function (string $locale) {
@@ -19,6 +20,7 @@ Route::get('/language/{locale}', function (string $locale) {
 })->name('language.switch');
 
 Route::get('/', [ShopController::class, 'home'])->name('home');
+Route::get('/sitemap.xml', SitemapController::class)->name('sitemap');
 Route::get('/catalog/{category?}', [ShopController::class, 'catalog'])->name('catalog');
 Route::get('/product/{slug}', [ShopController::class, 'product'])->name('product.show');
 Route::get('/brands', [ShopController::class, 'brands'])->name('brands');

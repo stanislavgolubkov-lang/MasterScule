@@ -157,6 +157,24 @@ class ProductPublicationGuardTest extends TestCase
         $this->assertGuardBlocked($product, 'language_ro_description_likely_english');
     }
 
+    public function test_short_english_product_name_in_romanian_field_cannot_be_published(): void
+    {
+        $product = $this->validProduct([
+            'name_ro' => 'Drawer Divider KING TONY 87432-31',
+        ]);
+
+        $this->assertGuardBlocked($product, 'language_ro_name_likely_english');
+    }
+
+    public function test_short_english_product_description_in_romanian_field_cannot_be_published(): void
+    {
+        $product = $this->validProduct([
+            'description_ro' => 'Flexible handle with moving jaw.',
+        ]);
+
+        $this->assertGuardBlocked($product, 'language_ro_description_likely_english');
+    }
+
     public function test_generic_catalog_description_cannot_be_published(): void
     {
         $product = $this->validProduct([
@@ -186,6 +204,74 @@ class ProductPublicationGuardTest extends TestCase
         $this->assertGuardBlocked($product, 'content_incomplete_description_ru');
     }
 
+    public function test_multiple_empty_description_section_labels_cannot_be_published(): void
+    {
+        $product = $this->validProduct([
+            'description' => "Состав:\nОсобенности:",
+            'description_ru' => "Состав:\nОсобенности:",
+            'description_ro' => "Compoziție:\nCaracteristici:",
+        ]);
+
+        $this->assertGuardBlocked($product, 'content_incomplete_description_ru');
+        $this->assertGuardBlocked($product, 'content_incomplete_description_ro');
+    }
+
+    public function test_known_romanian_machine_translation_defects_cannot_be_published(): void
+    {
+        foreach ([
+            'Priză de impact 1/2 inch',
+            'Liliac de impact T30',
+            'Cap tubular din 6 boabe',
+            'Introduceți (bit) 1/4 inch',
+            'Atingeți M8 × 1,25',
+            'Lanterna de sudura MIG-MAG',
+            'Bit sau adaptor King Tony 12345',
+            'Sculă specială auto JTC-1234, mm 2',
+            'Cheie pneumatică, " " 1/2 inch',
+        ] as $name) {
+            $this->assertGuardBlocked($this->validProduct(['name_ro' => $name]), match (true) {
+                str_contains($name, 'Priză') => 'language_ro_impact_socket_mistranslation',
+                str_contains($name, 'Liliac') => 'language_ro_impact_bit_mistranslation',
+                str_contains($name, 'boabe') => 'language_ro_profile_mistranslation',
+                str_contains($name, 'Introduceți') => 'language_ro_bit_command_form',
+                str_contains($name, 'Atingeți') => 'language_ro_tap_mistranslation',
+                str_contains($name, 'Lanterna') => 'language_ro_known_literal_translation',
+                str_contains($name, 'Bit sau') => 'language_ro_generic_machine_title',
+                str_contains($name, 'mm 2') => 'language_ro_malformed_unit_tail',
+                default => 'language_ro_malformed_separator',
+            });
+        }
+    }
+
+    public function test_literal_lerka_translation_cannot_be_published(): void
+    {
+        $this->assertGuardBlocked(
+            $this->validProduct(['name_ro' => 'Matrita Lerka M10']),
+            'language_ro_known_literal_translation',
+        );
+    }
+
+    public function test_normal_ellipsis_in_romanian_description_is_allowed(): void
+    {
+        $product = $this->validProduct([
+            'description_ro' => 'Instrument pentru atelier, compatibil cu mai multe modele etc...',
+        ]);
+
+        $result = app(ProductPublicationGuard::class)->evaluate($product, true);
+
+        $this->assertTrue($result['allowed']);
+        $this->assertNotContains('language_ro_malformed_separator', $result['error_codes']);
+    }
+
+    public function test_oil_filter_facets_cannot_be_expressed_as_grams_in_short_romanian_wording(): void
+    {
+        $product = $this->validProduct([
+            'name_ro' => 'Extractor filtru ulei, 64 mm, 14 g.',
+        ]);
+
+        $this->assertGuardBlocked($product, 'language_ro_oil_filter_facets_as_grams');
+    }
+
     public function test_unbalanced_product_name_cannot_be_published(): void
     {
         $product = $this->validProduct([
@@ -201,6 +287,44 @@ class ProductPublicationGuardTest extends TestCase
         $product = $this->validProduct(['sku' => '97443С']);
 
         $this->assertGuardBlocked($product, 'sku_contains_cyrillic');
+    }
+
+    public function test_uhl_mash_cyrillic_supplier_sku_is_allowed_as_technical_identity(): void
+    {
+        $brand = Brand::firstOrCreate(
+            ['slug' => 'uhl-mash'],
+            ['name' => 'УХЛ-МАШ', 'is_active' => true],
+        );
+        $product = $this->validProduct([
+            'brand_id' => $brand->id,
+            'sku' => 'ШО-400/1',
+            'name_ro' => 'Dulap metalic UHL-MASH ШО-400/1',
+            'short_description_ro' => 'Dulap metalic profesional UHL-MASH, articol ШО-400/1.',
+            'description_ro' => 'Dulap metalic profesional UHL-MASH, articol ШО-400/1, destinat atelierelor.',
+        ]);
+
+        $result = app(ProductPublicationGuard::class)->evaluate($product, true);
+
+        $this->assertTrue($result['allowed'], implode(' ', $result['errors']));
+        $this->assertNotContains('sku_contains_cyrillic', $result['error_codes']);
+        $this->assertNotContains('ro_contains_cyrillic', $result['error_codes']);
+        $this->assertNotContains('language_ro_contains_cyrillic', $result['error_codes']);
+    }
+
+    public function test_uhl_mash_identity_exception_does_not_hide_unrelated_cyrillic_in_ro_text(): void
+    {
+        $brand = Brand::firstOrCreate(
+            ['slug' => 'uhl-mash'],
+            ['name' => 'УХЛ-МАШ', 'is_active' => true],
+        );
+        $product = $this->validProduct([
+            'brand_id' => $brand->id,
+            'sku' => 'ШО-400/1',
+            'description_ro' => 'Dulap UHL-MASH ШО-400/1 cu descriere тест.',
+        ]);
+
+        $this->assertGuardBlocked($product, 'ro_contains_cyrillic');
+        $this->assertGuardBlocked($product, 'language_ro_contains_cyrillic');
     }
 
     public function test_third_party_marketplace_promotion_cannot_be_published(): void

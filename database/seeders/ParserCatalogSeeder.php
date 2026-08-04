@@ -17,18 +17,24 @@ class ParserCatalogSeeder extends Seeder
     private function syncBrands(): void
     {
         foreach ([
-            ['King Tony', 'king-tony', '/images/brand/king-tony.png'],
-            ['M7 / Mighty Seven', 'm7-mighty-seven', '/images/brand/m7.png'],
-            ['JTC', 'jtc', '/images/brand/jtc.jpg'],
-            ['Hoegert', 'hoegert', '/images/brand/hoegert.png'],
-            ['Torin BIG RED', 'torin-big-red', '/images/brand/torin-big-red.png'],
-            ['GYS', 'gys', '/images/brand/gys.svg'],
-        ] as [$name, $slug, $logo]) {
+            ['King Tony', 'king-tony', '/images/brand/king-tony.png', 'Brand importat pentru catalogul MasterScule.'],
+            ['M7 / Mighty Seven', 'm7-mighty-seven', '/images/brand/m7.png', 'Brand importat pentru catalogul MasterScule.'],
+            ['JTC', 'jtc', '/images/brand/jtc.jpg', 'Brand importat pentru catalogul MasterScule.'],
+            ['Hoegert', 'hoegert', '/images/brand/hoegert.png', 'Brand importat pentru catalogul MasterScule.'],
+            ['Torin BIG RED', 'torin-big-red', '/images/brand/torin-big-red.png', 'Brand importat pentru catalogul MasterScule.'],
+            ['GYS', 'gys', '/images/brand/gys.svg', 'Brand importat pentru catalogul MasterScule.'],
+            ['SPIN', 'spin', '/images/brand/spin.png', 'Echipamente profesionale pentru service și întreținere auto.'],
+            ['TELWIN', 'telwin', '/images/brand/telwin.svg', 'Echipamente profesionale pentru sudură, încărcare și pornire.'],
+            ['THINKCAR', 'thinkcar', '/images/brand/thinkcar.png', 'Echipamente și soluții profesionale pentru diagnosticarea automobilelor.'],
+            ['HAZET', 'hazet', '/images/brand/hazet.svg', 'Scule profesionale și echipamente pentru atelier.'],
+            ['VIGOR', 'vigor', '/images/brand/vigor.svg', 'Scule și echipamente profesionale pentru service auto.'],
+            ['УХЛ-МАШ', 'uhl-mash', '/images/brand/uhl-mash.svg', 'Mobilier metalic profesional pentru atelier, service și spații de depozitare.'],
+        ] as [$name, $slug, $logo, $description]) {
             Brand::updateOrCreate(
                 ['slug' => $slug],
                 [
                     'name' => $name,
-                    'description' => 'Brand importat pentru catalogul MasterScule.',
+                    'description' => $description,
                     'logo' => $logo,
                     'is_featured' => in_array($slug, ['king-tony', 'm7-mighty-seven', 'torin-big-red', 'gys'], true),
                     'is_active' => true,
@@ -64,6 +70,7 @@ class ParserCatalogSeeder extends Seeder
     {
         return collect([
             ['prese-hidraulice', 'echipamente-pentru-service', 'Гидравлические прессы', 'Prese hidraulice'],
+            ['elevatoare-auto', 'echipamente-pentru-service', 'Автомобильные подъёмники и аксессуары', 'Elevatoare auto și accesorii'],
             ['cricuri-hidraulice', 'echipamente-pentru-service', 'Гидравлические домкраты', 'Cricuri hidraulice'],
             ['capre-auto-si-suporturi', 'echipamente-pentru-service', 'Автомобильные стойки и опоры', 'Capre auto si suporturi'],
             ['pompe-si-cilindri-hidraulici', 'echipamente-pentru-service', 'Насосы и гидроцилиндры', 'Pompe si cilindri hidraulici'],
@@ -72,6 +79,7 @@ class ParserCatalogSeeder extends Seeder
             ['echipamente-depozitare-manipulare', 'echipamente-pentru-service', 'Хранение и перемещение', 'Echipamente depozitare si manipulare'],
             ['macarale-standuri-suporti-motor', 'echipamente-pentru-service', 'Краны, стенды и опоры двигателя', 'Macarale, standuri si suporti motor'],
             ['surubelnite-si-biti', 'instrument-manual', 'Отвертки и биты', 'Surubelnite si biti'],
+            ['prelungitoare-si-tamburi-cablu', 'instrumente-electromontaj', 'Удлинители и кабельные катушки', 'Prelungitoare și tamburi de cablu'],
             ['capete-tubulare-impact', 'instrument-manual', 'Ударные головки', 'Capete tubulare de impact'],
             ['biti-insertii-adaptoare', 'instrument-manual', 'Биты, вставки и адаптеры', 'Biti, insertii si adaptoare'],
             ['tarozi-filiere-filetare', 'instrument-manual', 'Метчики, плашки и резьба', 'Tarozi, filiere si filetare'],
@@ -94,6 +102,7 @@ class ParserCatalogSeeder extends Seeder
             ['scule-pentru-roti-vulcanizare', 'scule-speciale-auto', 'Инструмент для колес и шиномонтажа', 'Scule pentru roti si vulcanizare'],
             ['scule-vehicule-grele', 'scule-speciale-auto', 'Инструмент для грузового транспорта', 'Scule pentru vehicule grele'],
             ['diagnoza-auto', 'scule-speciale-auto', 'Автодиагностика', 'Diagnostic auto'],
+            ['sisteme-tpms', 'scule-speciale-auto', 'Системы контроля давления в шинах TPMS', 'Sisteme de monitorizare a presiunii TPMS'],
             ['sublere-micrometre-comparatoare', 'instrumente-de-masurare', 'Штангенциркули, микрометры и индикаторы', 'Sublere, micrometre si comparatoare'],
             ['multimetre-testere', 'instrumente-de-masurare', 'Мультиметры и тестеры', 'Multimetre si testere'],
             ['rulete-nivele', 'instrumente-de-masurare', 'Рулетки и уровни', 'Rulete si nivele'],

@@ -226,6 +226,10 @@ class ProductImageProcessorService
     private function isAllowedRemoteImageHost(string $host): bool
     {
         $official = collect(self::ALLOWED_REMOTE_IMAGE_DOMAINS)
+            ->merge($this->settings->get('allowed_domains', []))
+            ->map(fn (string $domain) => Str::lower(trim($domain)))
+            ->filter()
+            ->unique()
             ->contains(fn (string $domain) => $host === $domain || Str::endsWith($host, '.'.$domain));
 
         return $official || $this->isFallbackRemoteImageHost($host);

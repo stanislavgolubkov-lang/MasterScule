@@ -3,14 +3,18 @@
 namespace App\Services\ProductSources;
 
 use App\Services\ProductParserSettings;
-use App\Services\ProductSources\Adapters\HoegertOfficialAdapter;
 use App\Services\ProductSources\Adapters\GysOfficialAdapter;
+use App\Services\ProductSources\Adapters\HoegertOfficialAdapter;
 use App\Services\ProductSources\Adapters\JtcOfficialAdapter;
 use App\Services\ProductSources\Adapters\KingTonyOfficialAdapter;
 use App\Services\ProductSources\Adapters\MightySevenOfficialAdapter;
+use App\Services\ProductSources\Adapters\SpinOfficialAdapter;
+use App\Services\ProductSources\Adapters\TelwinOfficialAdapter;
+use App\Services\ProductSources\Adapters\ThinkcarOfficialAdapter;
 use App\Services\ProductSources\Adapters\TongrunOfficialAdapter;
 use App\Services\ProductSources\Adapters\TorinOfficialAdapter;
 use App\Services\ProductSources\Adapters\TrisToolsFallbackAdapter;
+use App\Services\ProductSources\Adapters\UhlMashOfficialAdapter;
 
 class ProductSourceDiscoveryService
 {
@@ -22,6 +26,10 @@ class ProductSourceDiscoveryService
         private readonly JtcOfficialAdapter $jtc,
         private readonly HoegertOfficialAdapter $hoegert,
         private readonly GysOfficialAdapter $gys,
+        private readonly SpinOfficialAdapter $spin,
+        private readonly TelwinOfficialAdapter $telwin,
+        private readonly ThinkcarOfficialAdapter $thinkcar,
+        private readonly UhlMashOfficialAdapter $uhlMash,
         private readonly TorinOfficialAdapter $torin,
         private readonly TongrunOfficialAdapter $tongrun,
         private readonly ReviewedCatalogSourceService $reviewedCatalog,
@@ -30,7 +38,13 @@ class ProductSourceDiscoveryService
 
     public function search(string $sku, ?string $brand, ?string $name = null, bool $forceFallback = false, bool $allowFallback = true): array
     {
-        $attempts = max(1, min(5, (int) $this->settings->get('automation_recovery_attempts', 3)));
+        $knownBrand = $this->knownBrand($brand, $name);
+        // UHL-MASH has a searchable official manufacturer catalogue. Repeating
+        // the same TrisTool miss three times only delays the authoritative
+        // lookup and the reviewed brand fallback for Cyrillic supplier SKUs.
+        $attempts = $knownBrand === 'УХЛ-МАШ'
+            ? 1
+            : max(1, min(5, (int) $this->settings->get('automation_recovery_attempts', 3)));
         $delayMs = max(0, min(2000, (int) $this->settings->get('automation_recovery_delay_ms', 250)));
         $best = null;
         $usedAttempts = 0;
@@ -208,13 +222,13 @@ class ProductSourceDiscoveryService
     private function knownBrand(?string $brand, ?string $name): string
     {
         $brand = trim((string) $brand);
-        if ($brand !== '') {
-            return $brand;
-        }
+        $text = str_replace(
+            ['с', 'С'],
+            'c',
+            mb_strtolower($brand !== '' ? $brand : (string) $name, 'UTF-8'),
+        );
 
-        $text = mb_strtolower((string) $name, 'UTF-8');
-
-        return match (true) {
+        $known = match (true) {
             str_contains($text, 'king tony') => 'King Tony',
             str_contains($text, 'mighty seven'), preg_match('/(^|\W)m7(\W|$)/iu', $text) === 1 => 'M7 / Mighty Seven',
             str_contains($text, 'jtc') => 'JTC',
@@ -222,8 +236,14 @@ class ProductSourceDiscoveryService
             str_contains($text, 'hoegert'), str_contains($text, 'högert'), str_contains($text, 'hogert') => 'Hoegert',
             str_contains($text, 'tongrun') => 'Tongrun',
             str_contains($text, 'torin'), str_contains($text, 'big red') => 'Torin',
+            preg_match('/(^|\W)spin(\W|$)/iu', $text) === 1 => 'SPIN',
+            str_contains($text, 'telwin') => 'TELWIN',
+            str_contains($text, 'thinkcar'), str_contains($text, 'think car'), str_contains($text, 'think-car'), str_contains($text, 'thinckar') => 'THINKCAR',
+            str_contains($text, 'ухл-маш'), str_contains($text, 'ухл маш'), str_contains($text, 'uhl-mash'), str_contains($text, 'uhl mash') => 'УХЛ-МАШ',
             default => '',
         };
+
+        return $known !== '' ? $known : $brand;
     }
 
     private function officialResult(string $sku, string $brand, ?string $name): ?array
@@ -300,7 +320,19 @@ class ProductSourceDiscoveryService
 
     private function officialAdapters(): array
     {
-        return [$this->kingTony, $this->mightySeven, $this->jtc, $this->hoegert, $this->gys, $this->torin, $this->tongrun];
+        return [
+            $this->kingTony,
+            $this->mightySeven,
+            $this->jtc,
+            $this->hoegert,
+            $this->gys,
+            $this->spin,
+            $this->telwin,
+            $this->thinkcar,
+            $this->uhlMash,
+            $this->torin,
+            $this->tongrun,
+        ];
     }
 
     private function mergeReviewedCatalog(?array $official, array $catalog): array
@@ -384,13 +416,18 @@ class ProductSourceDiscoveryService
 
     private function mergeTrisToolsPrimary(array $tristools, ?array $additional): array
     {
+        $preferTrisToolsContent = (bool) $this->settings->get('tristools_content_first', true);
+        $preferTrisToolsImages = (bool) $this->settings->get('tristools_image_first', true);
+        $tristoolsHasContent = filled($tristools['description_ru'] ?? $tristools['description_ro'] ?? $tristools['description'] ?? null);
+        $tristoolsImages = array_values(array_unique(array_filter($tristools['images'] ?? [])));
+
         if (! $additional) {
             $tristools['fallback_source_used'] = false;
             $tristools['fallback_source_url'] = null;
             $tristools['fallback_source_domain'] = null;
             $tristools['needs_source_review'] = (int) ($tristools['confidence'] ?? 0) < 90;
             $tristools['content_source_type'] = 'tristools_primary';
-            $tristools['image_source_type'] = 'tristools_primary';
+            $tristools['image_source_type'] = $tristoolsImages !== [] ? 'tristools_primary' : null;
             $tristools['translation_source_type'] = filled($tristools['description_ro'] ?? null)
                 ? 'source_bilingual'
                 : 'translation_pending';
@@ -416,11 +453,20 @@ class ProductSourceDiscoveryService
             ],
         ], fn (array $variant) => filled($variant['title'] ?? null) || filled($variant['description'] ?? null)));
 
-        $tristools['title'] = $tristools['title'] ?: ($additional['title'] ?? null);
-        $tristools['description'] = $tristools['description'] ?: ($additional['description'] ?? null);
+        $additionalHasContent = filled($additional['description_ru'] ?? $additional['description_ro'] ?? $additional['description'] ?? null);
+        $additionalImages = array_values(array_unique(array_filter($additional['images'] ?? [])));
+
+        if ($preferTrisToolsContent) {
+            $tristools['title'] = $tristools['title'] ?: ($additional['title'] ?? null);
+            $tristools['description'] = $tristools['description'] ?: ($additional['description'] ?? null);
+        } else {
+            $tristools['title'] = ($additional['title'] ?? null) ?: ($tristools['title'] ?? null);
+            $tristools['description'] = ($additional['description'] ?? null) ?: ($tristools['description'] ?? null);
+        }
+
         $tristools['images'] = array_values(array_unique(array_filter(array_merge(
-            $tristools['images'] ?? [],
-            $additional['images'] ?? [],
+            $preferTrisToolsImages ? $tristoolsImages : $additionalImages,
+            $preferTrisToolsImages ? $additionalImages : $tristoolsImages,
         ))));
         $tristools['specs'] = array_replace($additional['specs'] ?? [], $tristools['specs'] ?? []);
         $tristools['package_contents'] = ($tristools['package_contents'] ?? [])
@@ -442,12 +488,20 @@ class ProductSourceDiscoveryService
         $tristools['fallback_source_domain'] = null;
         $tristools['fallback_source_used'] = false;
         $tristools['needs_source_review'] = (int) ($tristools['confidence'] ?? 0) < 90;
-        $tristools['content_source_type'] = filled($tristools['description_ru'] ?? $tristools['description'] ?? null)
-            ? 'tristools_primary'
-            : ($additional['content_source_type'] ?? null);
-        $tristools['image_source_type'] = ! empty($tristools['images'])
-            ? 'tristools_then_official'
-            : ($additional['image_source_type'] ?? null);
+        $tristools['content_source_type'] = match (true) {
+            $preferTrisToolsContent && $tristoolsHasContent => 'tristools_primary',
+            $additionalHasContent => $additional['content_source_type'] ?? 'official_manufacturer',
+            $tristoolsHasContent => 'tristools_primary',
+            default => null,
+        };
+        $tristools['image_source_type'] = match (true) {
+            $tristoolsImages !== [] && $additionalImages !== [] => $preferTrisToolsImages
+                ? 'tristools_then_official'
+                : 'official_then_tristools',
+            $tristoolsImages !== [] => 'tristools_primary',
+            $additionalImages !== [] => $additional['image_source_type'] ?? 'official_manufacturer',
+            default => null,
+        };
         $tristools['translation_source_type'] = filled($tristools['description_ro'] ?? null)
             ? 'source_bilingual'
             : 'translation_pending';

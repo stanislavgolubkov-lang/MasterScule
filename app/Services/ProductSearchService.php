@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\ProductSkuNormalizer;
 use App\Models\Product;
 use App\Services\ProductSources\ProductSourceDiscoveryService;
 use Illuminate\Http\Client\PendingRequest;
@@ -701,7 +702,7 @@ class ProductSearchService
 
     private function normalizeSku(string $value): string
     {
-        return Str::lower((string) preg_replace('/[^a-z0-9]/i', '', $value));
+        return ProductSkuNormalizer::normalize($value);
     }
 
     private function emptyResult(array $sources = []): array

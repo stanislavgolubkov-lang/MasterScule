@@ -65,7 +65,12 @@ class HomeRecommendedProductsTest extends TestCase
                 return $products->count() === 50
                     && $brands->every(fn (Brand $brand) => $products->where('brand_id', $brand->id)->count() === 10);
             })
-            ->assertSee('product-grid-compact home-recommended-grid', false);
+            ->assertSee('product-grid-compact home-recommended-grid', false)
+            ->assertSee('data-responsive-product-grid', false)
+            ->assertSee('data-tablet-limit="18"', false)
+            ->assertSee('data-mobile-limit="8"', false)
+            ->assertSee('data-narrow-limit="6"', false)
+            ->assertSee('data-responsive-product-reveal="home-recommended-grid"', false);
     }
 
     public function test_homepage_replaces_recent_products_without_real_images_with_older_products(): void

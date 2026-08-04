@@ -19,7 +19,10 @@ class ParsePriceListJob implements ShouldQueue
 
     public array $backoff = [30, 120];
 
-    public function __construct(public int $batchId) {}
+    public function __construct(public int $batchId)
+    {
+        $this->onQueue('parser');
+    }
 
     public function handle(ProductPriceListImportService $importer): void
     {

@@ -479,4 +479,6 @@ return [
     'store_address' => 'str. Alexandru cel Bun 103/A, Chișinău, Republica Moldova',
     'store_country' => 'Moldova',
     'placeholder_text' => 'Această secțiune este pregătită și va fi completată în etapa următoare.',
+    'show_more_products' => 'Afișează mai multe produse',
+    'show_fewer_products' => 'Afișează mai puține',
 ];

@@ -9,6 +9,7 @@ use App\Services\ProductImageProcessorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use ReflectionMethod;
 use Tests\TestCase;
 
 class ProductImageProcessorTest extends TestCase
@@ -72,6 +73,18 @@ class ProductImageProcessorTest extends TestCase
         $this->assertSame('ready_for_review', $item->fresh()->status);
         $this->assertTrue($item->fresh()->needs_image_review);
         $this->assertNull($item->fresh()->error_message);
+    }
+
+    public function test_configured_official_image_domains_are_allowed(): void
+    {
+        $method = new ReflectionMethod(ProductImageProcessorService::class, 'isAllowedRemoteImageHost');
+        $processor = app(ProductImageProcessorService::class);
+
+        $this->assertTrue($method->invoke($processor, 'mythinkcar.com'));
+        $this->assertTrue($method->invoke($processor, 'cdn.mythinkcar.com'));
+        $this->assertTrue($method->invoke($processor, 'spinsrl.it'));
+        $this->assertTrue($method->invoke($processor, 'telwin.com'));
+        $this->assertFalse($method->invoke($processor, 'untrusted-images.example'));
     }
 
     private function assertImageDimensions(?string $publicPath, int $width, int $height): void

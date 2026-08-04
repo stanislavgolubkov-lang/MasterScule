@@ -17,9 +17,9 @@ use App\Models\ProductParserCategoryLearning;
 use App\Models\ProductParserImageAsset;
 use App\Models\ProductParserItem;
 use App\Models\User;
-use App\Services\ProductImageProcessorService;
 use App\Services\Catalog\ProductPublicationGuard;
 use App\Services\ProductDraftService;
+use App\Services\ProductImageProcessorService;
 use App\Services\ProductParserItemPreparationService;
 use App\Services\ProductPriceListImportService;
 use App\Services\ProductPriceListReader;
@@ -27,6 +27,7 @@ use App\Services\TrisToolsEnrichmentService;
 use Database\Seeders\CatalogStructureSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -81,6 +82,21 @@ class ExampleTest extends TestCase
             ->assertStatus(200)
             ->assertSee('Набор инструментов King Tony 7596MR')
             ->assertSee('Гарантия на товар: 12 месяцев. *Уточняйте по каждому продукту.');
+    }
+
+    public function test_old_product_slug_redirects_to_the_canonical_product_url(): void
+    {
+        $product = Product::availableForSale()->firstOrFail();
+        DB::table('product_slug_redirects')->insert([
+            'product_id' => $product->id,
+            'old_slug' => 'old-product-slug',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->get('/product/old-product-slug')
+            ->assertRedirect(route('product.show', $product->slug))
+            ->assertStatus(301);
     }
 
     public function test_catalog_subcategories_and_pagination_follow_selected_locale(): void
@@ -164,16 +180,18 @@ class ExampleTest extends TestCase
         ])->save();
 
         app()->setLocale('ru');
-        $this->assertSame(
-            ['Материал' => 'Хром-ванадиевая сталь'],
-            $product->fresh()->display_attributes,
-        );
+        $ruAttributes = $product->fresh()->display_attributes;
+        $this->assertSame('Хром-ванадиевая сталь', $ruAttributes['Материал']);
+        $this->assertSame($product->sku, $ruAttributes['Модель']);
+        $this->assertArrayNotHasKey('Retail price', $ruAttributes);
+        $this->assertArrayNotHasKey('Гарантия', $ruAttributes);
 
         app()->setLocale('ro');
-        $this->assertSame(
-            ['Material' => 'Oțel crom-vanadiu'],
-            $product->fresh()->display_attributes,
-        );
+        $roAttributes = $product->fresh()->display_attributes;
+        $this->assertSame('Oțel crom-vanadiu', $roAttributes['Material']);
+        $this->assertSame($product->sku, $roAttributes['Model']);
+        $this->assertArrayNotHasKey('Retail price', $roAttributes);
+        $this->assertArrayNotHasKey('Garantie', $roAttributes);
     }
 
     public function test_out_of_stock_products_are_visible_but_not_purchasable(): void
@@ -998,6 +1016,142 @@ class ExampleTest extends TestCase
         $this->assertSame('GYS', $generalItem->brand);
         $this->assertSame('accesorii-universale', $generalItem->category?->slug);
         $this->assertFalse((bool) $generalItem->needs_category_review);
+    }
+
+    public function test_new_brand_price_lists_infer_canonical_brand_from_file_name(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+
+        foreach ([
+            ['SPIN price.csv', 'SPIN-001', 'SPIN'],
+            ['TELWIN price.csv', 'TELWIN-001', 'TELWIN'],
+            ['THINCKAR price.csv', 'THINK-001', 'THINKCAR'],
+            ['HAZET price.csv', 'HAZET-001', 'HAZET'],
+            ['VIGOR price.csv', 'VIGOR-001', 'VIGOR'],
+            ['УХЛ-МАШ price.csv', 'UHL-001', 'УХЛ-МАШ'],
+        ] as [$fileName, $sku, $expectedBrand]) {
+            $path = 'parser/test/'.$sku.'.csv';
+            Storage::disk('local')->put($path, implode("\n", [
+                'sku;name;price;stock',
+                $sku.';Test product '.$sku.';100;1',
+            ]));
+
+            $batch = ProductParserBatch::create([
+                'title' => $expectedBrand.' brand detection test',
+                'source_type' => 'price_list',
+                'file_name' => $fileName,
+                'file_path' => $path,
+                'file_type' => 'csv',
+                'price_type' => 'retail_price',
+                'import_mode' => 'dry_run',
+                'status' => 'pending',
+                'options_json' => [
+                    'search_images' => false,
+                    'process_images' => false,
+                    'create_drafts_automatically' => false,
+                ],
+            ]);
+
+            app(ProductPriceListImportService::class)->dryRun($batch);
+
+            $this->assertSame($expectedBrand, $batch->items()->where('sku', $sku)->firstOrFail()->brand);
+        }
+    }
+
+    public function test_cyrillic_uhl_mash_skus_do_not_collapse_into_false_duplicates(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        Storage::disk('local')->put('parser/test/uhl-mash-cyrillic-skus.csv', implode("\n", [
+            'Артикул;Наименование;ОтпускЦена;Остаток',
+            'ШО-400/1;Шкаф одёжный, 1 секция;1890;4',
+            'ШОМ-400/1;Шкаф одёжный Г-образный;2390;2',
+        ]));
+
+        $batch = ProductParserBatch::create([
+            'title' => 'UHL-MASH Unicode SKU test',
+            'source_type' => 'price_list',
+            'file_name' => 'УХЛ-МАШ price.csv',
+            'file_path' => 'parser/test/uhl-mash-cyrillic-skus.csv',
+            'file_type' => 'csv',
+            'price_type' => 'retail_price',
+            'import_mode' => 'dry_run',
+            'status' => 'pending',
+            'options_json' => ['create_drafts_automatically' => false],
+        ]);
+
+        app(ProductPriceListImportService::class)->dryRun($batch);
+
+        $batch->refresh();
+        $this->assertSame(2, $batch->product_rows);
+        $this->assertSame(0, $batch->duplicate_sku_count);
+        $this->assertSame(2, $batch->items()->where('status', 'tristool_queued')->count());
+        $this->assertSame(
+            ['шо4001', 'шом4001'],
+            $batch->items()->orderBy('row_number')->pluck('normalized_sku')->all(),
+        );
+    }
+
+    public function test_finalize_does_not_count_skipped_duplicates_as_uncategorized_rows(): void
+    {
+        $batch = ProductParserBatch::create([
+            'title' => 'Skipped duplicate report test',
+            'source_type' => 'price_list',
+            'import_mode' => 'dry_run',
+            'status' => 'processing',
+            'options_json' => ['staging_complete' => true],
+        ]);
+        $category = Category::query()->whereNotNull('parent_id')->firstOrFail();
+
+        ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'UHL-READY',
+            'category_id' => $category->id,
+            'status' => 'dry_run_ready',
+            'needs_category_review' => false,
+        ]);
+        ProductParserItem::create([
+            'batch_id' => $batch->id,
+            'sku' => 'UHL-DUPLICATE',
+            'status' => 'skipped',
+            'needs_category_review' => false,
+            'error_message' => 'Duplicate SKU inside price list.',
+        ]);
+
+        app(ProductPriceListImportService::class)->finalizeQueuedImport($batch);
+
+        $this->assertSame('dry_run_completed', $batch->fresh()->status);
+        $this->assertSame(0, $batch->fresh()->rows_without_category);
+        $this->assertSame(1, $batch->fresh()->planned_drafts);
+    }
+
+    public function test_combined_hazet_vigor_price_list_uses_sku_family_for_brand(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        Storage::disk('local')->put('parser/test/hazet-vigor.csv', implode("\n", [
+            'sku;name;price;stock',
+            'V5461;Набор головок, 133 предмета;100;2',
+            '804VDE/14;Набор диэлектрических отверток VDE;200;3',
+        ]));
+
+        $batch = ProductParserBatch::create([
+            'title' => 'HAZET VIGOR brand detection test',
+            'source_type' => 'price_list',
+            'file_name' => 'HAZET, VIGOR (инструмент).csv',
+            'file_path' => 'parser/test/hazet-vigor.csv',
+            'file_type' => 'csv',
+            'price_type' => 'retail_price',
+            'import_mode' => 'dry_run',
+            'status' => 'pending',
+            'options_json' => ['create_drafts_automatically' => false],
+        ]);
+
+        app(ProductPriceListImportService::class)->dryRun($batch);
+
+        $this->assertSame('VIGOR', $batch->items()->where('sku', 'V5461')->firstOrFail()->brand);
+        $this->assertSame('HAZET', $batch->items()->where('sku', '804VDE/14')->firstOrFail()->brand);
     }
 
     public function test_queued_import_schedules_rows_that_need_category_resolution(): void

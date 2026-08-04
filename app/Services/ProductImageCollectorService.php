@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\ProductSkuNormalizer;
 use App\Models\ProductParserImageAsset;
 use App\Models\ProductParserItem;
 use Illuminate\Support\Str;
@@ -93,6 +94,6 @@ class ProductImageCollectorService
 
     private function normalizeSku(string $value): string
     {
-        return preg_replace('/[^A-Z0-9]/', '', Str::upper(Str::ascii($value))) ?: '';
+        return ProductSkuNormalizer::normalize($value);
     }
 }

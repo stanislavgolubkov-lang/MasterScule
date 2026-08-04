@@ -16,7 +16,7 @@
     <label>{{ __('ui.brand') }}</label>
     <div class="filter-checks">
         @foreach($brands as $brand)
-            <label><input type="checkbox" name="brand[]" value="{{ $brand->slug }}" @checked(in_array($brand->slug, $selectedBrands, true))> {{ $brand->name }}</label>
+            <label><input type="checkbox" name="brand[]" value="{{ $brand->slug }}" @checked(in_array($brand->slug, $selectedBrands, true))> {{ $brand->display_name }}</label>
         @endforeach
     </div>
     <label>{{ __('ui.price') }}</label>

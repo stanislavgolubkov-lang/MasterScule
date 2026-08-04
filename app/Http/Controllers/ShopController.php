@@ -10,6 +10,7 @@ use App\Services\Catalog\CatalogStorefrontNavigation;
 use App\Services\Catalog\ProductImageAvailabilityService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Collection;
 
 class ShopController extends Controller
@@ -294,7 +295,18 @@ class ShopController extends Controller
 
     public function product(string $slug)
     {
-        $product = Product::with(['brand', 'category', 'categories'])->where('slug', $slug)->availableForSale()->firstOrFail();
+        $product = Product::with(['brand', 'category', 'categories'])->where('slug', $slug)->availableForSale()->first();
+
+        if (! $product) {
+            $redirectProductId = DB::table('product_slug_redirects')->where('old_slug', $slug)->value('product_id');
+            $redirectProduct = $redirectProductId
+                ? Product::whereKey($redirectProductId)->availableForSale()->first()
+                : null;
+
+            abort_unless($redirectProduct, 404);
+
+            return redirect()->route('product.show', $redirectProduct->slug, 301);
+        }
         $similarCategoryIds = $product->categories
             ->pluck('id')
             ->push($product->category_id)

@@ -65,7 +65,12 @@ class NewProductsPageTest extends TestCase
             })
             ->assertSee('product-grid-compact', false)
             ->assertSee('editorial-hero-new', false)
-            ->assertSee('/images/new-arrivals-hero.webp', false);
+            ->assertSee('/images/new-arrivals-hero.webp', false)
+            ->assertSee('id="new-products-grid"', false)
+            ->assertSee('data-tablet-limit="24"', false)
+            ->assertSee('data-mobile-limit="12"', false)
+            ->assertSee('data-narrow-limit="8"', false)
+            ->assertSee('data-responsive-product-reveal="new-products-grid"', false);
 
         $this->assertFileExists(public_path('images/new-arrivals-hero.webp'));
     }

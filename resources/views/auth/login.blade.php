@@ -1,5 +1,7 @@
 @extends('layouts.app')
 
+@section('title', __('ui.login_title').' — '.config('store.domain_label'))
+
 @section('content')
 <section class="shell auth-card">
     <div>

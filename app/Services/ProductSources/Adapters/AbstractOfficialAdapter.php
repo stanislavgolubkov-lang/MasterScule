@@ -3,6 +3,7 @@
 namespace App\Services\ProductSources\Adapters;
 
 use App\Services\Catalog\ProductContentSanitizer;
+use App\Support\ProductSkuNormalizer;
 use App\Services\ProductSources\ProductSourceAdapterInterface;
 use App\Services\ProductSources\ProductSourceProductData;
 use App\Services\ProductSources\ProductSourceRegistry;
@@ -15,6 +16,8 @@ use Throwable;
 abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
 {
     private static array $lastRequestAt = [];
+
+    private static array $responseCache = [];
 
     public function __construct(
         protected readonly ProductSourceRegistry $registry,
@@ -51,6 +54,13 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
             $html = str_replace('\\/', '/', $html);
 
             preg_match_all('/<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>([\s\S]*?)<\/a>/iu', $html, $links, PREG_SET_ORDER);
+            preg_match_all('/<loc\b[^>]*>([\s\S]*?)<\/loc>/iu', $html, $locations);
+            foreach ($locations[1] ?? [] as $location) {
+                $links[] = [
+                    1 => trim((string) $location),
+                    2 => trim((string) $location),
+                ];
+            }
             foreach ($links as $link) {
                 $candidate = str_replace(
                     '\\/',
@@ -92,7 +102,17 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
                     continue;
                 }
 
-                return new ProductSourceSearchResult(true, $sku, $brand, $candidate, $domain, trim($text), true, priority: 100);
+                return new ProductSourceSearchResult(
+                    true,
+                    $sku,
+                    $brand,
+                    $candidate,
+                    $domain,
+                    trim($text),
+                    true,
+                    sourceType: $this->sourceTypeForCandidate($candidate),
+                    priority: 100,
+                );
             }
         }
 
@@ -190,6 +210,10 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
             return null;
         }
 
+        if ($this->shouldCacheResponse($url) && array_key_exists($url, self::$responseCache)) {
+            return self::$responseCache[$url];
+        }
+
         $this->throttle($domain, $brand);
         try {
             $response = $this->request()->get($url);
@@ -197,7 +221,16 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
             return null;
         }
 
-        return $response->successful() ? $response->body() : null;
+        if (! $response->successful()) {
+            return null;
+        }
+
+        $body = $response->body();
+        if ($this->shouldCacheResponse($url)) {
+            self::$responseCache[$url] = $body;
+        }
+
+        return $body;
     }
 
     protected function request(): PendingRequest
@@ -210,7 +243,7 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
 
     protected function normalizeSku(string $value): string
     {
-        return preg_replace('/[^A-Z0-9]/', '', Str::upper(Str::ascii($value))) ?: '';
+        return ProductSkuNormalizer::normalize($value);
     }
 
     protected function absoluteUrl(string $base, string $url): string
@@ -231,6 +264,16 @@ abstract class AbstractOfficialAdapter implements ProductSourceAdapterInterface
     protected function isCandidateProductUrl(string $url): bool
     {
         return true;
+    }
+
+    protected function sourceTypeForCandidate(string $url): string
+    {
+        return 'official_manufacturer';
+    }
+
+    protected function shouldCacheResponse(string $url): bool
+    {
+        return false;
     }
 
     protected function candidateMatchesSku(string $candidate, string $text, string $sku): bool

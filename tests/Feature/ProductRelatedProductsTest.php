@@ -56,7 +56,12 @@ class ProductRelatedProductsTest extends TestCase
                         fn (Product $relatedProduct) => $relatedProduct->category_id === $primaryCategory->id
                     );
             })
-            ->assertSee('product-grid-compact product-grid-related', false);
+            ->assertSee('product-grid-compact product-grid-related', false)
+            ->assertSee('id="related-products-grid"', false)
+            ->assertSee('data-tablet-limit="12"', false)
+            ->assertSee('data-mobile-limit="8"', false)
+            ->assertSee('data-narrow-limit="6"', false)
+            ->assertSee('data-responsive-product-reveal="related-products-grid"', false);
     }
 
     private function createProduct(Brand $brand, Category $category, string $sku): Product

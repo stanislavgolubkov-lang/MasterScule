@@ -55,6 +55,19 @@ class ProcessPriceListRowJob implements ShouldQueue
         ])->save();
         $importer->processFastQueuedItem($item);
 
+        $item = ProductParserItem::with(['createdProduct', 'existingProduct'])->find($this->itemId);
+        $draft = $item?->createdProduct ?: $item?->existingProduct;
+        if ($item
+            && $item->processing_stage === 'tristool_ready'
+            && $draft?->status === 'draft') {
+            $item->forceFill([
+                'status' => 'image_publish_queued',
+                'processing_stage' => 'image_publish_queued',
+                'error_message' => null,
+            ])->save();
+            PrepareAndPublishParserDraftJob::dispatch($item->id);
+        }
+
         if ($batch = ProductParserBatch::find($batchId)) {
             $importer->finalizeQueuedImport($batch);
         }

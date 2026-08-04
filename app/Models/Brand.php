@@ -8,6 +8,15 @@ class Brand extends Model
 {
     protected $fillable = ['name', 'slug', 'description', 'logo', 'is_featured', 'is_active'];
 
+    public function getDisplayNameAttribute(): string
+    {
+        if (app()->getLocale() === 'ro' && $this->slug === 'uhl-mash') {
+            return 'UHL-MASH';
+        }
+
+        return (string) $this->name;
+    }
+
     public function products()
     {
         return $this->hasMany(Product::class);

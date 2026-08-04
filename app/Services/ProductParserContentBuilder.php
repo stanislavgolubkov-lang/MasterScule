@@ -21,23 +21,24 @@ class ProductParserContentBuilder
         $sourceName = $sourceName !== '' ? $sourceName : $fallback;
         $isCyrillic = $this->isRussian($sourceName);
         $brandLabel = $this->brandLabel($brand);
+        $brandLabelRo = $this->romanianBrandLabel($brand);
         $labels = $this->categoryLabels((string) ($category['category_slug'] ?? ''));
         $categoryRu = $labels['ru'] ?: $this->clean((string) ($category['category_name_ru'] ?? '')) ?: 'Профессиональный инструмент';
         $categoryRo = $labels['ro'] ?: $this->clean((string) ($category['category_name_ro'] ?? '')) ?: 'Instrument profesional';
         $nameRu = $isCyrillic ? $sourceName : trim($categoryRu.' '.$brandLabel.' '.$sku);
         $nameRo = $isCyrillic || ! $this->looksRomanian($sourceName)
-            ? trim($categoryRo.' '.$brandLabel.' '.$sku)
+            ? trim($categoryRo.' '.$brandLabelRo.' '.$sku)
             : $sourceName;
         $shortRu = trim($nameRu.'. Бренд '.$brandLabel.', артикул '.$sku.'.');
-        $shortRo = trim($nameRo.'. '.$brandLabel.', articol '.$sku.'.');
+        $shortRo = trim($nameRo.'. '.$brandLabelRo.', articol '.$sku.'.');
         $descriptionRu = $nameRu.' — товар бренда '.$brandLabel.' из категории «'.$categoryRu.'». '
             .'Артикул производителя: '.$sku.'. Подходит для профессионального использования в мастерской и автосервисе. '
             .'Перед применением проверьте характеристики и совместимость с вашей задачей.';
-        $descriptionRo = $nameRo.' este un produs '.$brandLabel.' din categoria „'.$categoryRo.'”. '
+        $descriptionRo = $nameRo.' este un produs '.$brandLabelRo.' din categoria „'.$categoryRo.'”. '
             .'Cod producator: '.$sku.'. Este destinat utilizarii profesionale in atelier si service auto. '
             .'Inainte de utilizare, verificati caracteristicile si compatibilitatea cu lucrarea planificata.';
-        $descriptionRo = $nameRo.'. '.$brandLabel.' '.$sku.' este recomandat pentru lucrari profesionale in atelier, service auto sau zona tehnica. '
-            .'Categoria: '.$categoryRo.'. Verificati caracteristicile, dimensiunile si compatibilitatea cu lucrarea planificata inainte de utilizare.';
+        $descriptionRo = $nameRo.', articol '.$sku.', face parte din gama profesionala '.$brandLabelRo.'. '
+            .'Produsul este destinat lucrarilor tehnice din atelier si service auto. Inainte de utilizare, verificati dimensiunile, caracteristicile si compatibilitatea cu lucrarea planificata.';
 
         return $this->skuContentOverrides->apply($sku, [
             'name_ru' => $nameRu,
@@ -109,6 +110,18 @@ class ProductParserContentBuilder
             $sanitized = $this->contentSanitizer->sanitize($original);
             if ($original !== '' && $sanitized === '') {
                 $rejectedMarketplaceContent = true;
+            }
+            if (str_starts_with($key, 'description_') && $this->isIncompleteDescription($sanitized)) {
+                $sanitized = '';
+            }
+            if (str_ends_with($key, '_ro') && (
+                $this->containsCyrillic($sanitized)
+                || $this->language->isLikelyEnglish($sanitized)
+            )) {
+                $sanitized = '';
+            }
+            if (str_ends_with($key, '_ru') && $sanitized !== '' && ! $this->isRussian($sanitized)) {
+                $sanitized = '';
             }
             $content[$key] = $sanitized !== '' ? $sanitized : null;
         }
@@ -190,6 +203,19 @@ class ProductParserContentBuilder
         return $brand !== '' ? $brand : 'MasterScule';
     }
 
+    private function romanianBrandLabel(?string $brand): string
+    {
+        $label = $this->brandLabel($brand);
+        $normalized = mb_strtoupper($label, 'UTF-8');
+
+        if (str_contains($normalized, 'UHL')
+            || str_contains($normalized, "\u{0423}\u{0425}\u{041B}")) {
+            return 'UHL-MASH';
+        }
+
+        return $label;
+    }
+
     private function categoryLabels(string $slug): array
     {
         return match ($slug) {
@@ -220,5 +246,15 @@ class ProductParserContentBuilder
         $value = preg_replace('/^\s*(?:https?:\/\/)?(?:www\.)?tristool\.md\s*(?:[-–—:|]\s*)?/iu', '', $value) ?: $value;
 
         return trim(preg_replace('/\s+/u', ' ', $value) ?: '', " \t\n\r\0\x0B,.;");
+    }
+
+    private function isIncompleteDescription(string $value): bool
+    {
+        $normalized = mb_strtolower(trim($value, " \t\n\r\0\x0B:"));
+
+        return $normalized !== '' && (
+            mb_strlen($normalized) < 20
+            || preg_match('/^(?:порядок работы|procedura de operare|назначение\s*:?\s*преимущества|scop\s*:?\s*avantaje)$/iu', $normalized) === 1
+        );
     }
 }

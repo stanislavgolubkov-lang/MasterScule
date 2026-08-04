@@ -14,6 +14,22 @@ class ProductContentSanitizer
             html_entity_decode(strip_tags((string) $value), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
         ));
 
+        $value = str_ireplace([
+            'prize de impact adânc',
+            'prize adânci de impact',
+            'priză de impact adâncă',
+            'priză adâncă de impact',
+            'prize de impact',
+            'priză de impact',
+        ], [
+            'capete tubulare de impact lungi',
+            'capete tubulare lungi de impact',
+            'cap tubular de impact lung',
+            'cap tubular lung de impact',
+            'capete tubulare de impact',
+            'cap tubular de impact',
+        ], $value);
+
         return $this->containsMarketplacePromotion($value) ? '' : $value;
     }
 

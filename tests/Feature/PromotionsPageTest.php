@@ -19,6 +19,7 @@ class PromotionsPageTest extends TestCase
             ->assertOk()
             ->assertSee('/images/promotions-coming-soon.webp', false)
             ->assertSee(__('ui.promotions_empty_title'))
+            ->assertSee('<h1>'.__('ui.promotions_empty_title').'</h1>', false)
             ->assertSee('promotions-empty', false);
 
         $this->assertFileExists(public_path('images/promotions-coming-soon.webp'));

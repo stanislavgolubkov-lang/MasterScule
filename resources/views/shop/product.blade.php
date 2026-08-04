@@ -71,7 +71,7 @@
             <a href="{{ route('catalog', $product->category->slug) }}">{{ $product->category->display_name }}</a>
         </nav>
         <h1>{{ $product->display_name }}</h1>
-        <div class="meta"><span>{{ __('ui.brand') }}: <a href="{{ route('brand.show', $product->brand->slug) }}">{{ $product->brand->name }}</a></span><span>{{ __('ui.product_code') }}: {{ $product->sku }}</span><span class="stock {{ $inStock ? '' : 'stock-out' }}">● {{ $inStock ? __('ui.in_stock') : __('ui.out_of_stock') }}</span></div>
+        <div class="meta"><span>{{ __('ui.brand') }}: <a href="{{ route('brand.show', $product->brand->slug) }}">{{ $product->brand->display_name }}</a></span><span>{{ __('ui.product_code') }}: {{ $product->sku }}</span><span class="stock {{ $inStock ? '' : 'stock-out' }}">● {{ $inStock ? __('ui.in_stock') : __('ui.out_of_stock') }}</span></div>
         <div class="rating">★★★★★ <span>({{ $product->reviews_count }} {{ __('ui.reviews') }})</span></div>
         <div class="product-price">{{ money($product->price) }} @if($product->old_price)<del>{{ money($product->old_price) }}</del>@endif</div>
         @if($canOrder)
@@ -185,11 +185,25 @@
 </section>
 
 <section class="shell section-head"><h2>{{ __('ui.similar_products') }}</h2></section>
-<section class="shell product-grid product-grid-compact product-grid-related">
+<section
+    id="related-products-grid"
+    class="shell product-grid product-grid-compact product-grid-related"
+    data-responsive-product-grid
+    data-tablet-limit="12"
+    data-mobile-limit="8"
+    data-narrow-limit="6"
+>
     @foreach($relatedProducts as $item)
         <x-product-card :product="$item" />
     @endforeach
 </section>
+@if($relatedProducts->count() > 6)
+    <div class="shell responsive-grid-more" data-responsive-product-controls="related-products-grid" hidden>
+        <button class="btn outline responsive-grid-button" type="button" data-responsive-product-reveal="related-products-grid" data-label-more="{{ __('ui.show_more_products') }}" data-label-less="{{ __('ui.show_fewer_products') }}" aria-expanded="false">
+            <span data-responsive-product-label>{{ __('ui.show_more_products') }}</span>
+        </button>
+    </div>
+@endif
 
 <div class="sticky-buy"><strong>{{ money($product->price) }}</strong>@if($inStock)<form action="{{ route('cart.add', $product) }}" method="post">@csrf<button class="btn small">{{ __('ui.add_to_cart') }}</button></form>@else<span class="stock stock-out">{{ __('ui.out_of_stock') }}</span>@endif</div>
 @endsection

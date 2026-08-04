@@ -47,7 +47,16 @@
     </section>
 @endif
 
-<section class="shell product-grid {{ $collectionClass ?? '' }} {{ ($emptyState ?? null) === 'promotions' && count($products) === 0 ? 'promotions-empty-layout page-banner-shell' : '' }}">
+<section
+    @if(($collectionHero ?? null) === 'new')
+        id="new-products-grid"
+        data-responsive-product-grid
+        data-tablet-limit="24"
+        data-mobile-limit="12"
+        data-narrow-limit="8"
+    @endif
+    class="shell product-grid {{ $collectionClass ?? '' }} {{ ($emptyState ?? null) === 'promotions' && count($products) === 0 ? 'promotions-empty-layout page-banner-shell' : '' }}"
+>
     @forelse($products as $product)
         <x-product-card :product="$product" />
     @empty
@@ -55,7 +64,7 @@
             <div class="promotions-empty">
                 <div class="promotions-empty-copy">
                     <span class="promotions-empty-kicker">{{ __('ui.promotions_empty_kicker') }}</span>
-                    <h2>{{ __('ui.promotions_empty_title') }}</h2>
+                    <h1>{{ __('ui.promotions_empty_title') }}</h1>
                     <p>{{ __('ui.promotions_empty_text') }}</p>
 
                     <div class="promotions-empty-actions">
@@ -98,6 +107,14 @@
         @endif
     @endforelse
 </section>
+
+@if(($collectionHero ?? null) === 'new' && count($products) > 8)
+    <div class="shell responsive-grid-more" data-responsive-product-controls="new-products-grid" hidden>
+        <button class="btn outline responsive-grid-button" type="button" data-responsive-product-reveal="new-products-grid" data-label-more="{{ __('ui.show_more_products') }}" data-label-less="{{ __('ui.show_fewer_products') }}" aria-expanded="false">
+            <span data-responsive-product-label>{{ __('ui.show_more_products') }}</span>
+        </button>
+    </div>
+@endif
 
 @if(method_exists($products, 'links'))
     <section class="shell pagination-wrap">{{ $products->links() }}</section>

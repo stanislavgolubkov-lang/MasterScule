@@ -1,5 +1,7 @@
 @extends('layouts.app')
 
+@section('title', __('ui.brands').' — '.config('store.domain_label'))
+
 @section('content')
 @php
     $brandsHero = [
@@ -50,8 +52,11 @@
                 'hoegert' => 'Högert Technik',
                 'torin-big-red' => 'Torin BIG RED',
                 'gys' => 'GYS',
+                'spin' => 'SPIN',
+                'telwin' => 'TELWIN',
+                'thinkcar' => 'THINKCAR',
             ];
-            $brandDisplayName = $brandDisplayNames[$brand->slug] ?? $brand->name;
+            $brandDisplayName = $brandDisplayNames[$brand->slug] ?? $brand->display_name;
         @endphp
         <a class="brand-card brand-card-{{ $brand->slug }} {{ $brand->products_count === 0 ? 'is-empty' : '' }}" href="{{ route('brand.show', $brand->slug) }}">
             <span class="brand-logo-box">

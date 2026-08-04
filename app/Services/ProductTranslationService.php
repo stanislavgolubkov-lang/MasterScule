@@ -36,10 +36,10 @@ class ProductTranslationService
 
         // Some TrisTool /ro/ pages return the Russian card unchanged. A locale
         // URL is not proof that the text is actually Romanian.
-        if ($this->isRussian($titleRo)) {
+        if ($this->isRussian($titleRo) || $this->language->isLikelyEnglish($titleRo)) {
             $titleRo = '';
         }
-        if ($this->isRussian($descriptionRo)) {
+        if ($this->isRussian($descriptionRo) || $this->language->isLikelyEnglish($descriptionRo)) {
             $descriptionRo = '';
         }
 
@@ -70,6 +70,8 @@ class ProductTranslationService
             && $descriptionRo !== ''
             && $this->isRussian($titleRu.' '.$descriptionRu)
             && $this->isRomanian($titleRo.' '.$descriptionRo)
+            && ! $this->language->isLikelyEnglish($titleRo)
+            && ! $this->language->isLikelyEnglish($descriptionRo)
             && ! $this->language->containsUkrainian($titleRu.' '.$titleRo.' '.$descriptionRu.' '.$descriptionRo);
 
         return [
@@ -197,6 +199,8 @@ class ProductTranslationService
             && $this->isRussian((string) $source['title_ru'].' '.(string) $source['description_ru'])
             && ! $this->isRussian((string) $source['title_ro'])
             && ! $this->isRussian((string) $source['description_ro'])
+            && ! $this->language->isLikelyEnglish((string) $source['title_ro'])
+            && ! $this->language->isLikelyEnglish((string) $source['description_ro'])
             && $this->isRomanian((string) $source['title_ro'].' '.(string) $source['description_ro']);
     }
 

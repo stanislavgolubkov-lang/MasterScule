@@ -15,6 +15,49 @@ class ProductCategoryDetector
 
     public function detect(string $sku, string $name, ?string $brand = null, ?string $group = null, ?string $subgroup = null, ?string $vehicleApplication = null): array
     {
+        if ($supplierCategory = $this->detectSpinTelwinCategory($sku, $name, $brand, $group, $subgroup)) {
+            return $supplierCategory;
+        }
+
+        if ($uhlMash = $this->detectUhlMashCategory($sku, $name, $brand, $group, $subgroup)) {
+            return $uhlMash;
+        }
+
+        $productText = $this->normalize($sku.' '.$name.' '.(string) $brand);
+        if (Str::contains($productText, ['катушка с воздуш', 'катушка для воздушного шланга', 'air hose reel'])) {
+            $category = Category::where('slug', 'furtunuri-cuple-accesorii')->first();
+            if ($category) {
+                return $this->categoryResult($category, 99, 'air_hose_reel_family', [
+                    "Air hose reel: {$sku} -> furtunuri-cuple-accesorii",
+                ]);
+            }
+        }
+
+        if (Str::startsWith(Str::upper(trim($sku)), 'V7001') || Str::contains($productText, [
+            'снятия секреток', 'снятие секреток', 'колесных шпилек', 'колесных гаек',
+            'rim lock', 'wheel stud', 'wheel nut',
+        ])) {
+            $category = Category::where('slug', 'scule-pentru-roti-vulcanizare')->first();
+            if ($category) {
+                return $this->categoryResult($category, 99, 'wheel_service_family', [
+                    "Wheel service tool: {$sku} -> scule-pentru-roti-vulcanizare",
+                ]);
+            }
+        }
+
+        if (Str::contains($productText, ['vde', 'диэлектрическ', 'изолированн'])) {
+            $category = Category::where('slug', 'instrumente-izolate-vde')->first();
+            if ($category) {
+                return $this->categoryResult($category, 99, 'electrical_safety_family', [
+                    "VDE insulated tool: {$sku} -> instrumente-izolate-vde",
+                ]);
+            }
+        }
+
+        if ($thinkcar = $this->detectThinkcarCategory($sku, $name, $brand, $group, $subgroup, $vehicleApplication)) {
+            return $thinkcar;
+        }
+
         if ($learned = $this->learning->resolve($sku, $brand, $group, $subgroup)) {
             return $this->categoryResult(
                 $learned['category'],
@@ -148,6 +191,36 @@ class ProductCategoryDetector
         ?string $description = null,
         array $specifications = [],
     ): array {
+        if ($supplierCategory = $this->detectSpinTelwinCategory(
+            $sku,
+            trim($name.' '.(string) $description.' '.implode(' ', $specifications)),
+            $brand,
+            implode(' ', $breadcrumb),
+            collect($breadcrumb)->last(),
+        )) {
+            return $supplierCategory;
+        }
+
+        if ($uhlMash = $this->detectUhlMashCategory(
+            $sku,
+            trim($name.' '.(string) $description.' '.implode(' ', $specifications)),
+            $brand,
+            implode(' ', $breadcrumb),
+            collect($breadcrumb)->last(),
+        )) {
+            return $uhlMash;
+        }
+
+        if ($thinkcar = $this->detectThinkcarCategory(
+            $sku,
+            trim($name.' '.(string) $description.' '.implode(' ', $specifications)),
+            $brand,
+            implode(' ', $breadcrumb),
+            collect($breadcrumb)->last(),
+        )) {
+            return $thinkcar;
+        }
+
         if ($learned = $this->learning->resolveBreadcrumb($breadcrumb, $brand)) {
             return $this->categoryResult(
                 $learned['category'],
@@ -201,6 +274,182 @@ class ProductCategoryDetector
             ->where('sku', 'like', $family.'%')
             ->when($brand, fn ($query) => $query->whereHas('brand', fn ($brandQuery) => $brandQuery->where('name', 'like', '%'.$brand.'%')))
             ->first();
+    }
+
+    /**
+     * SPIN and TELWIN price lists already contain sufficiently descriptive
+     * Russian product names. Deterministic supplier-family rules are faster
+     * and more reliable here than waiting for external catalogue searches.
+     */
+    private function detectSpinTelwinCategory(
+        string $sku,
+        string $name,
+        ?string $brand,
+        ?string $group,
+        ?string $subgroup,
+    ): ?array {
+        $brandKey = Str::upper(trim((string) $brand));
+        if (! Str::contains($brandKey, ['SPIN', 'TELWIN'])) {
+            return null;
+        }
+
+        $text = $this->normalize(implode(' ', array_filter([$sku, $name, $group, $subgroup])));
+
+        if (Str::contains($brandKey, 'SPIN')) {
+            $rules = [
+                'scule-aer-conditionat-auto' => ['кондицион', 'фреон', 'r134', 'r1234', 'хладагент'],
+                'scule-sistem-racire-auto' => ['системы охлаждения', 'радиатор', 'антифриз'],
+                'diagnoza-auto' => ['диагност', 'детектор', 'проверки давления', 'обнаружения утечек', 'дымогенератор'],
+                'tinichigerie-si-richtuire' => ['кузов', 'рихтов', 'покрас', 'инфракрасная сушка'],
+                'echipamente-pentru-service' => ['вытяжка выхлопных', 'мойка деталей', 'ультразвуковой ванн', 'регулировки света фар'],
+                'mobilier-pentru-service' => ['инструментальной мебели', 'тележк'],
+            ];
+            $defaultSlug = 'scule-speciale-auto';
+        } else {
+            $rules = [
+                'baterii-incarcatoare' => ['пуско-заряд', 'пусковое устройство', 'зарядное устройство', 'startzilla', 'drive pro', 'sprinter', 'dynamic', 'energy'],
+                'tinichigerie-si-richtuire' => ['spotter', 'споттер', 'кузовн', 'рихтов', 'грейфер', 'правки кузова'],
+                'accesorii-pentru-sudura' => ['аксессуар', 'кабель', 'горелк', 'электрод', 'зажим', 'клещи', 'пистолет', 'тележка'],
+            ];
+            $defaultSlug = 'sudura-richtuire-vopsire';
+        }
+
+        $slug = $defaultSlug;
+        foreach ($rules as $candidate => $keywords) {
+            if (collect($keywords)->contains(fn (string $keyword) => $this->contains($text, $keyword))) {
+                $slug = $candidate;
+                break;
+            }
+        }
+
+        $category = Category::where('slug', $slug)->first();
+
+        return $category
+            ? $this->categoryResult($category, 96, 'supplier_family', ["{$brandKey} product family -> {$slug}"])
+            : null;
+    }
+
+    /**
+     * UHL-MASH supplier headings are frequently shifted by one or more rows,
+     * while generic keyword rules confuse key cabinets with wrenches and
+     * wardrobe legs with replacement blades. Product-family rules are more
+     * reliable than those inherited headings and than stale learned mappings.
+     */
+    private function detectUhlMashCategory(
+        string $sku,
+        string $name,
+        ?string $brand,
+        ?string $group,
+        ?string $subgroup,
+    ): ?array {
+        $identity = $this->normalize(implode(' ', array_filter([$brand, $group])));
+        if (! Str::contains($identity, ['ухл-маш', 'ухл маш', 'uhl-mash', 'uhl mash'])) {
+            return null;
+        }
+
+        $text = $this->normalize(implode(' ', array_filter([$sku, $name])));
+        $slug = match (true) {
+            Str::contains($text, ['шлифовальный станок', 'точило']) => 'polizoare',
+            Str::contains($text, ['тиски слесарн', 'тиски поворотн']) => 'menghine-si-cleme',
+            Str::contains($text, ['тележка инструментальн', 'tележка инструментальн', 'инструментальная тележка']) => 'carucioare-de-scule',
+            Str::contains($text, ['тележка', 'tележка', 'тележки', 'платформенная', 'передвижная разборная']) => 'carucioare-pentru-rafturi',
+            Str::contains($text, [
+                'стеллаж', 'стелажи', 'кювет', 'контейнер',
+                'полкокомплект стеллажа',
+            ]) => 'sisteme-de-depozitare-si-transport',
+            Str::contains($text, [
+                'панель', 'надставк', 'крючок', 'опора', 'подставка', 'полкокомплект',
+                'столешниц', 'тумба верстач', 'блок электромонтажн', 'комплект освещения',
+                'замок встраиваемый', 'ножки для', 'полка шириной',
+            ]) => 'accesorii-pentru-bancuri-de-lucru',
+            Str::contains($text, [
+                'кешбокс', 'ключниц', 'аптечк', 'шкаф', 'шкафы', 'локер',
+            ]) => 'dulapuri-si-organizare',
+            default => 'mobilier-pentru-service',
+        };
+
+        $category = Category::where('slug', $slug)->first()
+            ?: Category::where('slug', 'mobilier-pentru-service')->first();
+
+        return $category
+            ? $this->categoryResult($category, 99, 'uhl_mash_family', ["UHL-MASH family: {$sku} -> {$category->slug}"])
+            : null;
+    }
+
+    /**
+     * THINKCAR price lists use supplier groups that are too broad to be useful
+     * (for example, scanners and lifts can both be placed under adapters).
+     * Product-family rules are deterministic and deliberately run before
+     * learned breadcrumb mappings so a bad supplier breadcrumb is not memorised.
+     */
+    private function detectThinkcarCategory(
+        string $sku,
+        string $name,
+        ?string $brand,
+        ?string $group,
+        ?string $subgroup,
+        ?string $vehicleApplication = null,
+    ): ?array {
+        $identity = $this->normalize($sku.' '.(string) $brand);
+        $skuUpper = Str::upper(trim($sku));
+        $knownPrefix = collect([
+            'THINK', 'VENU', 'T-WAND', 'PPS', 'TJS', 'TBT', 'TWB', 'TFJ', 'TWA',
+            'TCR', 'PLD', 'TTE', 'GDI', 'TES', 'ES-', 'MCU', 'EVC', 'TVL', 'EVP',
+            'TPC', 'TKD', 'DML-',
+        ])->contains(fn (string $prefix) => Str::startsWith($skuUpper, $prefix));
+
+        if (! Str::contains($identity, ['thinkcar', 'thinckar', 'thinсkar']) && ! $knownPrefix) {
+            return null;
+        }
+
+        $productText = $this->normalize(implode(' ', array_filter([$sku, $name, $brand])));
+        $text = $this->normalize(implode(' ', array_filter([
+            $sku,
+            $name,
+            $brand,
+            $group,
+            $subgroup,
+            $vehicleApplication,
+        ])));
+
+        $slug = match (true) {
+            Str::startsWith($skuUpper, ['TBT', 'BATTERYTESTER'])
+                || Str::contains($productText, ['тестер аккумуляторных батарей', 'тестер акб', 'battery tester']) => 'multimetre-testere',
+            Str::startsWith($skuUpper, ['PPS', 'TJS', 'EVP'])
+                || Str::contains($productText, ['зарядное устройство', 'пусковое устройство', 'зарядки/разрядки акб', 'модуль-эквалайзер для акб']) => 'baterii-incarcatoare',
+            Str::contains($productText, ['tpms', 'датчик давления в шинах', 'датчиков давления']) => 'sisteme-tpms',
+            Str::contains($skuUpper, ['28127_', '2004780_']),
+            Str::contains($text, ['сход-развал', 'развал схожд', 'wheel alignment']) => 'scule-pentru-roti-vulcanizare',
+            Str::startsWith($skuUpper, 'TWB')
+                || Str::contains($productText, ['балансировочный станок', 'балансировочный стенд']) => 'scule-pentru-roti-vulcanizare',
+            Str::startsWith($skuUpper, 'TCR-333')
+                || Str::contains($productText, ['катушка с электрическим кабелем', 'электрический кабель на катушке']) => 'prelungitoare-si-tamburi-cablu',
+            Str::startsWith($skuUpper, 'DML-'),
+            Str::contains($text, ['кондиционер', 'ac100', 'filter drier', 'фильтр-осушитель']) => 'scule-aer-conditionat-auto',
+            Str::contains($text, ['стойки автомобильные', 'подставка под автомобиль']) => 'capre-auto-si-suporturi',
+            Str::startsWith($skuUpper, 'TFJ') || Str::contains($text, ['домкрат']) => 'cricuri-hidraulice',
+            Str::startsWith($skuUpper, 'TVL') || Str::contains($text, ['подъёмник', 'подъемник', 'vehicle lift']) => 'elevatoare-auto',
+            Str::startsWith($skuUpper, 'TTE') || Str::contains($text, ['замены масла в акпп', 'обмена масла акпп']) => 'echipamente-schimb-ulei',
+            Str::startsWith($skuUpper, 'GDI') || Str::contains($text, ['форсунк']) => 'scule-pentru-motor',
+            Str::startsWith($skuUpper, 'TPC') || Str::contains($text, ['тележка диагностическая']) => 'carucioare-pentru-rafturi',
+            Str::startsWith($skuUpper, ['PLD', 'TES', 'ES-', 'MCU', 'EVC', 'TKD'])
+                || Str::contains($text, [
+                    'сканер автомобильный', 'диагности', 'дымогенератор', 'видеоэндоскоп',
+                    'программатор', 'thinktool', 'thinkdiag', 'осциллограф', 'тепловизор',
+                    'тестер изоляции',
+                ]) => 'diagnoza-auto',
+            default => null,
+        };
+
+        if (! $slug) {
+            return null;
+        }
+
+        $category = Category::where('slug', $slug)->first();
+
+        return $category
+            ? $this->categoryResult($category, 99, 'thinkcar_family', ["THINKCAR family: {$sku} -> {$slug}"])
+            : null;
     }
 
     private function subgroupRules(): array
@@ -274,6 +523,7 @@ class ProductCategoryDetector
     private function utf8SemanticRules(): array
     {
         return [
+            'diagnoza-auto' => ['видеоэндоскоп', 'видео эндоскоп', 'videoendoscop', 'video endoscope'],
             'furtunuri-cuple-accesorii' => ['смазочная муфта', 'быстросъём', 'быстросъем', 'быстроразъём europe', 'быстроразъем europe', 'быстроразъём композит', 'быстроразъем композит', 'пневмошланг', 'воздушный шланг', 'воздушным шлангом', 'катушка с воздушным', 'шланг полиуретановый', 'ниппель', 'фитинг', 'фильтр-редуктор', 'наконечник europe'],
             'consumabile-pentru-scule-pneumatice' => ['точильный камень', 'точильных камней', 'зачистной диск', 'диск зачистной', 'круг отрезной', 'диск наждачный', 'диск полировочный', 'лента абразивная', 'лента образивная', 'сменная подошва', 'набор зубил', 'набор напильников', 'пила сменная', 'пилы сменные', 'патрон зажимной', 'патрон быстро-зажимной', 'сверло с титановым', 'прицел с пузырьковым уровнем', 'быстроразъём для фиксатора', 'фиксатор для зубил'],
             'polizoare-si-slefuitoare-pneumatice' => ['шлифовальная машин', 'шлифмашинка', 'пневмошлиф', 'турбинка', 'полировальная машин', 'полировочная машин', 'углошлифовальная', 'зачистная машина', 'удаления ржавчины', 'фрезер', 'фрейзер'],
@@ -336,7 +586,7 @@ class ProductCategoryDetector
             ['slug' => 'scule-pentru-suspensie', 'keywords' => ['подвеск', 'амортизатор', 'пружин']],
             ['slug' => 'scule-pentru-motor', 'keywords' => ['двигател', 'грм', 'распредвал', 'коленвал']],
             ['slug' => 'scule-pentru-roti-vulcanizare', 'keywords' => ['колес', 'шиномонтаж', 'вулканизац']],
-            ['slug' => 'diagnoza-auto', 'keywords' => ['диагностик', 'diagnostic']],
+            ['slug' => 'diagnoza-auto', 'keywords' => ['диагностик', 'diagnostic', 'видеоэндоскоп', 'видео эндоскоп', 'videoendoscop', 'video endoscope']],
             ['slug' => 'tinichigerie-si-richtuire', 'keywords' => ['правка кузова', 'рихтов', 'покраск', 'tinichigerie']],
             ['slug' => 'chei-dinamometrice', 'keywords' => ['динамометр', 'torque']],
             ['slug' => 'sublere-micrometre-comparatoare', 'keywords' => ['штангенциркул', 'микрометр', 'индикатор часового']],

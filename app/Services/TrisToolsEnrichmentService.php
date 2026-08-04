@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\ProductSkuNormalizer;
 use DOMDocument;
 use DOMXPath;
 use Illuminate\Support\Facades\Http;
@@ -345,7 +346,7 @@ class TrisToolsEnrichmentService
 
     private function normalizeSku(string $value): string
     {
-        return Str::upper((string) preg_replace('/[^A-Z0-9]/i', '', $value));
+        return ProductSkuNormalizer::normalize($value);
     }
 
     private function safeBaseUrl(string $url): bool

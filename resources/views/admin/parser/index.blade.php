@@ -265,7 +265,7 @@
             <label>{{ __('ui.parser_webp_quality') }}<input type="number" name="webp_quality" value="{{ $settings['webp_quality'] ?? 88 }}" min="70" max="95"></label>
             <div class="parser-check-grid">
                 <label><input type="checkbox" name="official_sources_enabled" value="1" @checked($settings['official_sources_enabled'] ?? true)> {{ $ru ? 'Официальные источники включены' : 'Surse oficiale active' }}</label>
-                <label><input type="checkbox" name="tristools_fallback_enabled" value="1" @checked($settings['tristools_fallback_enabled'] ?? false)> {{ $ru ? 'Использовать TrisTool только если официальный источник неполный' : 'Foloseste TrisTool doar daca sursa oficiala este incompleta' }}</label>
+                <label><input type="checkbox" name="tristools_fallback_enabled" value="1" @checked($settings['tristools_fallback_enabled'] ?? true)> {{ $ru ? 'Сначала искать изображения и описания в TrisTool, затем в официальных источниках' : 'Cauta mai intai imaginile si descrierile in TrisTool, apoi in sursele oficiale' }}</label>
                 <label><input type="checkbox" name="auto_approve_exact_fallback" value="1" @checked($settings['auto_approve_exact_fallback'] ?? false)> {{ $ru ? 'Автопроверка точного fallback по SKU' : 'Aproba automat fallback exact dupa SKU' }}</label>
                 <label><input type="checkbox" name="allow_marketplace_sources" value="1" @checked($settings['allow_marketplace_sources'] ?? false)> {{ $ru ? 'Разрешить marketplace-источники' : 'Permite surse marketplace' }}</label>
                 <label><input type="checkbox" name="search_images" value="1" @checked($settings['search_images'] ?? true)> {{ $ru ? 'Искать изображения' : 'Cauta imagini' }}</label>

@@ -387,6 +387,14 @@ class ProductDraftService
     private function brand(string $name): Brand
     {
         $name = trim($name) ?: 'Unknown brand';
+
+        // Canonical seeded brands may use a deliberately curated slug that is
+        // different from Laravel's current transliteration of a Cyrillic name.
+        // Reuse the name match before attempting to create a new slug.
+        if ($existing = Brand::query()->where('name', $name)->first()) {
+            return $existing;
+        }
+
         $slug = Str::slug($name) ?: 'unknown-brand';
 
         return Brand::firstOrCreate(

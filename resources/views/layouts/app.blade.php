@@ -101,7 +101,7 @@
 
     <x-mobile-catalog-drawer :categories="$navCategories" :cart-count="$cartCount" />
 
-    <div id="search-overlay" class="search-overlay" hidden>
+    <div id="search-overlay" class="search-overlay" data-scroll-lock-overlay role="dialog" aria-modal="true" aria-label="{{ __('ui.search_button') }}" hidden>
         <button data-close="search-overlay" class="close-btn">{{ __('ui.close') }}</button>
         <form action="{{ route('catalog') }}" class="overlay-search">
             <label>{{ __('ui.search_question') }}</label>

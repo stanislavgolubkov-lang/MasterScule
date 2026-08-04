@@ -42,6 +42,11 @@ class ProductSourceRegistry
 
     public function brandKey(string $brand): string
     {
+        $unicodeBrand = Str::upper(trim($brand));
+        if (Str::contains($unicodeBrand, ['УХЛ-МАШ', 'УХЛ МАШ', 'UHL-MASH', 'UHL MASH'])) {
+            return 'UHL_MASH';
+        }
+
         $brand = Str::upper(Str::ascii(trim($brand)));
 
         return match (true) {
@@ -52,6 +57,9 @@ class ProductSourceRegistry
             Str::contains($brand, ['HOEGERT', 'HOGERT']) => 'HOEGERT',
             Str::contains($brand, ['TORIN', 'BIG RED']) => 'TORIN',
             Str::contains($brand, 'TONGRUN') => 'TONGRUN',
+            preg_match('/(^|_)SPIN($|_)/', preg_replace('/[^A-Z0-9]+/', '_', $brand) ?: '') === 1 => 'SPIN',
+            Str::contains($brand, 'TELWIN') => 'TELWIN',
+            Str::contains($brand, ['THINKCAR', 'THINK CAR', 'THINCKAR']) => 'THINKCAR',
             default => preg_replace('/[^A-Z0-9]+/', '_', $brand) ?: 'UNKNOWN',
         };
     }
