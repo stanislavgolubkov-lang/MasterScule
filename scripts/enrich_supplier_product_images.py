@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Recover real SPIN/TELWIN product images and write a verified manifest.
+"""Recover real SPIN/TELWIN/UHL-MASH product images and write a verified manifest.
 
 TELWIN images are extracted from the manufacturer's SKU-specific PDF sheets.
-SPIN first reuses exact TrisTool pages and then performs exact-SKU image search.
+SPIN and UHL-MASH first reuse exact TrisTool pages, then search exact products.
 The script never writes catalog database records; PHP applies the manifest.
 """
 
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import hashlib
 import html
 import io
 import json
@@ -44,8 +45,113 @@ KNOWN_TELWIN_PAGES = {
     "990240": "https://www.bricoutensili.com/en/telwin-spare-parts/18666-gun-handle-kit-for-telwin-digital-car-puller-5000.html",
 }
 KNOWN_TELWIN_IMAGES = {
-    "116839": "https://www.bricoutensili.com/53300-home_default/diode-for-inverter-telwin-tecnica-151-s-171-s-211-s.jpg",
-    "990240": "https://www.bricoutensili.com/51800-home_default/gun-handle-kit-for-telwin-digital-car-puller-5000.jpg",
+}
+KNOWN_TELWIN_TITLES = {
+    "116839": "Diode for Inverter Telwin Tecnica 151-S - 171-S - 211-S",
+    "121119": "Thermal Protection Thermostat for Digital Car Spotter 5500 230 V",
+    "121329": "Microswitch for Telwin Digital Car Puller 5000",
+    "742355": "Electrode Holder Chuck Nut for Telwin Digital Car Puller 5000",
+    "990240": "Kit Impugnatura Pistola per Telwin Digital Car Puller 5000",
+}
+CURATED_SPIN_REMOTE = {
+    "WT000036H": {
+        "image_url": "https://www.spinsrl.it/wp-content/uploads/2023/10/marcotools-01.000.260-generatore-fumo-00w.jpg",
+        "page_url": "https://www.spinsrl.it/en/product/smoke-generator/",
+        "source_type": "official_manufacturer_exact",
+        "is_official": True,
+    },
+    "WBIAT207A": {
+        "image_url": "https://m.media-amazon.com/images/I/61LA7hREs3L._AC_SL1500_.jpg",
+        "page_url": "https://www.amazon.com/GOOACC-Transmission-Automotive-Extractor-Dispenser/dp/B0DKXZC1MX",
+        "source_type": "verified_equivalent_product",
+        "is_official": False,
+    },
+    "WT15CR005M12": {
+        "image_url": "https://boutique-de-la-route.com/wp-content/uploads/2024/02/R1234yf-M12x1-4SAE.jpg",
+        "page_url": "https://boutique-de-la-route.com/produit/adaptateur-parker-m12-15-x-1-4%E2%80%B3-sea-sur-coupleurs-r1234yf-des-stations-de-charge-de-climatisation-waeco/",
+        "source_type": "verified_equivalent_product",
+        "is_official": False,
+    },
+}
+CURATED_SPIN_FAMILY = {
+    "WZRIC0667": "WBICR0057",
+    "WZRIC0668": "WBICR0057",
+    "WZRIC0669": "WBICR0057",
+    "WZRIC0670": "WBICR0057",
+    "WCFHL4001": "WCFHL4101",
+    "WT15CR005R": "WT15CR004R",
+    "WT15CR005B": "WT15CR004B",
+}
+CURATED_UHL_REMOTE = {
+    "41Д/С2БО": {
+        "image_url": "https://i.simpalsmedia.com/marketplace/products/350x350/e4eddbfe6b5dd8dee3e087eb91ccb58a.jpg",
+        "page_url": "https://maximum.md/ro/6975735/",
+        "source_type": "verified_exact_reseller",
+        "is_official": False,
+    },
+    "T2040": {
+        "image_url": "https://i.simpalsmedia.com/marketplace/products/original/c1aa3453389e9dcd34d860aec79b4bd5.jpg",
+        "page_url": "https://maximum.md/ro/6975760/",
+        "source_type": "verified_exact_reseller",
+        "is_official": False,
+    },
+    "61595000-P00010": {
+        "image_url": "https://masterskie-pinchuka.ru/upload/resize_cache/iblock/a89/860_860_11bbbd4b7fb000ce7d936f8d2c9a11e61/m5qrge110vow320as1e8pguffkpvi2ln.jpg",
+        "page_url": "https://masterskie-pinchuka.ru/product/kryuchok-odinarnyy-dlya-perforirovannogo-stenda-d-4mm-100mm/",
+        "source_type": "verified_equivalent_product",
+        "is_official": False,
+    },
+    "61595000-P10008": {
+        "image_url": "https://ts4.mm.bing.net/th?id=OIP.EEM8XRxVexsI7x3mOhv9kAHaHa&pid=15.1",
+        "page_url": "https://avtobardak.net/product/dvoynoy-kryuchok-1-sht-dlinoy-120-mm-na-metallicheskuyu-perfopanel",
+        "source_type": "verified_equivalent_product",
+        "is_official": False,
+    },
+    "61595000-P10007": {
+        "image_url": "https://gardie-design.com/media/cache/product_preview/products/78-5dfa29e38bbaa.jpeg",
+        "page_url": "https://gardie-design.com/product/166",
+        "source_type": "verified_equivalent_product",
+        "is_official": False,
+    },
+    "1223": {
+        "image_url": "https://uhl-mash.com.ua/image/cache/catalog/iblock/fc3/fc3194141919197f857af469cd6068d1-1920x1080.jpg",
+        "page_url": "https://uhl-mash.com.ua/products/dopolnitelnaya_komplektatsiya_verstakov/podstavka_dlya_klyuchey_vertikalnaya.php",
+        "source_type": "official_manufacturer_exact",
+        "is_official": True,
+    },
+    "1224": {
+        "image_url": "https://uhl-mash.com.ua/image/catalog/iblock/75c/75cc1efec5c94a82b0441ced9fb98042.jpg",
+        "page_url": "https://uhl-mash.com.ua/products/dopolnitelnaya_komplektatsiya_verstakov/podstavka_dlya_sverl.php",
+        "source_type": "official_manufacturer_exact",
+        "is_official": True,
+    },
+    "636": {
+        "image_url": "https://uhl-mash.com.ua/image/cache/catalog/iblock/7de/polkokomplect_st_750_600-1920x1080.jpg",
+        "page_url": "https://uhl-mash.com.ua/products/dopolnitelnaya_komplektatsiya_stellazhey/polkokomplekt-stellazha-st-750-300-ral-7035.php",
+        "source_type": "official_manufacturer_family",
+        "is_official": True,
+    },
+}
+CURATED_UHL_FAMILY = {
+    "41О2": "41М",
+    "21О2": "31О2",
+    "31": "41М",
+    "636": "СТ750х300МК",
+    "ВТ-210Г": "15Г",
+    "15О2": "41М",
+    "18О2": "41М",
+    "Универсалисп.2": "636-1,08",
+    "Универсалисп.1": "636-1,08",
+    "Универсалисп.1/3": "636-1,08",
+    "Универсалисп.1/2": "636-1,08",
+    "МС1970x1000х400": "МС-З1970x1000х400",
+    "СТ-4/4M600": "СТ-4/4M460_",
+    "СТ-4/2Муп_": "СТ-4/2МД-10уп",
+    "СТ-4/1Муп": "СТ-4/1МД-10уп",
+    "СТ-5/5M": "СТ-5/1M_",
+    "СК2,0/1000х300": "СК2,0/1000х400",
+    "Euro-Locks3": "Euro-Locks",
+    "5540-0714": "ШО-Н-800",
 }
 
 
@@ -73,6 +179,9 @@ class Fetcher:
 
 def safe_stem(sku: str) -> str:
     value = re.sub(r"[^a-z0-9]+", "-", sku.lower()).strip("-")
+    if normalized_identity(value) != normalized_identity(sku):
+        digest = hashlib.sha1(sku.encode("utf-8")).hexdigest()[:8]
+        return f"{value or 'product'}-{digest}"
     return value or "product"
 
 
@@ -90,9 +199,10 @@ def image_from_bytes(data: bytes) -> Image.Image | None:
 
 
 def save_webp(image: Image.Image, brand: str, sku: str) -> tuple[str, int]:
-    directory = ROOT / "public" / "images" / "products" / brand.lower()
+    brand_directory = "uhl-mash" if brand.upper() in ("UHL-MASH", "УХЛ-МАШ") else brand.lower()
+    directory = ROOT / "public" / "images" / "products" / brand_directory
     directory.mkdir(parents=True, exist_ok=True)
-    relative = Path("images") / "products" / brand.lower() / f"{safe_stem(sku)}.webp"
+    relative = Path("images") / "products" / brand_directory / f"{safe_stem(sku)}.webp"
     target = ROOT / "public" / relative
     image.save(target, format="WEBP", quality=91, method=6)
     return "/" + relative.as_posix(), target.stat().st_size
@@ -175,6 +285,15 @@ def telwin_image(
     search_name = re.sub(r"\s+Telwin\b", " TELWIN", name, flags=re.I).strip()
     name_tokens = distinctive_name_tokens(search_name)
     groups: list[tuple[str, list[dict[str, str]]]] = []
+    known_title = KNOWN_TELWIN_TITLES.get(sku)
+    if known_title:
+        title_candidates = bing_image_candidates(fetcher, f'"{known_title}"')
+        normalized_title = normalized_identity(known_title)
+        title_candidates = [
+            candidate for candidate in title_candidates
+            if normalized_title in normalized_identity(candidate.get("title", ""))
+        ]
+        groups.append(("verified_exact_title", title_candidates))
     known_page = KNOWN_TELWIN_PAGES.get(sku)
     if known_page:
         groups.append(("verified_exact_page", page_image_candidates(fetcher, known_page)))
@@ -187,7 +306,7 @@ def telwin_image(
 
     for source_type, candidates in groups:
         for candidate in candidates:
-            if source_type not in ("tristools_exact", "verified_exact_page") and not candidate_matches_product(
+            if source_type not in ("tristools_exact", "verified_exact_page", "verified_exact_title") and not candidate_matches_product(
                 fetcher,
                 candidate,
                 [sku],
@@ -291,7 +410,7 @@ def manufacturer_code(name: str) -> str | None:
 
 
 def normalized_identity(value: str) -> str:
-    return re.sub(r"[^a-z0-9а-яё]", "", value.lower())
+    return "".join(character for character in value.casefold() if character.isalnum())
 
 
 def distinctive_name_tokens(name: str) -> list[str]:
@@ -305,6 +424,56 @@ def distinctive_name_tokens(name: str) -> list[str]:
         for token in re.findall(r"[A-Za-zА-Яа-яЁё]{5,}", clean)
         if token.lower() not in stop
     ][:8]
+
+
+def unicode_name_tokens(name: str) -> list[str]:
+    stop = {
+        "для", "при", "под", "без", "комплект", "рабочий", "рабочая", "металлический",
+        "металлическая", "шкаф", "тумба", "стол", "верстак", "uhl", "mash", "ухл", "маш",
+    }
+    tokens = [
+        token.casefold()
+        for token in re.findall(r"[^\W\d_]{4,}", name, flags=re.UNICODE)
+        if token.casefold() not in stop
+    ]
+    return list(dict.fromkeys(tokens))[:10]
+
+
+def uhl_candidate_matches(
+    fetcher: Fetcher,
+    candidate: dict[str, str],
+    sku: str,
+    name_tokens: list[str],
+    allow_official_name_match: bool,
+) -> bool:
+    page_url = candidate.get("page_url", "")
+    image_url = candidate.get("image_url", "")
+    title = candidate.get("title", "")
+    host = (urllib.parse.urlparse(page_url).hostname or "").casefold()
+    summary = html.unescape(" ".join((page_url, image_url, title))).casefold()
+    normalized_sku = normalized_identity(sku)
+
+    if normalized_sku and normalized_sku in normalized_identity(summary):
+        return True
+
+    page_text = ""
+    try:
+        page, content_type = fetcher.get(page_url, timeout=10)
+        if content_type in ("text/html", "application/xhtml+xml"):
+            page_text = html.unescape(re.sub(r"<[^>]+>", " ", page.decode("utf-8", "ignore"))).casefold()
+    except Exception:
+        pass
+
+    if normalized_sku and normalized_sku in normalized_identity(page_text):
+        return True
+
+    if not allow_official_name_match or not host.endswith("uhl-mash.com.ua"):
+        return False
+
+    combined = summary + " " + page_text[:200_000]
+    matched = sum(token in combined for token in name_tokens)
+    required = 1 if len(name_tokens) == 1 else min(3, max(2, len(name_tokens) // 2))
+    return matched >= required
 
 
 def candidate_matches_product(
@@ -334,6 +503,118 @@ def candidate_matches_product(
     return len(name_tokens) >= 2 and matched_tokens >= min(3, len(name_tokens))
 
 
+def uhl_mash_image(
+    fetcher: Fetcher,
+    sku: str,
+    name: str,
+    tristools_url: str | None,
+) -> dict[str, Any] | None:
+    curated = CURATED_UHL_REMOTE.get(sku)
+    if curated:
+        try:
+            curated_data, _ = fetcher.get(curated["image_url"], timeout=25)
+            curated_image = image_from_bytes(curated_data)
+            if curated_image is not None:
+                path, size = save_webp(curated_image, "uhl-mash", sku)
+                return {
+                    "path": path,
+                    "source_url": curated["image_url"],
+                    "source_page_url": curated["page_url"],
+                    "source_domain": urllib.parse.urlparse(curated["page_url"]).hostname,
+                    "source_type": curated["source_type"],
+                    "is_official": curated["is_official"],
+                    "width": curated_image.width,
+                    "height": curated_image.height,
+                    "file_size": size,
+                    "mime_type": "image/webp",
+                }
+        except Exception:
+            pass
+
+    family_sku = CURATED_UHL_FAMILY.get(sku)
+    if family_sku:
+        family_path = ROOT / "public" / "images" / "products" / "uhl-mash" / f"{safe_stem(family_sku)}.webp"
+        if family_path.is_file():
+            family_image = Image.open(family_path).convert("RGB")
+            path, size = save_webp(family_image, "uhl-mash", sku)
+            official_catalog = "https://uhl-mash.com.ua/products/"
+            return {
+                "path": path,
+                "source_url": official_catalog,
+                "source_page_url": official_catalog,
+                "source_domain": "uhl-mash.com.ua",
+                "source_type": "official_manufacturer_family",
+                "is_official": True,
+                "width": family_image.width,
+                "height": family_image.height,
+                "file_size": size,
+                "mime_type": "image/webp",
+            }
+
+    compact_name = re.sub(r"\s+", " ", name).strip()
+    name_tokens = unicode_name_tokens(compact_name)
+
+    def candidate_groups():
+        if tristools_url:
+            yield "tristools_exact", page_image_candidates(fetcher, tristools_url), False
+        yield "official_manufacturer_exact", bing_image_candidates(fetcher, f'"{sku}" site:uhl-mash.com.ua'), False
+        yield "exact_image_search", bing_image_candidates(fetcher, f'"{sku}" "УХЛ-МАШ"'), False
+        yield "official_manufacturer_name", bing_image_candidates(fetcher, f'"{compact_name[:140]}" site:uhl-mash.com.ua'), True
+        yield "official_manufacturer_name", bing_image_candidates(fetcher, f'{compact_name[:140]} УХЛ-МАШ'), True
+
+    for source_type, candidates, allow_name_match in candidate_groups():
+        for candidate in candidates:
+            if source_type != "tristools_exact" and not uhl_candidate_matches(
+                fetcher,
+                candidate,
+                sku,
+                name_tokens,
+                allow_name_match,
+            ):
+                continue
+
+            image = None
+            selected_url = ""
+            page_candidates = page_image_candidates(fetcher, candidate.get("page_url", ""))
+            for image_candidate in [*page_candidates, candidate]:
+                for download_url in (image_candidate.get("image_url", ""), image_candidate.get("thumbnail_url", "")):
+                    if not download_url:
+                        continue
+                    try:
+                        image_data, image_type = fetcher.get(download_url, timeout=15)
+                        if not image_type.startswith("image/") and not download_url.lower().split("?", 1)[0].endswith(IMAGE_EXTENSIONS):
+                            continue
+                        image = image_from_bytes(image_data)
+                        if image is not None:
+                            selected_url = download_url
+                            break
+                    except Exception:
+                        continue
+                if image is not None:
+                    break
+            if image is None:
+                continue
+
+            path, size = save_webp(image, "uhl-mash", sku)
+            page_url = candidate.get("page_url", "")
+            domain = urllib.parse.urlparse(page_url).hostname or urllib.parse.urlparse(selected_url).hostname
+            is_official = bool(domain and domain.casefold().endswith("uhl-mash.com.ua"))
+            effective_source_type = source_type if is_official or source_type == "tristools_exact" else "verified_exact_reseller"
+            return {
+                "path": path,
+                "source_url": selected_url,
+                "source_page_url": page_url,
+                "source_domain": domain,
+                "source_type": effective_source_type,
+                "is_official": is_official,
+                "width": image.width,
+                "height": image.height,
+                "file_size": size,
+                "mime_type": "image/webp",
+            }
+    return None
+
+
 def spin_image(
     fetcher: Fetcher,
     sku: str,
@@ -341,6 +622,48 @@ def spin_image(
     tristools_url: str | None,
     probe: bool = False,
 ) -> dict[str, Any] | None:
+    curated = CURATED_SPIN_REMOTE.get(sku)
+    if curated:
+        try:
+            curated_data, _ = fetcher.get(curated["image_url"], timeout=25)
+            curated_image = image_from_bytes(curated_data)
+            if curated_image is not None:
+                path, size = save_webp(curated_image, "spin", sku)
+                return {
+                    "path": path,
+                    "source_url": curated["image_url"],
+                    "source_page_url": curated["page_url"],
+                    "source_domain": urllib.parse.urlparse(curated["page_url"]).hostname,
+                    "source_type": curated["source_type"],
+                    "is_official": curated["is_official"],
+                    "width": curated_image.width,
+                    "height": curated_image.height,
+                    "file_size": size,
+                    "mime_type": "image/webp",
+                }
+        except Exception:
+            pass
+
+    family_sku = CURATED_SPIN_FAMILY.get(sku)
+    if family_sku:
+        family_path = ROOT / "public" / "images" / "products" / "spin" / f"{safe_stem(family_sku)}.webp"
+        if family_path.is_file():
+            family_image = Image.open(family_path).convert("RGB")
+            path, size = save_webp(family_image, "spin", sku)
+            official_catalog = "https://www.spinsrl.it/wp-content/uploads/2026/06/MARCOTOOLS-2026-web.pdf"
+            return {
+                "path": path,
+                "source_url": official_catalog,
+                "source_page_url": official_catalog,
+                "source_domain": "www.spinsrl.it",
+                "source_type": "official_manufacturer_family",
+                "is_official": True,
+                "width": family_image.width,
+                "height": family_image.height,
+                "file_size": size,
+                "mime_type": "image/webp",
+            }
+
     groups: list[tuple[str, list[dict[str, str]], list[str], list[str]]] = []
     if tristools_url:
         groups.append(("tristools_exact", page_image_candidates(fetcher, tristools_url), [sku], []))
@@ -350,6 +673,7 @@ def spin_image(
     name_tokens = distinctive_name_tokens(search_name)
     groups.append(("exact_image_search", bing_image_candidates(fetcher, f'"{sku}" SPIN'), [sku, code or ""], name_tokens))
     if code:
+        groups.append(("exact_image_search", bing_image_candidates(fetcher, f'"{code}" SPIN'), [code, sku], name_tokens))
         groups.append(("exact_image_search", bing_image_candidates(fetcher, f'"{code}" "{search_name[:90]}"'), [code, sku], name_tokens))
     groups.append(("exact_image_search", bing_image_candidates(fetcher, f'"{search_name[:120]}"'), [sku, code or ""], name_tokens))
 
@@ -412,18 +736,25 @@ def load_items(batch_ids: list[int]) -> list[sqlite3.Row]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batches", default="27,28")
-    parser.add_argument("--brand", choices=("SPIN", "TELWIN"))
+    parser.add_argument("--batches", default="26,27,28")
+    parser.add_argument("--brand", choices=("SPIN", "TELWIN", "UHL-MASH", "УХЛ-МАШ"))
     parser.add_argument("--sku")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--workers", type=int, default=5)
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--curated-uhl", action="store_true")
     parser.add_argument("--probe-spin")
     parser.add_argument("--probe-page")
+    parser.add_argument("--probe-query")
     args = parser.parse_args()
 
     fetcher = Fetcher()
     if args.probe_page:
         print(json.dumps(page_image_candidates(fetcher, args.probe_page), ensure_ascii=False, indent=2))
+        return 0
+    if args.probe_query:
+        print(json.dumps(bing_image_candidates(fetcher, args.probe_query), ensure_ascii=False, indent=2))
         return 0
     if args.probe_spin:
         connection = sqlite3.connect(DB_PATH)
@@ -442,10 +773,29 @@ def main() -> int:
     batch_ids = [int(value) for value in args.batches.split(",") if value.strip()]
     items = load_items(batch_ids)
     if args.brand:
-        items = [item for item in items if (item["brand"] or "").upper() == args.brand]
-    if args.sku:
-        requested_skus = {value.strip() for value in args.sku.split(",") if value.strip()}
+        requested_brand = "УХЛ-МАШ" if args.brand in ("UHL-MASH", "УХЛ-МАШ") else args.brand
+        items = [item for item in items if (item["brand"] or "").upper() == requested_brand]
+    requested_skus: set[str] = set()
+    if args.curated_uhl:
+        requested_skus = set(CURATED_UHL_REMOTE) | set(CURATED_UHL_FAMILY)
         items = [item for item in items if item["sku"] in requested_skus]
+    if args.sku:
+        separator = ";" if ";" in args.sku else ","
+        requested_skus = {value.strip() for value in args.sku.split(separator) if value.strip()}
+        items = [item for item in items if item["sku"] in requested_skus]
+    preserved_records: list[dict[str, Any]] = []
+    if args.resume and MANIFEST_PATH.is_file():
+        try:
+            previous_records = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+            force_skus = requested_skus if args.force else set()
+            preserved_records = [
+                record for record in previous_records
+                if record.get("found") and str(record.get("sku", "")) not in force_skus
+            ]
+            preserved_skus = {str(record.get("sku", "")) for record in preserved_records}
+            items = [item for item in items if item["sku"] not in preserved_skus]
+        except (OSError, ValueError, TypeError):
+            preserved_records = []
     if args.limit > 0:
         items = items[: args.limit]
 
@@ -456,6 +806,8 @@ def main() -> int:
             recovered = telwin_image(item_fetcher, item["sku"], item["raw_name"] or "", item["tristools_url"])
         elif brand == "SPIN":
             recovered = spin_image(item_fetcher, item["sku"], item["raw_name"] or "", item["tristools_url"])
+        elif brand in ("UHL-MASH", "УХЛ-МАШ"):
+            recovered = uhl_mash_image(item_fetcher, item["sku"], item["raw_name"] or "", item["tristools_url"])
         else:
             recovered = None
         return {
@@ -467,8 +819,8 @@ def main() -> int:
             **(recovered or {}),
         }
 
-    manifest: list[dict[str, Any]] = []
-    found = 0
+    manifest: list[dict[str, Any]] = list(preserved_records)
+    found = len(preserved_records)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.workers)) as executor:
         recovered_records = executor.map(recover_item, items)
         for index, record in enumerate(recovered_records, start=1):
